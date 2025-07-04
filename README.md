@@ -1,0 +1,2 @@
+# terminal
+插件
