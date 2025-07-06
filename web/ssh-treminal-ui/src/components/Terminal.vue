@@ -1,3 +1,5 @@
+
+
 <template>
   <div class="app-container">
     <transition name="fade" mode="out-in" @after-enter="onWorkspaceEntered">
@@ -64,20 +66,49 @@
           <div class="terminal-container-main" ref="terminalContainerRef">
             <div class="terminal-wrapper" ref="terminalRef"></div>
           </div>
-          <aside class="sftp-panel" :class="{'sftp-panel-visible': sftpVisible}">
+          <aside class="sftp-panel"
+                 :class="{'sftp-panel-visible': sftpVisible, 'details-mode': sftpVisible && showSftpDetails}">
             <div class="sftp-header">
-              <h4>SFTP Explorer</h4>
+
+              <h4 style="display:inline-block;">SFTP Explorer</h4>
+
+              <button class="btn btn-icon" style="float:right; margin-right: 5px;" @click="fetchSftpList(currentSftpPath)" :disabled="sftpLoading" title="刷新当前目录">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+
+              <button class="btn btn-icon" style="float:right;" @click="showSftpDetails = !showSftpDetails" :title="showSftpDetails ? '简洁视图' : '详细视图'">
+                <svg v-if="!showSftpDetails" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <svg v-else width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="4" cy="18" r="2"/></svg>
+              </button>
+
             </div>
             <div class="sftp-body">
-              <p class="sftp-path" :title="currentSftpPath">{{ currentSftpPath }}</p>
+              <input
+                  class="sftp-path"
+                  v-model="currentSftpPath"
+                  @keyup.enter="fetchSftpList(currentSftpPath)"
+                  :disabled="sftpLoading"
+                  :title="currentSftpPath"
+                  style="width:100%;margin-bottom:15px;"
+              />
+              <div v-if="showSftpDetails" class="sftp-list-header">
+                <span style="flex:1;">名称</span>
+                <span style="width:90px;text-align:right;">大小</span>
+                <span style="width:150px;text-align:right;">修改时间</span>
+              </div>
               <div v-if="sftpLoading" class="sftp-loader">正在加载...</div>
               <div v-if="sftpError" class="sftp-error">{{ sftpError }}</div>
               <ul v-if="!sftpLoading && !sftpError" class="file-list">
                 <li v-for="file in sftpFiles"
                     :key="file.path"
-                    @click="handleSftpItemClick(file)"
+                    @click="selectSftpFile(file, $event)"
+                    @dblclick="openSftpDirectory(file, $event)"
                     :title="file.longname"
-                    :class="{ 'selected': selectedSftpFile && selectedSftpFile.path === file.path }">
+                    :class="{ 'selected': selectedSftpFiles.some(f => f.path === file.path) }"
+                    :style="showSftpDetails ? 'display:flex;align-items:center;gap:10px;' : ''">
                   <svg v-if="file.isDirectory" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                        stroke-linejoin="round">
@@ -88,23 +119,56 @@
                     <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
                     <polyline points="13 2 13 9 20 9"></polyline>
                   </svg>
-                  <span>{{ file.name }}</span>
+                  <span style="flex:1;">{{ file.name }}</span>
+                  <template v-if="showSftpDetails">
+                    <span style="width:90px;text-align:right;font-size:0.85em;color:#aaa;">
+                      {{ formatFileSize(file.size) }}
+                    </span>
+                    <span style="width:150px;text-align:right;font-size:0.85em;color:#aaa;">
+                      {{ formatMtime(file.mtime) }}
+                    </span>
+                  </template>
                 </li>
               </ul>
               <!-- 隐藏的文件输入框 -->
               <input type="file" ref="fileInputRef" style="display: none" @change="handleFileSelected">
 
               <div class="sftp-actions">
-                <!-- Bug修复点 -->
-                <button type="button" class="btn btn-sm" @click="triggerUpload" :disabled="isSftpActionInProgress">
-                  {{ isSftpActionInProgress ? '处理中...' : '上传' }}
-                </button>
-                <!-- Bug修复点 -->
-                <button type="button" class="btn btn-sm"
-                        @click="downloadSelectedFile"
-                        :disabled="!selectedSftpFile || selectedSftpFile.isDirectory || isSftpActionInProgress">
-                  {{ isSftpActionInProgress ? '处理中...' : '下载' }}
-                </button>
+                <!-- 当操作正在进行时，显示此进度容器 -->
+                <div v-if="isSftpActionInProgress" class="upload-progress-container">
+                  <!-- 本地上传进度条 -->
+                  <div class="progress-section">
+                    <div class="progress-label">
+                      <span>本地 → Web Terminal</span>
+                      <span v-if="uploadSpeed">({{ uploadSpeed }})</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div class="progress-bar-inner" :style="{width: localUploadProgress + '%'}"></div>
+                    </div>
+                  </div>
+                  <!-- 远程上传进度条 (通过 CSS 控制显隐) -->
+                  <div class="progress-section" :class="{ 'visible': localUploadProgress === 100 || remoteUploadProgress > 0 }">
+                    <div class="progress-label">
+                      <span>Web Terminal → 远程服务器</span>
+                      <span v-if="sftpUploadSpeed">({{ sftpUploadSpeed }})</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div class="progress-bar-inner" :style="{width: remoteUploadProgress + '%'}"></div>
+                    </div>
+                  </div>
+                  <div class="upload-status-text">{{ uploadStatusText }}</div>
+                </div>
+                <!-- 当没有操作进行时，显示操作按钮 -->
+                <template v-else>
+                  <button type="button" class="btn btn-sm" @click="triggerUpload">
+                    上传
+                  </button>
+                  <button type="button" class="btn btn-sm"
+                          @click="downloadSelectedFiles"
+                          :disabled="selectedSftpFiles.length === 0">
+                    下载
+                  </button>
+                </template>
               </div>
             </div>
           </aside>
@@ -112,18 +176,38 @@
       </div>
     </transition>
   </div>
+  <Modal v-if="modal.visible" :title="modal.title" :message="modal.message" @close="modal.visible = false" />
 </template>
 
 <script setup>
-import {ref, onBeforeUnmount, nextTick, watch} from 'vue';
+import Modal from './Modal.vue';
+import {nextTick, onBeforeUnmount, ref, watch} from 'vue';
 import {Terminal} from 'xterm';
 import {FitAddon} from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
-const host = ref('123');
-const port = ref(22);
+
+const showSftpDetails = ref(false);
+
+
+const uploadSpeed = ref('');
+let sendNextChunk = null;
+let uploadStartTime = 0;
+let uploadBytesSent = 0;
+
+const modal = ref({
+  visible: false,
+  title: '',
+  message: ''
+});
+function showModal(message, title = '提示') {
+  modal.value = { visible: true, title, message };
+}
+
+const host = ref('110.40.59.75');
+const port = ref(37955);
 const user = ref('root');
-const password = ref('123');
+const password = ref('4KnHprKJp4c7xnLX');
 const isConnected = ref(false);
 const isConnecting = ref(false);
 
@@ -136,6 +220,16 @@ const sftpFiles = ref([]);
 const selectedSftpFile = ref(null);
 const isSftpActionInProgress = ref(false);
 const fileInputRef = ref(null);
+const selectedSftpFiles = ref([]);
+const uploadProgress = ref(0); // 上传进度百分比
+
+const localUploadProgress = ref(0);   // 本地上传进度
+const remoteUploadProgress = ref(0);  // 服务器上传进度
+
+const uploadStatusText = ref(''); // 状态文本
+const sftpUploadSpeed = ref('');
+
+
 
 // --- Terminal State ---
 const terminalRef = ref(null);
@@ -178,7 +272,7 @@ const initializeTerminal = () => {
   term.onData(data => {
     sendWsMessage({type: 'data', payload: data});
   });
-  term.write('✅ 连接成功！欢迎使用 Web Terminal。\r\n');
+  term.write('✅ 连接成功！欢迎使用 FuFu Web Terminal。\r\n');
   term.focus();
 };
 
@@ -213,7 +307,7 @@ const onWorkspaceEntered = () => {
 // --- Connection and WebSocket Logic ---
 const connect = () => {
   if (!host.value || !user.value || !password.value) {
-    alert("请填写所有连接信息！");
+    showModal("请填写所有连接信息！");
     return;
   }
   isConnecting.value = true;
@@ -248,7 +342,7 @@ const connect = () => {
           break;
         case 'sftp_upload_success':
           isSftpActionInProgress.value = false;
-          alert(msg.message || "上传成功!");
+          showModal(msg.message || "上传成功!");
           fetchSftpList(msg.path); // 刷新当前目录
           break;
         case 'sftp_download_response':
@@ -258,11 +352,33 @@ const connect = () => {
           sftpLoading.value = false;
           isSftpActionInProgress.value = false;
           sftpError.value = `SFTP Error: ${msg.message}`;
-          alert(`SFTP Error: ${msg.message}`); // 同时弹窗提示
+          showModal(`SFTP Error: ${msg.message}`); // 同时弹窗提示
+          break;
+        case 'sftp_upload_chunk_success':
+          localUploadProgress.value = Math.round(((msg.chunkIndex + 1) / msg.totalChunks) * 100);
+          if (sendNextChunk) {
+            sendNextChunk();
+          }
+          break;
+        case 'sftp_remote_progress':
+          remoteUploadProgress.value = msg.progress;
+          if (msg.speed > 0) {
+            sftpUploadSpeed.value = formatSpeed(msg.speed);
+          }
+          sftpUploadSpeed.value = formatSpeed(msg.speed);
+          uploadStatusText.value = `正在上传到服务器... ${msg.progress}%`;
+          break;
+        case 'sftp_upload_final_success':
+          remoteUploadProgress.value = 100;
+          isSftpActionInProgress.value = false;
+          uploadStatusText.value = '上传完成！';
+          sftpUploadSpeed.value = ''
+          showModal(msg.message || "上传成功!");
+          fetchSftpList(msg.path); // 刷新目录
           break;
         case 'error':
           isConnecting.value = false;
-          alert(`连接时发生错误: ${msg.payload}`);
+          showModal(`连接时发生错误: ${msg.payload}`);
           resetState();
           break;
         default:
@@ -280,7 +396,7 @@ const connect = () => {
       term.write('\r\n🔌 连接已断开。\r\n');
     }
     if (event.code !== 1000 && !isConnected.value) {
-      alert("连接失败，请检查主机、端口、用户名和密码，并确保后端服务正在运行。");
+      showModal("连接失败，请检查主机、端口、用户名和密码，并确保后端服务正在运行。");
     }
     resetState();
   };
@@ -341,6 +457,41 @@ const toggleSftpPanel = () => {
   }
 };
 
+const selectSftpFile = (file, event) => {
+  if (event.ctrlKey || event.metaKey) {
+    // 多选
+    const idx = selectedSftpFiles.value.findIndex(f => f.path === file.path);
+    if (idx >= 0) {
+      selectedSftpFiles.value.splice(idx, 1);
+    } else {
+      selectedSftpFiles.value.push(file);
+    }
+  } else {
+    // 单选
+    selectedSftpFiles.value = [file];
+  }
+};
+
+const downloadSelectedFiles = () => {
+  if (selectedSftpFiles.value.length === 0) return;
+  isSftpActionInProgress.value = true;
+  sftpError.value = '';
+  sendWsMessage({
+    type: 'sftp_download',
+    paths: selectedSftpFiles.value.map(f => f.path)
+  });
+};
+
+const openSftpDirectory = (file, event) => {
+  if (file.isDirectory) {
+    fetchSftpList(file.path);
+  }
+};
+
+
+
+
+
 const fetchSftpList = (path = '.') => {
   sftpLoading.value = true;
   sftpError.value = '';
@@ -365,39 +516,103 @@ const triggerUpload = () => {
   fileInputRef.value?.click();
 };
 
+// Terminal.vue
 const handleFileSelected = (event) => {
-
-  if (event && typeof event.preventDefault === 'function') {
-    event.preventDefault();
-  }
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    alert("连接已断开，无法上传文件，请重新连接后再试。");
-    return;
-  }
   const file = event.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const base64Content = e.target.result.split(',')[1];
-    isSftpActionInProgress.value = true;
-    sftpError.value = '';
-    sendWsMessage({
-      type: 'sftp_upload',
-      path: currentSftpPath.value,
-      filename: file.name,
-      content: base64Content
-    });
-  };
-  reader.onerror = (error) => {
-    console.error("File reading error:", error);
-    alert("读取文件失败！");
-  };
-  reader.readAsDataURL(file);
+  const chunkSize = 128 * 1024;
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  let chunkIndex = 0;
 
-  // 重置input的值，以便可以再次选择相同的文件
+  // 重置状态
+  isSftpActionInProgress.value = true;
+  sftpError.value = '';
+  localUploadProgress.value = 0;
+  remoteUploadProgress.value = 0;
+  uploadSpeed.value = '';
+  sftpUploadSpeed.value = '';
+  uploadStatusText.value = `正在准备上传: ${file.name}`;
+
+  uploadStartTime = Date.now();
+  uploadBytesSent = 0;
+
+  // 将 sendChunk 逻辑赋值给全局变量
+  sendNextChunk = () => {
+    if (chunkIndex >= totalChunks) {
+      // 所有分片已发送完毕
+      uploadStatusText.value = '所有分片已发送，等待服务器处理...';
+      sendNextChunk = null; // 清理
+      return;
+    }
+
+    const offset = chunkIndex * chunkSize;
+    const reader = new FileReader();
+    const blob = file.slice(offset, offset + chunkSize);
+
+    reader.onload = (e) => {
+      const base64Content = e.target.result.split(',')[1];
+
+      uploadBytesSent += blob.size;
+      const elapsed = (Date.now() - uploadStartTime) / 1000;
+      if (elapsed > 0) {
+        uploadSpeed.value = formatSpeed(uploadBytesSent / elapsed);
+      }
+
+      uploadStatusText.value = `正在上传分片 ${chunkIndex + 1} / ${totalChunks}`;
+
+      sendWsMessage({
+        type: 'sftp_upload_chunk',
+        path: currentSftpPath.value,
+        filename: file.name,
+        chunkIndex,
+        totalChunks,
+        content: base64Content
+      });
+
+      chunkIndex++;
+    };
+
+    reader.onerror = (error) => {
+      showModal("读取文件失败！");
+      isSftpActionInProgress.value = false;
+      uploadStatusText.value = '';
+      sendNextChunk = null; // 清理
+    };
+
+    reader.readAsDataURL(blob);
+  };
+
+  sendNextChunk();
   event.target.value = '';
 };
+
+
+function formatSpeed(bytesPerSec) {
+  if (bytesPerSec > 1024 * 1024) {
+    return (bytesPerSec / 1024 / 1024).toFixed(2) + ' MB/s';
+  } else if (bytesPerSec > 1024) {
+    return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+  } else {
+    return bytesPerSec.toFixed(0) + ' B/s';
+  }
+}
+
+
+function formatFileSize(size) {
+  if (size == null) return '';
+  if (size > 1024 * 1024 * 1024) return (size / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  if (size > 1024 * 1024) return (size / 1024 / 1024).toFixed(2) + ' MB';
+  if (size > 1024) return (size / 1024).toFixed(1) + ' KB';
+  return size + ' B';
+}
+function formatMtime(mtime) {
+  if (!mtime) return '';
+  const d = new Date(mtime * 1000);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+      + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
 
 const downloadSelectedFile = () => {
   if (!selectedSftpFile.value || selectedSftpFile.value.isDirectory) return;
@@ -430,7 +645,7 @@ const handleFileDownload = (filename, base64Content) => {
 
   } catch (error) {
     console.error("Download creation failed:", error);
-    alert("创建下载文件失败！");
+    showModal("创建下载文件失败！");
   } finally {
     isSftpActionInProgress.value = false;
   }
@@ -835,5 +1050,71 @@ input:focus {
   height: 8px;
   background: rgba(255,255,255,0.04);
   border-radius: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #222;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+.progress-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #6d28d9, #9d4edd);
+  transition: width 0.2s;
+}
+.sftp-panel.sftp-panel-visible.details-mode {
+  width: 520px !important;
+  min-width: 400px;
+}
+
+.sftp-list-header {
+  display: flex;
+  align-items: center;
+  font-size: 0.95em;
+  color: #bdbdbd;
+  font-weight: 500;
+  padding: 4px 0 4px 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 2px;
+  gap: 10px;
+}
+
+.upload-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.progress-section {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.4s ease, opacity 0.4s ease;
+}
+/* 第一个进度条默认可见 */
+.upload-progress-container .progress-section:first-child {
+  max-height: 100px; /* 给一个足够大的值 */
+  opacity: 1;
+}
+/* 当需要显示第二个进度条时 */
+.progress-section.visible {
+  max-height: 100px; /* 给一个足够大的值 */
+  opacity: 1;
+}
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85em;
+  color: #bbb;
+  margin-bottom: 4px;
+}
+.upload-status-text {
+  font-size: 0.9em;
+  color: #aaa;
+  text-align: center;
+  margin-top: 5px;
 }
 </style>

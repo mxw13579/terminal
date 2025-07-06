@@ -27,6 +27,12 @@ public class SshConnection {
         this.inputStream = inputStream;
         this.outputStream = outputStream;
     }
+
+
+    public Session getJschSession() {
+        return session;
+    }
+
     /**
      * 获取 Shell 通道
      */

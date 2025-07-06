@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.model.SshConnection;
 import com.jcraft.jsch.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -25,10 +26,15 @@ import java.util.stream.Collectors;
  * SSH终端 与 SFTP WebSocket 处理程序
  * @author lizelin
  */
+@Slf4j
 public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, SshConnection> connections = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /**
+     * 分片缓存
+     */
+    private final Map<String, List<byte[]>> uploadChunks = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -53,7 +59,7 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
             OutputStream outputStream = channel.getOutputStream();
             channel.connect(3000);
 
-            System.out.println("建立链接");
+            log.info("建立连接");
 
             // 注意 SshConnection 的构造函数现在只接收 shell 相关部分
             SshConnection sshConnection = new SshConnection(jsch, jschSession, channel, inputStream, outputStream);
@@ -109,7 +115,7 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
             JsonNode jsonNode = objectMapper.readTree(message.getPayload());
             String type = jsonNode.get("type").asText();
 
-            System.out.println("Received WebSocket message: " + message.getPayload());
+            log.info("Received WebSocket message type: {}", type);
 
             // 根据消息类型分发处理
             switch (type) {
@@ -125,31 +131,37 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
                     sshConnection.getChannelShell().setPtySize(cols, rows, cols * 8, rows * 8);
                     break;
 
-                // --- 新增SFTP处理逻辑 ---
+                // --- SFTP处理逻辑 ---
                 case "sftp_list":
                     String path = jsonNode.has("path") ? jsonNode.get("path").asText() : ".";
                     handleSftpList(session, sshConnection, path);
                     break;
 
-                // --- 新增：处理下载请求 ---
+                // --- 处理下载请求 ---
                 case "sftp_download":
-                    String downloadPath = jsonNode.get("path").asText();
-                    handleSftpDownload(session, sshConnection, downloadPath);
+                    if (jsonNode.has("paths")) {
+                        List<String> paths = new ArrayList<>();
+                        for (JsonNode n : jsonNode.get("paths")) {
+                            paths.add(n.asText());
+                        }
+                        handleSftpDownload(session, sshConnection, paths);
+                    }
                     break;
-                // --- 新增：处理上传请求 ---
-                case "sftp_upload":
-                    String uploadPath = jsonNode.get("path").asText();
-                    String filename = jsonNode.get("filename").asText();
-                    String content = jsonNode.get("content").asText();
-                    handleSftpUpload(session, sshConnection, uploadPath, filename, content);
+                case "sftp_upload_chunk":
+                    String uploadPathChunk = jsonNode.get("path").asText();
+                    String filenameChunk = jsonNode.get("filename").asText();
+                    int chunkIndex = jsonNode.get("chunkIndex").asInt();
+                    int totalChunks = jsonNode.get("totalChunks").asInt();
+                    String contentChunk = jsonNode.get("content").asText();
+                    handleSftpUploadChunk(session, sshConnection, uploadPathChunk, filenameChunk, chunkIndex, totalChunks, contentChunk);
                     break;
                 default:
                     // 未知类型
-                    System.err.println("Unknown message type: " + type);
+                    log.warn("Unknown message type: " + type);
                     break;
             }
         } catch (IOException e) {
-            System.err.println("Error handling message: " + e.getMessage());
+            log.error("Error handling message: " + e.getMessage(), e);
             closeConnection(session);
         }
     }
@@ -160,43 +172,34 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
     private void handleSftpList(WebSocketSession session, SshConnection sshConnection, String path) throws IOException {
         try {
             ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
-            // 如果路径为空，获取用户主目录
             if(path == null || path.isEmpty() || path.equals(".")) {
                 path = channelSftp.getHome();
             }
-
-            // 获取绝对路径，以便前端显示
             String absolutePath = channelSftp.realpath(path);
-
             @SuppressWarnings("unchecked")
             Vector<ChannelSftp.LsEntry> entries = channelSftp.ls(absolutePath);
-
             List<Map<String, Object>> fileList = new ArrayList<>();
-
-            // 添加 ".." 返回上一级目录（除非是根目录）
             if (!absolutePath.equals("/")) {
                 fileList.add(Map.of(
                         "name", "..",
-                        "longname", "d---------   - owner group         0 Jan 01 00:00 ..", // 模拟一个 longname
+                        "longname", "d---------   - owner group         0 Jan 01 00:00 ..",
                         "isDirectory", true,
-                        "path", absolutePath + "/.."
+                        "path", Paths.get(absolutePath, "..").normalize().toString().replace("\\", "/")
                 ));
             }
-
             for (ChannelSftp.LsEntry entry : entries) {
                 if (entry.getFilename().equals(".") || entry.getFilename().equals("..")) {
-                    continue; // 忽略 . 和 ..
+                    continue;
                 }
                 Map<String, Object> fileInfo = new HashMap<>();
                 fileInfo.put("name", entry.getFilename());
                 fileInfo.put("longname", entry.getLongname());
                 fileInfo.put("isDirectory", entry.getAttrs().isDir());
-                // 为前端提供完整的路径，方便导航
-                fileInfo.put("path", absolutePath.endsWith("/") ? absolutePath + entry.getFilename() : absolutePath + "/" + entry.getFilename());
+                fileInfo.put("size", entry.getAttrs().getSize());
+                fileInfo.put("mtime", entry.getAttrs().getMTime());
+                fileInfo.put("path", Paths.get(absolutePath, entry.getFilename()).normalize().toString().replace("\\", "/"));
                 fileList.add(fileInfo);
             }
-
-            // 按目录优先，然后按名称排序
             fileList.sort((a,b) -> {
                 boolean isDirA = (boolean) a.get("isDirectory");
                 boolean isDirB = (boolean) b.get("isDirectory");
@@ -204,76 +207,89 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
                 if (!isDirA && isDirB) return 1;
                 return ((String)a.get("name")).compareToIgnoreCase((String)b.get("name"));
             });
-
-            // 构建响应消息
             Map<String, Object> response = Map.of(
                     "type", "sftp_list_response",
                     "path", absolutePath,
                     "files", fileList
             );
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
-
         } catch (JSchException | SftpException e) {
-            System.err.println("SFTP Error: " + e.getMessage());
-            // 发送错误信息给前端
-            Map<String, Object> errorResponse = Map.of(
-                    "type", "sftp_error",
-                    "message", "SFTP operation failed: " + e.getMessage()
-            );
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(errorResponse)));
+            log.error("SFTP List Error: " + e.getMessage(), e);
+            sendSftpError(session, "SFTP operation failed: " + e.getMessage());
         }
     }
 
-    private void handleSftpDownload(WebSocketSession session, SshConnection sshConnection, String filePath) throws IOException {
+    private void handleSftpDownload(WebSocketSession session, SshConnection sshConnection, List<String> paths) throws IOException {
         try {
             ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
-            String filename = Paths.get(filePath).getFileName().toString();
-            InputStream inputStream = channelSftp.get(filePath);
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                baos.write(buffer, 0, bytesRead);
+            if (paths.size() == 1) {
+                String filePath = paths.get(0);
+                SftpATTRS attrs = channelSftp.lstat(filePath);
+                if (attrs.isDir()) {
+                    ByteArrayOutputStream zipOut = new ByteArrayOutputStream();
+                    try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(zipOut)) {
+                        zipDirectory(channelSftp, filePath, "", zos);
+                    }
+                    sendDownloadResponse(session, Paths.get(filePath).getFileName().toString() + ".zip", zipOut.toByteArray());
+                } else {
+                    try (InputStream inputStream = channelSftp.get(filePath); ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                        inputStream.transferTo(baos);
+                        sendDownloadResponse(session, Paths.get(filePath).getFileName().toString(), baos.toByteArray());
+                    }
+                }
+            } else {
+                ByteArrayOutputStream zipOut = new ByteArrayOutputStream();
+                try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(zipOut)) {
+                    for (String path : paths) {
+                        SftpATTRS attrs = channelSftp.lstat(path);
+                        String entryName = Paths.get(path).getFileName().toString();
+                        if (attrs.isDir()) {
+                            zipDirectory(channelSftp, path, entryName + "/", zos);
+                        } else {
+                            zipFile(channelSftp, path, entryName, zos);
+                        }
+                    }
+                }
+                sendDownloadResponse(session, "download.zip", zipOut.toByteArray());
             }
-            inputStream.close();
-            String base64Content = Base64.getEncoder().encodeToString(baos.toByteArray());
-            Map<String, Object> response = Map.of(
-                    "type", "sftp_download_response",
-                    "filename", filename,
-                    "content", base64Content
-            );
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
         } catch (JSchException | SftpException e) {
-            System.err.println("SFTP Download Error: " + e.getMessage());
+            log.error("SFTP Download Error: " + e.getMessage(), e);
             sendSftpError(session, "SFTP download failed: " + e.getMessage());
         }
     }
-    /**
-     * 新增：处理SFTP文件上传
-     */
-    private void handleSftpUpload(WebSocketSession session, SshConnection sshConnection, String remotePath, String filename, String contentBase64) throws IOException {
-        try {
-            ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
-            byte[] contentBytes = Base64.getDecoder().decode(contentBase64);
-            InputStream inputStream = new ByteArrayInputStream(contentBytes);
-            String fullRemotePath = remotePath.endsWith("/") ? remotePath + filename : remotePath + "/" + filename;
-            channelSftp.put(inputStream, fullRemotePath);
-            inputStream.close();
-            // 发送成功消息，并附上当前路径以便前端刷新
-            Map<String, Object> response = Map.of(
-                    "type", "sftp_upload_success",
-                    "message", "File '" + filename + "' uploaded successfully.",
-                    "path", remotePath
-            );
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
-        } catch (JSchException | SftpException e) {
-            System.err.println("SFTP Upload Error: " + e.getMessage());
-            sendSftpError(session, "SFTP upload failed: " + e.getMessage());
+
+    private void sendDownloadResponse(WebSocketSession session, String filename, byte[] data) throws IOException {
+        Map<String, Object> response = Map.of(
+                "type", "sftp_download_response",
+                "filename", filename,
+                "content", Base64.getEncoder().encodeToString(data)
+        );
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+    }
+
+    private void zipDirectory(ChannelSftp sftp, String dirPath, String base, java.util.zip.ZipOutputStream zos) throws SftpException, IOException {
+        @SuppressWarnings("unchecked")
+        Vector<ChannelSftp.LsEntry> entries = sftp.ls(dirPath);
+        for (ChannelSftp.LsEntry entry : entries) {
+            if (entry.getFilename().equals(".") || entry.getFilename().equals("..")) continue;
+            String fullPath = Paths.get(dirPath, entry.getFilename()).toString().replace("\\", "/");
+            String zipEntryName = base + entry.getFilename();
+            if (entry.getAttrs().isDir()) {
+                zipDirectory(sftp, fullPath, zipEntryName + "/", zos);
+            } else {
+                zipFile(sftp, fullPath, zipEntryName, zos);
+            }
         }
     }
-    /**
-     * 辅助方法：发送SFTP错误信息给前端
-     */
+
+    private void zipFile(ChannelSftp sftp, String filePath, String zipEntryName, java.util.zip.ZipOutputStream zos) throws SftpException, IOException {
+        zos.putNextEntry(new java.util.zip.ZipEntry(zipEntryName));
+        try (InputStream is = sftp.get(filePath)) {
+            is.transferTo(zos);
+        }
+        zos.closeEntry();
+    }
+
     private void sendSftpError(WebSocketSession session, String message) throws IOException {
         Map<String, Object> errorResponse = Map.of(
                 "type", "sftp_error",
@@ -282,7 +298,6 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(errorResponse)));
     }
 
-
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         closeConnection(session);
@@ -290,6 +305,7 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
+        log.error("Transport error for session {}", session.getId(), exception);
         closeConnection(session);
     }
 
@@ -297,18 +313,83 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
         SshConnection sshConnection = connections.remove(session.getId());
         if (sshConnection != null) {
             sshConnection.disconnect();
-            try {
-                if (session.isOpen()) {
-                    session.close();
-                }
-            } catch (IOException e) {
-                // ignore
+            log.info("Session {} closed and connection resources released.", session.getId());
+        }
+        uploadChunks.keySet().removeIf(key -> key.startsWith(session.getId() + ":"));
+    }
+
+    private void handleSftpUploadChunk(WebSocketSession session, SshConnection sshConnection, String remotePath, String filename, int chunkIndex, int totalChunks, String contentBase64) throws IOException {
+        String uploadKey = session.getId() + ":" + remotePath + "/" + filename;
+        List<byte[]> chunks = uploadChunks.computeIfAbsent(uploadKey, k -> Collections.synchronizedList(new ArrayList<>(Collections.nCopies(totalChunks, null))));
+        byte[] decodedChunk = Base64.getDecoder().decode(contentBase64);
+        chunks.set(chunkIndex, decodedChunk);
+        // 再次确认所有分片都已收到 (使用 stream().allMatch 更可靠)
+        boolean allReceived = chunks.stream().allMatch(Objects::nonNull);
+        if (allReceived) {
+            // 关键：从缓存中移除，防止重复触发上传
+            List<byte[]> finalChunks = uploadChunks.remove(uploadKey);
+
+            if (finalChunks == null) {
+                log.warn("Upload task for {} already processed or removed.", uploadKey);
+                return;
             }
+            executorService.submit(() -> {
+                ChannelSftp tempSftpChannel = null;
+                try {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    for (byte[] chunk : finalChunks) {
+                        baos.write(chunk);
+                    }
+                    byte[] fileBytes = baos.toByteArray();
+                    //  获取文件总大小
+                    long fileSize = fileBytes.length;
+                    Session jschSession = sshConnection.getJschSession();
+                    tempSftpChannel = (ChannelSftp) jschSession.openChannel("sftp");
+                    tempSftpChannel.connect(5000);
+                    String fullRemotePath = Paths.get(remotePath, filename).normalize().toString().replace("\\", "/");
+                    WebSocketSftpProgressMonitor monitor = new WebSocketSftpProgressMonitor(session, objectMapper);
+                    // 手动初始化监视器，并传入正确的文件总大小 ---
+                    // 这将确保 monitor 内部的 totalSize 是正确的，从而使百分比计算正确。
+                    monitor.init(SftpProgressMonitor.PUT, "local-stream", fullRemotePath, fileSize);
+
+                    // 执行上传，JSch会继续使用这个已经初始化好的 monitor
+                    try (InputStream inputStream = new ByteArrayInputStream(fileBytes)) {
+                        tempSftpChannel.put(inputStream, fullRemotePath, monitor);
+                    }
+
+                    Map<String, Object> finalResponse = Map.of(
+                            "type", "sftp_upload_final_success",
+                            "message", "文件 '" + filename + "' 已成功上传到服务器。",
+                            "path", remotePath
+                    );
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(finalResponse)));
+                } catch (Exception e) {
+                    log.error("在独立的SFTP通道中上传文件 {} 时失败", filename, e);
+                    try {
+                        sendSftpError(session, "后台上传文件失败: " + e.getMessage());
+                    } catch (IOException ioException) {
+                        log.error("发送SFTP上传错误消息失败", ioException);
+                    }
+                } finally {
+                    if (tempSftpChannel != null && tempSftpChannel.isConnected()) {
+                        tempSftpChannel.disconnect();
+                        log.info("临时SFTP上传通道已关闭。");
+                    }
+                }
+            });
+        } else {
+            // 分片未收齐，发送确认消息给前端
+            Map<String, Object> ackResponse = Map.of(
+                    "type", "sftp_upload_chunk_success",
+                    "chunkIndex", chunkIndex,
+                    "totalChunks", totalChunks
+            );
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(ackResponse)));
         }
     }
 
     private Map<String, String> parseQuery(String query) {
-        if (query == null) return Map.of();
+        if (query == null) return Collections.emptyMap();
         Map<String, String> params = new ConcurrentHashMap<>();
         Arrays.stream(query.split("&")).forEach(param -> {
             String[] keyValue = param.split("=", 2);
