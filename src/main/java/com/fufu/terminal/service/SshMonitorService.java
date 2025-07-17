@@ -112,9 +112,10 @@ public class SshMonitorService {
         final String dockerPsCmd = "docker ps --format '{{.ID}}\\t{{.Names}}\\t{{.Status}}'";
         final String dockerStatsCmd = "docker stats --no-stream --format '{{.ID}}\\t{{.CPUPerc}}\\t{{.MemUsage}}'";
 
+        // 使用 df -P / 提高跨Linux发行版的兼容性
         String initialCommands = String.join(" ; echo '" + delimiter + "'; ",
                 "cat /proc/cpuinfo | grep 'model name' | uniq | sed 's/model name\\s*:\\s*//'",
-                "uptime -p", "grep 'cpu ' /proc/stat", "free -m", "df -h /", "cat /proc/net/dev",
+                "uptime -p", "grep 'cpu ' /proc/stat", "free -m", "df -P /", "cat /proc/net/dev",
                 "command -v docker >/dev/null && " + dockerPsCmd + " || echo 'no_docker'",
                 "command -v docker >/dev/null && " + dockerStatsCmd + " || echo 'no_docker'"
         );
@@ -291,18 +292,25 @@ public class SshMonitorService {
     }
 
     private double parseDiskUsage(String dfOutput) {
-        if (dfOutput.isEmpty()) {
+        if (dfOutput == null || dfOutput.isBlank()) {
             return 0.0;
         }
         try {
-            return Arrays.stream(dfOutput.trim().split("\\n"))
-                    .filter(line -> line.endsWith(" /"))
-                    .map(line -> line.split("\\s+"))
-                    .flatMap(Arrays::stream)
-                    .filter(part -> part.endsWith("%"))
-                    .mapToDouble(part -> Double.parseDouble(part.replace("%", "")))
-                    .findFirst()
-                    .orElse(0.0);
+            // Split into lines and skip the header
+            String[] lines = dfOutput.trim().split("\\n");
+            if (lines.length < 2) {
+                log.warn("Invalid df output, expected at least 2 lines but got: {}", lines.length);
+                return 0.0;
+            }
+            // Data is on the second line
+            String dataLine = lines[1];
+            String[] parts = dataLine.trim().split("\\s+");
+            // The 'Capacity' is the 5th column (index 4)
+            if (parts.length >= 5) {
+                return Double.parseDouble(parts[4].replace("%", ""));
+            }
+            log.warn("Could not parse disk usage parts from line: '{}'", dataLine);
+            return 0.0;
         } catch (Exception e) {
             log.warn("Failed to parse disk usage from output: '{}'", dfOutput, e);
             return 0.0;
