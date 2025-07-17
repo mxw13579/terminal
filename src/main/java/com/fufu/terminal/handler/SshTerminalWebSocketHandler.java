@@ -3,12 +3,21 @@ package com.fufu.terminal.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.model.SshConnection;
-import com.jcraft.jsch.*;
+import com.jcraft.jsch.ChannelExec;
+import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.ChannelShell;
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.Session;
+import com.jcraft.jsch.SftpATTRS;
+import com.jcraft.jsch.SftpException;
+import com.jcraft.jsch.SftpProgressMonitor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -16,11 +25,22 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * SSH终端 与 SFTP WebSocket 处理程序
@@ -30,6 +50,8 @@ import java.util.stream.Collectors;
 public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, SshConnection> connections = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
+    // 新增一个用于定时任务的调度器
+    private final ScheduledExecutorService monitorScheduler = Executors.newSingleThreadScheduledExecutor();
     private final ObjectMapper objectMapper = new ObjectMapper();
     /**
      * 分片缓存
@@ -87,13 +109,13 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
                         }
                     }
                 } catch (IOException e) {
-                    System.err.println("Error reading from shell or writing to session: " + e.getMessage());
+                    log.error("Error reading from shell or writing to session: " ,e);
                 } finally {
                     closeConnection(session);
                 }
             });
         } catch (Exception e) {
-            System.err.println("Error establishing SSH connection: " + e.getMessage());
+            log.error("Error establishing SSH connection: " , e);
             // 发送错误信息给前端
             Map<String, String> errorResponse = Map.of(
                     "type", "error",
@@ -155,6 +177,12 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
                     String contentChunk = jsonNode.get("content").asText();
                     handleSftpUploadChunk(session, sshConnection, uploadPathChunk, filenameChunk, chunkIndex, totalChunks, contentChunk);
                     break;
+                case "monitor_start":
+                    handleMonitorStart(session, sshConnection);
+                    break;
+                case "monitor_stop":
+                    handleMonitorStop(session, sshConnection);
+                    break;
                 default:
                     // 未知类型
                     log.warn("Unknown message type: " + type);
@@ -172,7 +200,7 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
     private void handleSftpList(WebSocketSession session, SshConnection sshConnection, String path) throws IOException {
         try {
             ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
-            if(path == null || path.isEmpty() || path.equals(".")) {
+            if (path == null || path.isEmpty() || path.equals(".")) {
                 path = channelSftp.getHome();
             }
             String absolutePath = channelSftp.realpath(path);
@@ -200,13 +228,11 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
                 fileInfo.put("path", Paths.get(absolutePath, entry.getFilename()).normalize().toString().replace("\\", "/"));
                 fileList.add(fileInfo);
             }
-            fileList.sort((a,b) -> {
-                boolean isDirA = (boolean) a.get("isDirectory");
-                boolean isDirB = (boolean) b.get("isDirectory");
-                if (isDirA && !isDirB) return -1;
-                if (!isDirA && isDirB) return 1;
-                return ((String)a.get("name")).compareToIgnoreCase((String)b.get("name"));
-            });
+
+            //使用 Comparator 链式调用进行排序，目录优先，然后按名称不区分大小写排序
+            fileList.sort(Comparator.comparing((Map<String, Object> m) -> (Boolean) m.get("isDirectory")).reversed()
+                    .thenComparing(m -> (String) m.get("name"), String.CASE_INSENSITIVE_ORDER));
+
             Map<String, Object> response = Map.of(
                     "type", "sftp_list_response",
                     "path", absolutePath,
@@ -218,6 +244,7 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
             sendSftpError(session, "SFTP operation failed: " + e.getMessage());
         }
     }
+
 
     private void handleSftpDownload(WebSocketSession session, SshConnection sshConnection, List<String> paths) throws IOException {
         try {
@@ -271,7 +298,9 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
         @SuppressWarnings("unchecked")
         Vector<ChannelSftp.LsEntry> entries = sftp.ls(dirPath);
         for (ChannelSftp.LsEntry entry : entries) {
-            if (entry.getFilename().equals(".") || entry.getFilename().equals("..")) continue;
+            if (entry.getFilename().equals(".") || entry.getFilename().equals("..")) {
+                continue;
+            }
             String fullPath = Paths.get(dirPath, entry.getFilename()).toString().replace("\\", "/");
             String zipEntryName = base + entry.getFilename();
             if (entry.getAttrs().isDir()) {
@@ -296,6 +325,334 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
                 "message", message
         );
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(errorResponse)));
+    }
+
+
+    private void handleMonitorStart(WebSocketSession session, SshConnection sshConnection) {
+        log.info("Starting monitoring for session {}", session.getId());
+        Runnable monitoringRunnable = () -> {
+            try {
+                if (!session.isOpen()) {
+                    handleMonitorStop(session, sshConnection);
+                    return;
+                }
+
+                Map<String, Object> statsPayload = new HashMap<>();
+                statsPayload.put("systemStats", getSystemStats(sshConnection.getJschSession()));
+                statsPayload.put("dockerContainers", getDockerContainers(sshConnection.getJschSession()));
+
+                Map<String, Object> response = Map.of(
+                        "type", "monitor_update",
+                        "payload", statsPayload
+                );
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+            } catch (Exception e) {
+                log.error("Monitoring task failed for session {}: {}", session.getId(), e.getMessage());
+                // (可选) 向前端发送一个错误
+                handleMonitorStop(session, sshConnection); // 出现错误时停止监控
+            }
+        };
+
+        // 每3秒执行一次
+        Future<?> task = monitorScheduler.scheduleAtFixedRate(monitoringRunnable, 0, 3, TimeUnit.SECONDS);
+        sshConnection.setMonitoringTask(task);
+    }
+
+    private void handleMonitorStop(WebSocketSession session, SshConnection sshConnection) {
+        log.info("Stopping monitoring for session {}", session.getId());
+        if (sshConnection != null) {
+            sshConnection.cancelMonitoringTask();
+        }
+    }
+
+    /**
+     * 获取系统统计信息。
+     * 优化点：将多个命令合并为一次SSH执行，大幅减少开销。
+     */
+    private Map<String, Object> getSystemStats(Session jschSession) {
+        Map<String, Object> stats = new ConcurrentHashMap<>();
+        final String delimiter = "---CMD_DELIMITER---";
+        final String initialCommands = String.join(" ; echo '" + delimiter + "'; ",
+                "cat /proc/cpuinfo | grep 'model name' | uniq | sed 's/model name\\s*:\\s*//'",
+                "uptime -p",
+                "grep 'cpu ' /proc/stat",
+                "free -m",
+                "df -h /",
+                "cat /proc/net/dev"
+        );
+
+        String initialResult = executeRemoteCommand(jschSession, initialCommands);
+        String[] initialParts = initialResult.split(delimiter);
+
+        // 为了计算CPU和网络速率，需要间隔一段时间再获取一次
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        final String finalCommands = String.join(" ; echo '" + delimiter + "'; ",
+                "grep 'cpu ' /proc/stat",
+                "cat /proc/net/dev"
+        );
+        String finalResult = executeRemoteCommand(jschSession, finalCommands);
+        String[] finalParts = finalResult.split(delimiter);
+
+        // 安全地获取命令输出
+        String cpuModel = initialParts.length > 0 ? initialParts[0].trim() : "N/A";
+        String uptime = initialParts.length > 1 ? initialParts[1].trim() : "N/A";
+        String initialCpu = initialParts.length > 2 ? initialParts[2] : "";
+        String memUsage = initialParts.length > 3 ? initialParts[3] : "";
+        String diskUsage = initialParts.length > 4 ? initialParts[4] : "";
+        String initialNet = initialParts.length > 5 ? initialParts[5] : "";
+
+        String finalCpu = finalParts.length > 0 ? finalParts[0] : "";
+        String finalNet = finalParts.length > 1 ? finalParts[1] : "";
+
+        stats.put("cpuModel", cpuModel);
+        stats.put("uptime", uptime.replace("up ", "").trim());
+        stats.put("cpuUsage", parseCpuUsage(initialCpu, finalCpu));
+        stats.put("memUsage", parseMemUsage(memUsage));
+        stats.put("diskUsage", parseDiskUsage(diskUsage));
+
+        Map<String, String> net = parseNetUsage(initialNet, finalNet);
+        stats.put("netRx", net.get("rx"));
+        stats.put("netTx", net.get("tx"));
+
+        return stats;
+    }
+
+    /**
+     * 获取Docker容器列表。
+     * 优化点：将两个docker命令合并为一次SSH执行。
+     */
+    private List<Map<String, String>> getDockerContainers(Session jschSession) {
+        String dockerCheck = executeRemoteCommand(jschSession, "command -v docker");
+        if (dockerCheck == null || dockerCheck.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        final String delimiter = "---CMD_DELIMITER---";
+        String command = "docker ps --format '{{.ID}}\\t{{.Names}}\\t{{.Status}}';" +
+                "echo '" + delimiter + "';" +
+                "docker stats --no-stream --format '{{.ID}}\\t{{.CPUPerc}}\\t{{.MemUsage}}'";
+
+        String result = executeRemoteCommand(jschSession, command);
+        String[] parts = result.split(delimiter, 2);
+        String psOutput = parts.length > 0 ? parts[0] : "";
+        String statsOutput = parts.length > 1 ? parts[1] : "";
+
+        Map<String, Map<String, String>> containers = new HashMap<>();
+
+        if (!psOutput.isEmpty()) {
+            for (String line : psOutput.split("\\r?\\n")) {
+                if(line.trim().isEmpty()) {
+                    continue;
+                }
+                String[] psParts = line.split("\t");
+                if (psParts.length >= 3) {
+                    Map<String, String> containerInfo = new HashMap<>();
+                    containerInfo.put("id", psParts[0]);
+                    containerInfo.put("name", psParts[1]);
+                    containerInfo.put("status", psParts[2]);
+                    containers.put(psParts[0], containerInfo);
+                }
+            }
+        }
+
+        if (!statsOutput.isEmpty()) {
+            for (String line : statsOutput.split("\\r?\\n")) {
+                if(line.trim().isEmpty()) {
+                    continue;
+                }
+                String[] statsParts = line.split("\t");
+                if (statsParts.length >= 3 && containers.containsKey(statsParts[0])) {
+                    Map<String, String> containerInfo = containers.get(statsParts[0]);
+                    containerInfo.put("cpuPerc", statsParts[1]);
+                    // 只取使用的内存部分, e.g., "1.2MiB / 1.9GiB" -> "1.2MiB"
+                    containerInfo.put("memPerc", statsParts[2].split(" / ")[0]);
+                }
+            }
+        }
+
+        return new ArrayList<>(containers.values());
+    }
+
+
+
+    /**
+     * 执行远程命令。
+     * 优化点：改进了等待命令完成的循环，并增加了退出状态码的日志记录。
+     */
+    private String executeRemoteCommand(Session session, String command) {
+        ChannelExec channel = null;
+        try (ByteArrayOutputStream responseStream = new ByteArrayOutputStream()) {
+            channel = (ChannelExec) session.openChannel("exec");
+            channel.setCommand(command);
+            channel.setInputStream(null);
+            channel.setOutputStream(responseStream);
+            channel.connect(5000); // 增加连接超时
+
+            while (channel.isConnected()) {
+                try {
+                    Thread.sleep(20); // 短暂等待
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("Command execution interrupted: {}", command);
+                    return "";
+                }
+            }
+
+            int exitStatus = channel.getExitStatus();
+            if (exitStatus != 0) {
+                log.warn("Remote command '{}' exited with status {}", command, exitStatus);
+            }
+
+            return responseStream.toString(java.nio.charset.StandardCharsets.UTF_8).trim();
+        } catch (JSchException | IOException e) {
+            log.warn("Failed to execute remote command '{}': {}", command, e.getMessage());
+            return "";
+        } finally {
+            if (channel != null) {
+                channel.disconnect();
+            }
+        }
+    }
+
+
+    // 解析工具方法
+    /**
+     * CPU 解析
+     * @param start 开始
+     * @param end 结束
+     * @return CPU使用率
+     */
+    private double parseCpuUsage(String start, String end) {
+        if (start == null || end == null || start.isEmpty() || end.isEmpty()) {
+            return 0.0;
+        }
+        try {
+            long[] startMetrics = Arrays.stream(start.trim().split("\\s+")).skip(1).mapToLong(Long::parseLong).toArray();
+            long[] endMetrics = Arrays.stream(end.trim().split("\\s+")).skip(1).mapToLong(Long::parseLong).toArray();
+            long startTotal = Arrays.stream(startMetrics).sum();
+            long endTotal = Arrays.stream(endMetrics).sum();
+            long startIdle = startMetrics[3]; // idle time is the 4th value
+            long endIdle = endMetrics[3];
+            double totalDiff = endTotal - startTotal;
+            double idleDiff = endIdle - startIdle;
+            return totalDiff > 0 ? 100.0 * (totalDiff - idleDiff) / totalDiff : 0.0;
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            log.warn("Failed to parse CPU usage", e);
+            return 0.0;
+        }
+    }
+
+    /**
+     * 内存解析
+     * @param freeOutput free输出
+     * @return 内存使用率
+     */
+    private double parseMemUsage(String freeOutput) {
+        if (freeOutput == null || freeOutput.isEmpty()) {
+            return 0.0;
+        }
+        try {
+            for (String line : freeOutput.split("\\n")) {
+                if (line.startsWith("Mem:")) {
+                    String[] parts = line.trim().split("\\s+");
+                    double total = Double.parseDouble(parts[1]);
+                    double used = Double.parseDouble(parts[2]);
+                    return total > 0 ? (used / total) * 100.0 : 0.0;
+                }
+            }
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            log.warn("Failed to parse memory usage", e);
+            return 0.0;
+        }
+        return 0.0;
+    }
+
+    /**
+     * 解析df命令的输出以获取磁盘使用率。
+     *
+     * @param dfOutput df -h / 命令的原始输出字符串
+     * @return 磁盘使用率百分比，如果解析失败则返回 0.0
+     */
+    private double parseDiskUsage(String dfOutput) {
+        if (dfOutput == null || dfOutput.trim().isEmpty()) {
+            return 0.0;
+        }
+        try {
+            String[] lines = dfOutput.trim().split("\\n");
+            // 遍历所有行，跳过表头
+            for (int i = 1; i < lines.length; i++) {
+                String line = lines[i].trim();
+                // 寻找以根挂载点 " /" 结尾的行
+                if (line.endsWith(" /")) {
+                    String[] parts = line.split("\\s+");
+                    // 在该行的所有部分中寻找包含 '%' 的字段
+                    for (String part : parts) {
+                        if (part.endsWith("%")) {
+                            return Double.parseDouble(part.replace("%", ""));
+                        }
+                    }
+                }
+            }
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            log.warn("Failed to parse disk usage from output: '{}'", dfOutput, e);
+            return 0.0;
+        }
+        // 如果循环结束仍未找到，记录警告信息
+        log.warn("Could not find root filesystem '/' or usage percentage in df output: '{}'", dfOutput);
+        return 0.0;
+    }
+
+    /**
+     * 网络解析
+     * @param start 开始
+     * @param end 结束
+     * @return 网络使用率
+     */
+    private Map<String, String> parseNetUsage(String start, String end) {
+        if (start == null || end == null || start.isEmpty() || end.isEmpty()) {
+            return Map.of("rx", "N/A", "tx", "N/A");
+        }
+        try {
+            long startRx = 0, startTx = 0, endRx = 0, endTx = 0;
+            for (String line : start.split("\\n")) {
+                if (line.contains(":")) {
+                    String[] parts = line.trim().split("\\s+");
+                    if (parts.length > 9) {
+                        startRx += Long.parseLong(parts[1]);
+                        startTx += Long.parseLong(parts[9]);
+                    }
+                }
+            }
+            for (String line : end.split("\\n")) {
+                if (line.contains(":")) {
+                    String[] parts = line.trim().split("\\s+");
+                    if (parts.length > 9) {
+                        endRx += Long.parseLong(parts[1]);
+                        endTx += Long.parseLong(parts[9]);
+                    }
+                }
+            }
+            long rxRate = endRx - startRx;
+            long txRate = endTx - startTx;
+            return Map.of("rx", formatBytes(rxRate) + "/s", "tx", formatBytes(txRate) + "/s");
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            log.warn("Failed to parse network usage", e);
+            return Map.of("rx", "N/A", "tx", "N/A");
+        }
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        String pre = "KMGTPE".charAt(exp-1) + "i";
+        return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
 
     @Override
@@ -323,80 +680,67 @@ public class SshTerminalWebSocketHandler extends TextWebSocketHandler {
         List<byte[]> chunks = uploadChunks.computeIfAbsent(uploadKey, k -> Collections.synchronizedList(new ArrayList<>(Collections.nCopies(totalChunks, null))));
         byte[] decodedChunk = Base64.getDecoder().decode(contentBase64);
         chunks.set(chunkIndex, decodedChunk);
-        // 再次确认所有分片都已收到 (使用 stream().allMatch 更可靠)
-        boolean allReceived = chunks.stream().allMatch(Objects::nonNull);
-        if (allReceived) {
-            // 关键：从缓存中移除，防止重复触发上传
+        if (chunks.stream().allMatch(Objects::nonNull)) {
             List<byte[]> finalChunks = uploadChunks.remove(uploadKey);
-
             if (finalChunks == null) {
                 log.warn("Upload task for {} already processed or removed.", uploadKey);
                 return;
             }
             executorService.submit(() -> {
-                ChannelSftp tempSftpChannel = null;
-                try {
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ChannelSftp sftpChannel = null;
+                try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
                     for (byte[] chunk : finalChunks) {
                         baos.write(chunk);
                     }
                     byte[] fileBytes = baos.toByteArray();
-                    //  获取文件总大小
-                    long fileSize = fileBytes.length;
-                    Session jschSession = sshConnection.getJschSession();
-                    tempSftpChannel = (ChannelSftp) jschSession.openChannel("sftp");
-                    tempSftpChannel.connect(5000);
-                    String fullRemotePath = Paths.get(remotePath, filename).normalize().toString().replace("\\", "/");
+                    sftpChannel = (ChannelSftp) sshConnection.getJschSession().openChannel("sftp");
+                    sftpChannel.connect(5000);
+                    String fullRemotePath = toUnixPath(Paths.get(remotePath, filename));
                     WebSocketSftpProgressMonitor monitor = new WebSocketSftpProgressMonitor(session, objectMapper);
-                    // 手动初始化监视器，并传入正确的文件总大小 ---
-                    // 这将确保 monitor 内部的 totalSize 是正确的，从而使百分比计算正确。
-                    monitor.init(SftpProgressMonitor.PUT, "local-stream", fullRemotePath, fileSize);
-
-                    // 执行上传，JSch会继续使用这个已经初始化好的 monitor
+                    monitor.init(SftpProgressMonitor.PUT, "local-stream", fullRemotePath, fileBytes.length);
                     try (InputStream inputStream = new ByteArrayInputStream(fileBytes)) {
-                        tempSftpChannel.put(inputStream, fullRemotePath, monitor);
+                        sftpChannel.put(inputStream, fullRemotePath, monitor);
                     }
-
-                    Map<String, Object> finalResponse = Map.of(
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
                             "type", "sftp_upload_final_success",
-                            "message", "文件 '" + filename + "' 已成功上传到服务器。",
+                            "message", String.format("文件 '%s' 已成功上传到服务器。", filename),
                             "path", remotePath
-                    );
-                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(finalResponse)));
+                    ))));
                 } catch (Exception e) {
-                    log.error("在独立的SFTP通道中上传文件 {} 时失败", filename, e);
-                    try {
-                        sendSftpError(session, "后台上传文件失败: " + e.getMessage());
-                    } catch (IOException ioException) {
+                    log.error("Upload file {} failed", filename, e);
+                    try { sendSftpError(session, "后台上传文件失败: " + e.getMessage()); }
+                    catch (IOException ioException) {
                         log.error("发送SFTP上传错误消息失败", ioException);
                     }
                 } finally {
-                    if (tempSftpChannel != null && tempSftpChannel.isConnected()) {
-                        tempSftpChannel.disconnect();
+                    if (sftpChannel != null && sftpChannel.isConnected()) {
+                        sftpChannel.disconnect();
                         log.info("临时SFTP上传通道已关闭。");
                     }
                 }
             });
         } else {
-            // 分片未收齐，发送确认消息给前端
-            Map<String, Object> ackResponse = Map.of(
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
                     "type", "sftp_upload_chunk_success",
                     "chunkIndex", chunkIndex,
                     "totalChunks", totalChunks
-            );
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(ackResponse)));
+            ))));
         }
     }
 
+
+    private static String toUnixPath(java.nio.file.Path path) {
+        return path.normalize().toString().replace("\\", "/");
+    }
+
+
     private Map<String, String> parseQuery(String query) {
-        if (query == null) return Collections.emptyMap();
-        Map<String, String> params = new ConcurrentHashMap<>();
-        Arrays.stream(query.split("&")).forEach(param -> {
-            String[] keyValue = param.split("=", 2);
-            if (keyValue.length == 2) {
-                params.put(keyValue[0], keyValue[1]);
-            }
-        });
+        if (query == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> params = new HashMap<>();
+        UriComponentsBuilder.fromUriString("?" + query).build().getQueryParams()
+                .forEach((k, v) -> params.put(k, v.get(0)));
         return params;
     }
 }
