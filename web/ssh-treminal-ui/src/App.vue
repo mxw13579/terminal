@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import Terminal from './components/Terminal.vue';
+import Terminal from './views/Terminal.vue';
 </script>
 
 <style>
