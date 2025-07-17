@@ -10,6 +10,7 @@ import lombok.Getter;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 /**
@@ -36,6 +37,10 @@ public class SshConnection {
      * 监控
      */
     private volatile Future<?> monitoringTask;
+    /**
+     * 新增: 用于缓存最新的监控数据
+     */
+    private volatile Map<String, Object> lastMonitorStats;
 
     public SshConnection(JSch jsch, Session session, ChannelShell channelShell, InputStream inputStream, OutputStream outputStream) {
         this.jsch = jsch;

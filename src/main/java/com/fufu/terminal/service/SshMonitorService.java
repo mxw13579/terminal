@@ -2,6 +2,7 @@ package com.fufu.terminal.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.handler.MessageHandler;
+import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.JSchException;
@@ -36,66 +37,127 @@ public class SshMonitorService {
 
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService monitorScheduler;
+    private final SshCommandService sshCommandService;
+
+    /**
+     * 高频监控间隔（秒）
+     */
+    private static final long HIGH_FREQUENCY_SECONDS = 3;
+    /**
+     * 低频监控间隔（秒）
+     */
+    private static final long LOW_FREQUENCY_SECONDS = 30;
 
 
     public SshMonitorService(ObjectMapper objectMapper,
-                             @Qualifier("monitorScheduler") ScheduledExecutorService monitorScheduler) {
+                             @Qualifier("monitorScheduler") ScheduledExecutorService monitorScheduler,
+                             SshCommandService sshCommandService) {
         this.objectMapper = objectMapper;
         this.monitorScheduler = monitorScheduler;
+        this.sshCommandService = sshCommandService;
+
     }
 
+    /**
+     * 处理前端打开监控面板的请求，切换到“高频”监控模式。
+     */
     public void handleMonitorStart(WebSocketSession session, SshConnection sshConnection) {
-        log.info("正在为会话 {} 启动监控", session.getId());
-        Runnable monitoringRunnable = () -> {
+        log.info("会话 {} 请求启动高频监控。", session.getId());
+
+        // 立即发送最新的缓存数据，实现UI瞬时加载
+        final Map<String, Object> cachedStats = sshConnection.getLastMonitorStats();
+        if (cachedStats != null && !cachedStats.isEmpty()) {
             try {
-                // 检查会话有效性，避免用已经断开的session
-                Session jschSession = sshConnection.getJschSession();
-                if (!session.isOpen() || jschSession == null || !jschSession.isConnected()) {
-                    log.warn("WebSocket或SSH连接已断开，停止监控任务，sessionId={}", session.getId());
-                    handleMonitorStop(sshConnection); // 确保在这种情况下停止
-                    return;
-                }
-                // 此方法现在会抛出InterruptedException
-                Map<String, Object> statsPayload = getSystemAndDockerStats(sshConnection.getJschSession());
-
-                // 如果线程在获取数据后被中断，或者数据为空，则不发送消息
-                if (Thread.currentThread().isInterrupted() || statsPayload.isEmpty()) {
-                    log.info("监控任务被中断或未获取到数据，跳过本次发送。");
-                    return;
-                }
-
                 Map<String, Object> response = Map.of(
                         "type", "monitor_update",
-                        "payload", statsPayload
+                        "payload", cachedStats
                 );
                 session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+            } catch (IOException e) {
+                log.error("发送缓存的监控数据失败。会话ID: {}", session.getId(), e);
+            }
+        }
+
+        // 重新调度为高频模式，并向客户端发送数据
+        rescheduleMonitoring(sshConnection, session, HIGH_FREQUENCY_SECONDS, true);
+    }
+
+
+
+    /**
+     * 处理前端关闭监控面板的请求，切换到“低频”监控模式。
+     * 只更新缓存，不发送数据。
+     */
+    public void handleMonitorStop(SshConnection sshConnection) {
+        if (sshConnection != null) {
+            log.info("请求切换到低频监控模式。");
+            // 重新调度为低频模式，并且不向客户端发送数据
+            // 注意：这里需要一个有效的 session 对象，但由于我们不发送消息，可以传入 null
+            rescheduleMonitoring(sshConnection, null, LOW_FREQUENCY_SECONDS, false);
+        }
+    }
+
+    /**
+     * 核心调度逻辑：取消现有任务，并根据参数安排新任务。
+     *
+     * @param sshConnection SSH连接对象
+     * @param session       WebSocket会话，如果 sendToClient 为 true, 则必须提供
+     * @param periodSeconds 调度周期（秒）
+     * @param sendToClient  是否将结果发送给客户端
+     */
+    private void rescheduleMonitoring(SshConnection sshConnection, WebSocketSession session, long periodSeconds, boolean sendToClient) {
+        // 先取消已存在的任何监控任务
+        sshConnection.cancelMonitoringTask();
+
+        Runnable monitoringRunnable = () -> {
+            Session jschSession = sshConnection.getJschSession();
+            // 如果SSH连接本身已断开，则不执行任何操作
+            if (jschSession == null || !jschSession.isConnected()) {
+                log.warn("SSH连接已断开，自动停止监控任务。");
+                sshConnection.cancelMonitoringTask(); // 确保任务被彻底终止
+                return;
+            }
+
+            try {
+                Map<String, Object> statsPayload = getSystemAndDockerStats(jschSession);
+
+                if (Thread.currentThread().isInterrupted() || statsPayload.isEmpty()) {
+                    return;
+                }
+
+                // **无论如何都更新缓存**
+                sshConnection.setLastMonitorStats(statsPayload);
+
+                // 根据参数决定是否发送到前端
+                if (sendToClient) {
+                    if (session != null && session.isOpen()) {
+                        Map<String, Object> response = Map.of(
+                                "type", "monitor_update",
+                                "payload", statsPayload
+                        );
+                        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+                    } else {
+                        // 如果需要发送数据但 session 无效了，那么就自动切换到低频模式
+                        log.warn("需要发送监控数据但WebSocket会话无效，自动切换到低频模式。");
+                        rescheduleMonitoring(sshConnection, null, LOW_FREQUENCY_SECONDS, false);
+                    }
+                }
             } catch (Exception e) {
-                if (e instanceof InterruptedException || (e.getCause() != null && e.getCause() instanceof InterruptedException)) {
-                    log.info("监控任务被正常中断，将停止执行。会话ID: {}", session.getId());
+                if (e instanceof InterruptedException) {
+                    log.info("监控任务被中断，将停止执行。");
                     Thread.currentThread().interrupt();
                 } else {
-                    // 对于所有其他意料之外的异常
-                    log.error("监控任务执行时发生意外错误，将停止后续调度。会话ID: {}，错误: {}", session.getId(), e.getMessage(), e);
-                    // 停止后续的执行，以避免无限循环的失败。
-                    handleMonitorStop(sshConnection);
+                    log.error("监控任务执行时发生错误，将停止该任务。", e);
+                    // 发生未知错误时，取消任务以防无限失败循环
+                    sshConnection.cancelMonitoringTask();
                 }
             }
         };
 
-        // 停止旧的监控任务，防止重复定时
-        if (sshConnection.getMonitoringTask() != null) {
-            sshConnection.cancelMonitoringTask();
-        }
-        // 每3秒执行一次
-        Future<?> task = monitorScheduler.scheduleAtFixedRate(monitoringRunnable, 0, 3, TimeUnit.SECONDS);
+        // 安排新的定时任务
+        Future<?> task = monitorScheduler.scheduleAtFixedRate(monitoringRunnable, 0, periodSeconds, TimeUnit.SECONDS);
         sshConnection.setMonitoringTask(task);
-    }
-
-    public void handleMonitorStop(SshConnection sshConnection) {
-        if (sshConnection != null) {
-            log.info("正在请求停止监控任务。");
-            sshConnection.cancelMonitoringTask();
-        }
+        log.info("监控任务已重新调度，周期: {}秒，是否推送: {}", periodSeconds, sendToClient);
     }
 
     /**
@@ -119,20 +181,29 @@ public class SshMonitorService {
                 "command -v docker >/dev/null && " + dockerPsCmd + " || echo 'no_docker'",
                 "command -v docker >/dev/null && " + dockerStatsCmd + " || echo 'no_docker'"
         );
-        String initialResult = executeRemoteCommand(jschSession, initialCommands);
+
+        CommandResult initialCmdResult = sshCommandService.executeCommand(jschSession, initialCommands);
+        // 如果命令执行失败，记录日志但继续尝试解析（可能部分数据有效）
+        if (!initialCmdResult.isSuccess()) {
+            log.warn("初始监控命令执行失败, exit={}, cmd={}, stderr={}", initialCmdResult.exitStatus(), initialCommands, initialCmdResult.stderr());
+        }
+
         // 如果第一个命令执行就被中断，则后续无需进行
         if (Thread.currentThread().isInterrupted()) {
             throw new InterruptedException("在初始命令执行期间被中断。");
         }
+        String initialResult = initialCmdResult.stdout();
         String[] initialParts = initialResult.split(delimiter);
 
-        // 为了计算CPU和网络速率，需要间隔一段时间再获取一次
-        // 此处 sleep 现在会正确地响应中断并抛出异常
         Thread.sleep(1000);
 
         String finalCommands = String.join(" ; echo '" + delimiter + "'; ",
                 "grep 'cpu ' /proc/stat", "cat /proc/net/dev");
-        String finalResult = executeRemoteCommand(jschSession, finalCommands);
+        CommandResult finalCmdResult = sshCommandService.executeCommand(jschSession, finalCommands);
+        if (!finalCmdResult.isSuccess()) {
+            log.warn("最终监控命令执行失败, exit={}, cmd={}, stderr={}", finalCmdResult.exitStatus(), finalCommands, finalCmdResult.stderr());
+        }
+        String finalResult = finalCmdResult.stdout();
         String[] finalParts = finalResult.split(delimiter);
 
         // --- 解析逻辑 ... ---
