@@ -26,6 +26,7 @@ export function useTerminal(options = {}) {
     const sftpUploadSpeed = ref('');
     const monitorVisible = ref(false);
     const isMonitoring = ref(false);
+    const isLoading = ref(false);
     const systemStats = ref(null);
     const dockerContainers = ref([]);
 
@@ -123,8 +124,9 @@ export function useTerminal(options = {}) {
             // 监控消息处理
             case 'monitor_update':
                 isMonitoring.value = true;
-                systemStats.value = msg.payload.systemStats;
-                dockerContainers.value = msg.payload.dockerContainers;
+                isLoading.value = false;
+                systemStats.value = msg.payload;
+                dockerContainers.value = msg.payload.dockerContainers || [];
                 break;
         }
     };
@@ -160,15 +162,16 @@ export function useTerminal(options = {}) {
     // 监听 monitorVisible 变化来启动/停止监控
     watch(monitorVisible, (newValue) => {
         if (newValue && !isMonitoring.value) {
+            isLoading.value = true; // 面板打开开始loading
             sendWsMessage({ type: 'monitor_start' });
         } else if (!newValue && isMonitoring.value) {
             sendWsMessage({ type: 'monitor_stop' });
-            isMonitoring.value = false; // 立即更新状态，避免延迟
-            systemStats.value = null; // 关闭时清空数据
+            isMonitoring.value = false;
+            isLoading.value = false; // 关闭loading
+            systemStats.value = null;
             dockerContainers.value = [];
         }
     });
-
     const toggleSftpPanel = () => {
         sftpVisible.value = !sftpVisible.value;
         if (sftpVisible.value && sftpFiles.value.length === 0) {
