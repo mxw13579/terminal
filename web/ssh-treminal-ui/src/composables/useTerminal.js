@@ -62,20 +62,32 @@ export function useTerminal(options = {}) {
             }
         };
         ws.onclose = (event) => {
-            if (term && isConnected.value) {
-                term.write('\r\n🔌 连接已断开。\r\n');
-            }
-            if (event.code !== 1000 && !isConnected.value) {
+            // isConnected 为 false 表示是初始连接就失败了
+            if (!isConnected.value) {
                 onShowModal("连接失败，请检查主机、端口、用户名和密码。");
+            } else { // 否则，是连接成功后意外断开
+                if (term) {
+                    term.write('\r\n🔌 连接意外断开。\r\n');
+                }
+                onShowModal("连接已意外断开。");
             }
-            resetState();
+            resetState(); // 在任何关闭情况下都重置状态
         };
         ws.onerror = () => { if (!isConnected.value) isConnecting.value = false; };
     };
 
     const disconnect = () => {
-        if (ws) ws.close(1000, "User disconnected");
-        else resetState();
+        if (ws) {
+            // 关键：在主动断开时，立即移除 onclose 监听器。
+            // 这可以防止 onclose 中的“意外断开”逻辑被错误地触发。
+            ws.onclose = null;
+            ws.close(1000, "User disconnected");
+        }
+        if (term) {
+            term.write('\r\n🔌 连接已由用户关闭。\r\n');
+        }
+        // 立即重置状态，确保UI即时响应，跳转回连接页面。
+        resetState();
     };
 
     // --- WebSocket Message Handling ---
@@ -145,10 +157,36 @@ export function useTerminal(options = {}) {
             ws = null;
         }
         if (term) term.dispose();
-        term = null;
+        // --- 将所有相关状态重置到其初始值 ---
+        host.value = '';
+        port.value = '';
+        user.value = '';
         isConnected.value = false;
         isConnecting.value = false;
+        term = null;
+
+        // 重置SFTP相关状态
         sftpVisible.value = false;
+        sftpLoading.value = false;
+        sftpError.value = '';
+        currentSftpPath.value = '';
+        sftpFiles.value = [];
+        isSftpActionInProgress.value = false;
+
+        // 重置上传相关状态
+        localUploadProgress.value = 0;
+        remoteUploadProgress.value = 0;
+        uploadStatusText.value = '';
+        uploadSpeed.value = '';
+        sftpUploadSpeed.value = '';
+        sendNextChunk = null;
+
+        // 重置监控相关状态
+        monitorVisible.value = false;
+        isMonitoring.value = false;
+        isLoading.value = false;
+        systemStats.value = null;
+        dockerContainers.value = [];
     };
 
     // --- Public API Methods (to be called from component) ---
@@ -161,17 +199,19 @@ export function useTerminal(options = {}) {
 
     // 监听 monitorVisible 变化来启动/停止监控
     watch(monitorVisible, (newValue) => {
-        if (newValue && !isMonitoring.value) {
-            isLoading.value = true; // 面板打开开始loading
+        if (newValue) { // 当面板打开时
+            if (!systemStats.value) {
+                isLoading.value = true;
+            }
+            // 发送消息，触发后端进入“高频模式”
             sendWsMessage({ type: 'monitor_start' });
-        } else if (!newValue && isMonitoring.value) {
+        } else { // 当面板关闭时
+            // 发送消息，触发后端进入“低频模式”
             sendWsMessage({ type: 'monitor_stop' });
             isMonitoring.value = false;
-            isLoading.value = false; // 关闭loading
-            systemStats.value = null;
-            dockerContainers.value = [];
         }
     });
+
     const toggleSftpPanel = () => {
         sftpVisible.value = !sftpVisible.value;
         if (sftpVisible.value && sftpFiles.value.length === 0) {
