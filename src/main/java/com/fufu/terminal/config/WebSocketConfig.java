@@ -1,12 +1,12 @@
 package com.fufu.terminal.config;
 
 import com.fufu.terminal.handler.SshTerminalWebSocketHandler;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
-import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
@@ -14,10 +14,14 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
  */
 @Configuration
 @EnableWebSocket
+@RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketConfigurer {
+    private final SshTerminalWebSocketHandler sshTerminalWebSocketHandler;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(sshTerminalWebSocketHandler(), "/ws/terminal")
+        // 直接使用注入的handler实例，它已经包含了所有必要的依赖
+        registry.addHandler(sshTerminalWebSocketHandler, "/ws/terminal")
                 // 允许所有来源的连接，方便本地开发，生产环境需要配置具体的来源
                 .setAllowedOrigins("*");
     }
@@ -29,16 +33,12 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-        // 设置文本消息的最大缓冲区大小
-        container.setMaxTextMessageBufferSize(2 * 1024 * 1024); // 2MB
-        // 设置二进制消息的最大缓冲区大小
-        container.setMaxBinaryMessageBufferSize(2 * 1024 * 1024); // 2MB
+        // 设置文本消息的最大缓冲区大小为 2MB
+        container.setMaxTextMessageBufferSize(2 * 1024 * 1024);
+        // 设置二进制消息的最大缓冲区大小为 2MB
+        container.setMaxBinaryMessageBufferSize(2 * 1024 * 1024);
         return container;
     }
 
 
-    @Bean
-    public SshTerminalWebSocketHandler sshTerminalWebSocketHandler() {
-        return new SshTerminalWebSocketHandler();
-    }
 }

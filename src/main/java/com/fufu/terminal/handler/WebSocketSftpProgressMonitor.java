@@ -14,7 +14,7 @@ import java.util.Map;
  * @author lizelin
  */
 @Slf4j
-class WebSocketSftpProgressMonitor implements SftpProgressMonitor {
+public class WebSocketSftpProgressMonitor implements SftpProgressMonitor {
     private final WebSocketSession session;
     private final ObjectMapper objectMapper;
     private long totalSize;
