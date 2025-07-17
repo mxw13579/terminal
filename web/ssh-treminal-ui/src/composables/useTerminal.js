@@ -1,4 +1,4 @@
-import { ref, readonly } from 'vue';
+import { ref, readonly ,watch } from 'vue';
 import { formatSpeed } from '../utils/formatters.js';
 
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
@@ -24,6 +24,10 @@ export function useTerminal(options = {}) {
     const uploadStatusText = ref('');
     const uploadSpeed = ref('');
     const sftpUploadSpeed = ref('');
+    const monitorVisible = ref(false);
+    const isMonitoring = ref(false);
+    const systemStats = ref(null);
+    const dockerContainers = ref([]);
 
     let ws = null;
     let term = null;
@@ -116,6 +120,12 @@ export function useTerminal(options = {}) {
                 onShowModal(`连接时发生错误: ${msg.payload}`);
                 resetState();
                 break;
+            // 监控消息处理
+            case 'monitor_update':
+                isMonitoring.value = true;
+                systemStats.value = msg.payload.systemStats;
+                dockerContainers.value = msg.payload.dockerContainers;
+                break;
         }
     };
 
@@ -141,9 +151,23 @@ export function useTerminal(options = {}) {
 
     // --- Public API Methods (to be called from component) ---
     const setTerminalInstance = (instance) => { term = instance; };
-
     const sendTerminalData = (data) => sendWsMessage({ type: 'data', payload: data });
     const sendTerminalResize = (size) => sendWsMessage({ type: 'resize', ...size });
+    const toggleMonitorPanel = () => {
+        monitorVisible.value = !monitorVisible.value;
+    };
+
+    // 监听 monitorVisible 变化来启动/停止监控
+    watch(monitorVisible, (newValue) => {
+        if (newValue && !isMonitoring.value) {
+            sendWsMessage({ type: 'monitor_start' });
+        } else if (!newValue && isMonitoring.value) {
+            sendWsMessage({ type: 'monitor_stop' });
+            isMonitoring.value = false; // 立即更新状态，避免延迟
+            systemStats.value = null; // 关闭时清空数据
+            dockerContainers.value = [];
+        }
+    });
 
     const toggleSftpPanel = () => {
         sftpVisible.value = !sftpVisible.value;
@@ -242,6 +266,10 @@ export function useTerminal(options = {}) {
         uploadStatusText: readonly(uploadStatusText),
         uploadSpeed: readonly(uploadSpeed),
         sftpUploadSpeed: readonly(sftpUploadSpeed),
+        monitorVisible: readonly(monitorVisible),
+        isMonitoring: readonly(isMonitoring),
+        systemStats: readonly(systemStats),
+        dockerContainers: readonly(dockerContainers),
 
         // Methods
         connect,
@@ -253,5 +281,7 @@ export function useTerminal(options = {}) {
         fetchSftpList,
         downloadSftpFiles,
         uploadSftpFile,
+        toggleMonitorPanel,
+
     };
 }

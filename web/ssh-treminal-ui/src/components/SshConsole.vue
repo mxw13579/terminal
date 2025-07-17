@@ -6,6 +6,9 @@
       <span>{{ connectionInfo.user }}@{{ connectionInfo.host }}:{{ connectionInfo.port }}</span>
     </div>
     <div class="workspace-controls">
+      <button type="button" class="btn btn-icon" :class="{active: monitorVisible}" @click="$emit('toggle-monitor')" title="服务器监控">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      </button>
       <button type="button" class="btn btn-icon" :class="{active: sftpVisible}" @click="$emit('toggle-sftp')" title="SFTP 文件传输">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
       </button>
@@ -17,10 +20,11 @@
   </header>
 
   <main class="workspace-content">
+    <slot name="monitor-aside"></slot>
+
     <div class="terminal-container-main" ref="terminalContainerRef" @transitionend="safeFit">
       <div class="terminal-wrapper" ref="terminalRef"></div>
     </div>
-    <!-- 插槽: 父组件将在这里插入SFTP面板 -->
     <slot name="aside"></slot>
   </main>
 </template>
@@ -34,9 +38,10 @@ import 'xterm/css/xterm.css';
 const props = defineProps({
   connectionInfo: { type: Object, required: true },
   sftpVisible: { type: Boolean, default: false },
+  monitorVisible: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['disconnect', 'toggle-sftp', 'terminal-data', 'terminal-resize', 'terminal-ready', 'terminal-unmount']);
+const emit = defineEmits(['disconnect', 'toggle-sftp',  'toggle-monitor', 'terminal-data', 'terminal-resize', 'terminal-ready', 'terminal-unmount']);
 
 const terminalRef = ref(null);
 const terminalContainerRef = ref(null);
@@ -60,9 +65,8 @@ onBeforeUnmount(() => {
 });
 
 // 当SFTP面板显/隐时，容器尺寸会变化，需要重新fit
-watch(() => props.sftpVisible, () => {
+watch(() => [props.sftpVisible, props.monitorVisible], () => {
   // 等待CSS过渡动画结束后再fit，效果更平滑
-  // @transitionend事件处理也能达到目的
   setTimeout(() => safeFit(), 350);
 });
 

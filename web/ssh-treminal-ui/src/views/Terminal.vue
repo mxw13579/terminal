@@ -15,13 +15,25 @@
           key="workspace-view"
           :connection-info="{ user, host, port }"
           :sftp-visible="sftpVisible"
+          :monitor-visible="monitorVisible"
           @disconnect="disconnect"
           @toggle-sftp="toggleSftpPanel"
+          @toggle-monitor="toggleMonitorPanel"
           @terminal-data="sendTerminalData"
           @terminal-resize="sendTerminalResize"
           @terminal-ready="setTerminalInstance"
           @terminal-unmount="setTerminalInstance(null)"
       >
+        <!-- 监控面板 -->
+        <template #monitor-aside>
+          <MonitorPanel
+              :is-visible="monitorVisible"
+              :is-loading="isConnecting || (monitorVisible && !systemStats)"
+              :stats="systemStats"
+              :docker-containers="dockerContainers"
+          />
+        </template>
+        <!-- SFTP -->
         <template #aside>
           <SftpPanel
               :is-visible="sftpVisible"
@@ -53,6 +65,7 @@ import ConnectionForm from '@/components/ConnectionForm.vue';
 import SshConsole from '@/components/SshConsole.vue';
 import SftpPanel from '@/components/SftpPanel.vue';
 import Modal from '@/components/Modal.vue';
+import MonitorPanel from "@/components/MonitorPanel.vue";
 
 // Modal state remains in the component as it's a pure UI concern
 const modal = ref({ visible: false, title: '', message: '' });
@@ -66,8 +79,10 @@ const {
   sftpVisible, sftpLoading, sftpError, currentSftpPath, sftpFiles,
   isSftpActionInProgress, localUploadProgress, remoteUploadProgress,
   uploadStatusText, uploadSpeed, sftpUploadSpeed,
+  monitorVisible, isMonitoring, systemStats, dockerContainers,
   connect, disconnect, setTerminalInstance,
   sendTerminalData, sendTerminalResize, toggleSftpPanel,
+  toggleMonitorPanel,
   fetchSftpList, downloadSftpFiles, uploadSftpFile
 } = useTerminal({
   onShowModal: showModal, // Pass the modal function to the composable
