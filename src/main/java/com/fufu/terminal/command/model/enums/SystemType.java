@@ -23,14 +23,19 @@ public enum SystemType {
             return UNKNOWN;
         }
         return switch (id.toLowerCase()) {
-            case "ubuntu" -> UBUNTU;
-            case "centos", "rhel", "redhat" -> REDHAT;
+            // Mint 基于 Ubuntu
+            case "ubuntu", "linuxmint" -> UBUNTU;
+            // Oracle Linux
+            case "centos", "rocky", "rocky-linux", "amazon", "amazon-linux", "oracle", "ol" ->
+                // 归为 RHEL 体系
+                    REDHAT;
+            case "rhel", "redhat", "fedora" -> REDHAT;
             case "debian" -> DEBIAN;
             case "alpine" -> ALPINE;
-            case "suse" -> SUSE;
-            case "fedora" -> FEDORA;
-            case "arch" -> ARCH;
+            case "suse", "opensuse" -> SUSE;
+            case "arch", "manjaro" -> ARCH;
             default -> UNKNOWN;
         };
     }
 }
+

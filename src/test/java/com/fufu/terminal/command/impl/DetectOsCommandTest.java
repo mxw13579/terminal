@@ -160,7 +160,7 @@ class DetectOsCommandTest {
         String host = "156.233.233.40";
         int port = 22;
         String user = "root";
-        String password = "cnimJARX9774";
+        String password = "jcomUTVN7899";
 
         // 检查参数
         assertNotNull(host, "请设置SSH_HOST环境变量");
