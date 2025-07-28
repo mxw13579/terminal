@@ -2,9 +2,11 @@ package com.fufu.terminal.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fufu.terminal.command.CommandContext;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SftpService;
 import com.fufu.terminal.service.SshMonitorService;
+import com.fufu.terminal.service.TaskExecutionService;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
@@ -48,6 +50,7 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
     private final ExecutorService executorService;
     private final SftpService sftpService;
     private final SshMonitorService sshMonitorService;
+    private final TaskExecutionService taskExecutionService;
 
 
     // 使用Map实现策略模式，用于消息分发
@@ -55,9 +58,11 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
 
     public SshTerminalWebSocketHandler(SftpService sftpService,
                                        SshMonitorService sshMonitorService,
+                                       TaskExecutionService taskExecutionService,
                                        @Qualifier("taskExecutor") ExecutorService executorService) {
         this.sftpService = sftpService;
         this.sshMonitorService = sshMonitorService;
+        this.taskExecutionService = taskExecutionService;
         this.executorService = executorService;
     }
 
@@ -115,6 +120,13 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         messageHandlers.put("monitor_stop", (session, connection, payload) ->
                 sshMonitorService.handleMonitorStop(connection)
         );
+
+        // 任务: 执行一个后台任务，例如 "一键安装"
+        messageHandlers.put("execute_task", (session, connection, payload) -> {
+            String taskName = payload.get("taskName").asText();
+            CommandContext context = new CommandContext(connection, session);
+            taskExecutionService.executeTask(taskName, context);
+        });
     }
 
     @Override
