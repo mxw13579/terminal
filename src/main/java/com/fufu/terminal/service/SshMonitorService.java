@@ -25,7 +25,15 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * SSH远程主机监控的服务 (Refactored)
+ * SSH远程主机监控服务。
+ * <p>
+ * 负责通过SSH定时采集主机运行状态（如CPU、内存、磁盘、网络、Docker等），
+ * 并支持高频/低频推送到WebSocket客户端。
+ * </p>
+ * <p>
+ * 注意：本服务依赖于SshConnection的正确生命周期管理。
+ * </p>
+ *
  * @author lizelin
  */
 @Slf4j
@@ -35,17 +43,31 @@ public class SshMonitorService {
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService monitorScheduler;
 
+    /** 高频监控周期（秒） */
     private static final long HIGH_FREQUENCY_SECONDS = 3;
+    /** 低频监控周期（秒） */
     private static final long LOW_FREQUENCY_SECONDS = 30;
 
+    /**
+     * 构造方法。
+     *
+     * @param objectMapper      Jackson对象映射器
+     * @param monitorScheduler  Spring注入的定时任务线程池
+     */
     public SshMonitorService(ObjectMapper objectMapper, @Qualifier("monitorScheduler") ScheduledExecutorService monitorScheduler) {
         this.objectMapper = objectMapper;
         this.monitorScheduler = monitorScheduler;
     }
 
+    /**
+     * 启动高频监控，并将最新监控数据推送到WebSocket客户端。
+     *
+     * @param session        WebSocket会话
+     * @param sshConnection  SSH连接对象
+     */
     public void handleMonitorStart(WebSocketSession session, SshConnection sshConnection) {
         log.info("Session {} requested to start high-frequency monitoring.", session.getId());
-        
+
         if (sshConnection.getOsInfo() == null) {
             log.warn("Monitoring started before OS detection was complete for session {}. Monitoring may not be accurate.", session.getId());
         }
@@ -61,6 +83,11 @@ public class SshMonitorService {
         rescheduleMonitoring(sshConnection, session, HIGH_FREQUENCY_SECONDS, true);
     }
 
+    /**
+     * 切换为低频监控（不主动推送到WebSocket客户端）。
+     *
+     * @param sshConnection SSH连接对象
+     */
     public void handleMonitorStop(SshConnection sshConnection) {
         if (sshConnection != null) {
             log.info("Request to switch to low-frequency monitoring.");
@@ -68,10 +95,19 @@ public class SshMonitorService {
         }
     }
 
+    /**
+     * 重新调度监控任务（高频/低频），并根据需要推送到客户端。
+     *
+     * @param sshConnection SSH连接对象
+     * @param session       WebSocket会话（可为null）
+     * @param periodSeconds 执行周期（秒）
+     * @param sendToClient  是否推送到客户端
+     */
     private void rescheduleMonitoring(SshConnection sshConnection, WebSocketSession session, long periodSeconds, boolean sendToClient) {
         sshConnection.cancelMonitoringTask();
 
         Runnable monitoringRunnable = () -> {
+            // 检查SSH连接状态
             if (sshConnection.getJschSession() == null || !sshConnection.getJschSession().isConnected()) {
                 log.warn("SSH connection is disconnected, stopping monitoring task.");
                 sshConnection.cancelMonitoringTask();
@@ -91,6 +127,7 @@ public class SshMonitorService {
                         sendStats(session, statsPayload);
                     } else {
                         log.warn("WebSocket session is invalid while trying to send stats, switching to low-frequency mode.");
+                        // WebSocket会话失效时，自动切换为低频监控，避免线程空转
                         rescheduleMonitoring(sshConnection, null, LOW_FREQUENCY_SECONDS, false);
                     }
                 }
@@ -110,6 +147,13 @@ public class SshMonitorService {
         log.info("Monitoring task rescheduled. Period: {}s, Push to client: {}", periodSeconds, sendToClient);
     }
 
+    /**
+     * 拉取并解析主机实时监控数据。
+     *
+     * @param sshConnection SSH连接对象
+     * @return 监控数据Map
+     * @throws Exception SSH命令执行异常、线程中断等
+     */
     private Map<String, Object> fetchAndParseStats(SshConnection sshConnection) throws Exception {
         OsInfo osInfo = sshConnection.getOsInfo();
         if (osInfo == null || osInfo.getSystemType() == SystemType.UNKNOWN) {
@@ -117,9 +161,10 @@ public class SshMonitorService {
             return Collections.emptyMap();
         }
 
+        // 目前仅支持常见Linux发行版
         return switch (osInfo.getSystemType()) {
-            case DEBIAN, REDHAT, SUSE, ARCH, LINUX -> fetchAndParseLinuxStats(sshConnection);
-            // Add cases for other OS types like MACOS in the future
+            case DEBIAN, REDHAT, SUSE, ARCH -> fetchAndParseLinuxStats(sshConnection);
+            // 未来可扩展MACOS等系统
             default -> {
                 log.warn("Monitoring is not supported for OS type: {}", osInfo.getSystemType());
                 yield Collections.emptyMap();
@@ -127,12 +172,20 @@ public class SshMonitorService {
         };
     }
 
+    /**
+     * 拉取并解析Linux主机的监控数据。
+     *
+     * @param sshConnection SSH连接对象
+     * @return 监控数据Map
+     * @throws Exception SSH命令执行异常、线程中断等
+     */
     private Map<String, Object> fetchAndParseLinuxStats(SshConnection sshConnection) throws Exception {
         Map<String, Object> stats = new ConcurrentHashMap<>();
         final String delimiter = "---CMD_DELIMITER---";
         final String dockerPsCmd = "docker ps --format '{{.ID}}\\t{{.Names}}\\t{{.Status}}'";
         final String dockerStatsCmd = "docker stats --no-stream --format '{{.ID}}\\t{{.CPUPerc}}\\t{{.MemUsage}}'";
 
+        // 拼接批量命令，减少SSH往返
         String initialCommands = String.join(" ; echo '" + delimiter + "'; ",
                 "cat /proc/cpuinfo | grep 'model name' | uniq | sed 's/model name\\s*:\\s*//'",
                 "uptime -p", "grep 'cpu ' /proc/stat", "free -m", "df -P /", "cat /proc/net/dev",
@@ -149,6 +202,7 @@ public class SshMonitorService {
 
         String[] initialParts = initialCmdResult.getStdout().split(delimiter);
 
+        // 采集网络、CPU二次快照，用于速率计算
         Thread.sleep(1000);
 
         String finalCommands = String.join(" ; echo '" + delimiter + "'; ", "grep 'cpu ' /proc/stat", "cat /proc/net/dev");
@@ -156,6 +210,8 @@ public class SshMonitorService {
         if (!finalCmdResult.isSuccess()) {
             log.warn("Final monitoring command failed, exit={}, stderr={}", finalCmdResult.getExitStatus(), finalCmdResult.getStderr());
         }
+
+        String[] finalParts = finalCmdResult.getStdout().split(delimiter);
 
         stats.put("cpuModel", getPart(initialParts, 0, "N/A"));
         stats.put("uptime", getPart(initialParts, 1, "N/A").replace("up ", "").trim());
@@ -170,17 +226,39 @@ public class SshMonitorService {
         return stats;
     }
 
+    /**
+     * 向WebSocket客户端推送监控数据。
+     *
+     * @param session WebSocket会话
+     * @param stats   监控数据
+     * @throws IOException 序列化或发送异常
+     */
     private void sendStats(WebSocketSession session, Map<String, Object> stats) throws IOException {
         Map<String, Object> response = Map.of("type", "monitor_update", "payload", stats);
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
     }
 
-    // --- All parsing helper methods below this line are kept as they were ---
+    // -------------------- 解析辅助方法 --------------------
 
+    /**
+     * 获取命令分割后的指定部分
+     *
+     * @param parts        分割数组
+     * @param index        下标
+     * @param defaultValue 默认值
+     * @return 指定部分或默认值
+     */
     private String getPart(String[] parts, int index, String defaultValue) {
         return (parts != null && parts.length > index) ? parts[index].trim() : defaultValue;
     }
 
+    /**
+     * 解析Docker容器列表及资源占用信息。
+     *
+     * @param psOutput    docker ps 命令输出
+     * @param statsOutput docker stats 命令输出
+     * @return 容器信息列表
+     */
     private List<Map<String, String>> parseDockerContainers(String psOutput, String statsOutput) {
         if ("no_docker".equals(psOutput) || psOutput.trim().isEmpty()) return Collections.emptyList();
         Map<String, Map<String, String>> containers = new HashMap<>();
@@ -207,6 +285,13 @@ public class SshMonitorService {
         return new ArrayList<>(containers.values());
     }
 
+    /**
+     * 计算CPU使用率百分比。
+     *
+     * @param start 起始/proc/stat内容
+     * @param end   结束/proc/stat内容
+     * @return 使用率百分比
+     */
     private double parseCpuUsage(String start, String end) {
         if (start.isEmpty() || end.isEmpty()) return 0.0;
         try {
@@ -225,6 +310,12 @@ public class SshMonitorService {
         }
     }
 
+    /**
+     * 解析内存使用率。
+     *
+     * @param freeOutput free -m命令输出
+     * @return 使用率百分比
+     */
     private double parseMemUsage(String freeOutput) {
         if (freeOutput.isEmpty()) return 0.0;
         try {
@@ -239,6 +330,12 @@ public class SshMonitorService {
         }
     }
 
+    /**
+     * 解析根分区磁盘使用率。
+     *
+     * @param dfOutput df -P / 命令输出
+     * @return 使用率百分比
+     */
     private double parseDiskUsage(String dfOutput) {
         if (dfOutput == null || dfOutput.isBlank()) return 0.0;
         try {
@@ -252,6 +349,13 @@ public class SshMonitorService {
         }
     }
 
+    /**
+     * 解析网络流量速率。
+     *
+     * @param start /proc/net/dev初始内容
+     * @param end   /proc/net/dev结束内容
+     * @return rx、tx速率字符串（带单位）
+     */
     private Map<String, String> parseNetUsage(String start, String end) {
         if (start.isEmpty() || end.isEmpty()) return Map.of("rx", "N/A", "tx", "N/A");
         try {
@@ -283,6 +387,12 @@ public class SshMonitorService {
         }
     }
 
+    /**
+     * 字节数格式化为带单位字符串。
+     *
+     * @param bytes 字节数
+     * @return 格式化字符串
+     */
     private String formatBytes(long bytes) {
         if (bytes < 1024) return bytes + " B";
         int exp = (int) (Math.log(bytes) / Math.log(1024));
