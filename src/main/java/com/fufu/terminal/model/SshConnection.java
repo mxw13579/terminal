@@ -1,5 +1,6 @@
 package com.fufu.terminal.model;
 
+import com.fufu.terminal.command.model.OsInfo;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
@@ -41,6 +42,10 @@ public class SshConnection {
      * 新增: 用于缓存最新的监控数据
      */
     private volatile Map<String, Object> lastMonitorStats;
+    /**
+     * 新增: 缓存检测到的操作系统信息
+     */
+    private volatile OsInfo osInfo;
 
     public SshConnection(JSch jsch, Session session, ChannelShell channelShell, InputStream inputStream, OutputStream outputStream) {
         this.jsch = jsch;

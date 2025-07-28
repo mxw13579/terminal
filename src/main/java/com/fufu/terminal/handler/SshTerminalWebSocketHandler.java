@@ -158,6 +158,9 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
             // 启动一个线程来读取SSH Shell的输出并转发到WebSocket客户端
             startShellOutputForwarder(session, sshConnection);
 
+            // 在后台自动执行初始化任务，例如检测操作系统
+            taskExecutionService.executeTask("initialize_environment", new CommandContext(sshConnection, session));
+
         } catch (Exception e) {
             log.error("Error establishing SSH connection for session {}: ", session.getId(), e);
             sendJsonError(session, "Connection failed: " + e.getMessage());

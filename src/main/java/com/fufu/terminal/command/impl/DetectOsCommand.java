@@ -63,8 +63,9 @@ public class DetectOsCommand implements Command {
         ensureDefaultValues(osInfo);
         osInfo.setSystemType(SystemType.fromId(osInfo.getId()));
 
-        // 4. 设置到上下文属性
+        // 4. 设置到上下文属性和 SSH 连接缓存
         context.setProperty(OS_INFO_KEY, osInfo);
+        context.getSshConnection().setOsInfo(osInfo);
     }
 
     // -------- 工具方法 --------
