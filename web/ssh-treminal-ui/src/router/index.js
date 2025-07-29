@@ -147,6 +147,12 @@ router.beforeEach((to, from, next) => {
   
   const user = getCurrentUser()
   
+  // 特殊处理：防止访问 /user 路径
+  if (to.path === '/user' || to.path.startsWith('/user/')) {
+    next('/')
+    return
+  }
+  
   // 防止访问不存在的路径
   const isValidRoute = routes.some(route => {
     // 检查顶级路径
