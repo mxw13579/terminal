@@ -1,6 +1,7 @@
 package com.fufu.terminal.command;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -13,6 +14,7 @@ import java.util.Map;
 /**
  * 责任链，用于组织和执行一系列命令
  */
+@Data
 @Slf4j
 public class CommandChain {
 
