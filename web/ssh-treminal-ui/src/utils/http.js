@@ -13,6 +13,15 @@ const http = axios.create({
 // 请求拦截器
 http.interceptors.request.use(
   config => {
+    // 添加认证token
+    const user = localStorage.getItem('user')
+    if (user) {
+      const userData = JSON.parse(user)
+      if (userData.token) {
+        config.headers.Authorization = `Bearer ${userData.token}`
+      }
+    }
+    
     console.log('发送请求:', config.method?.toUpperCase(), config.url)
     return config
   },
@@ -38,10 +47,16 @@ http.interceptors.response.use(
           message = '请求参数错误'
           break
         case 401:
-          message = '未授权访问'
+          message = '登录已过期，请重新登录'
+          // 清除本地存储的用户信息
+          localStorage.removeItem('user')
+          // 跳转到登录页
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
           break
         case 403:
-          message = '禁止访问'
+          message = '权限不足'
           break
         case 404:
           message = '接口不存在'
@@ -53,7 +68,7 @@ http.interceptors.response.use(
           message = `请求失败 (${error.response.status})`
       }
     } else if (error.request) {
-      message = '网络连接失败'
+      message = '网络连接失败，请检查后端服务是否启动'
     }
     
     ElMessage.error(message)
@@ -62,3 +77,4 @@ http.interceptors.response.use(
 )
 
 export default http
+export { http }

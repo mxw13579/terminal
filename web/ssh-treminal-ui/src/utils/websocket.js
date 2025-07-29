@@ -126,4 +126,33 @@ class WebSocketClient {
 // 创建单例实例
 const webSocketClient = new WebSocketClient()
 
+// 便捷连接函数
+export const connectWebSocket = (endpoint = '/ws/stomp') => {
+  const client = new WebSocketClient()
+  
+  // 返回一个包装对象，提供简化的API
+  return {
+    connect: () => client.connect(),
+    disconnect: () => client.disconnect(),
+    subscribe: (destination, callback) => client.subscribe(destination, callback),
+    unsubscribe: (destination) => client.unsubscribe(destination),
+    send: (destination, body) => client.send(destination, body),
+    isConnected: () => client.isConnected(),
+    
+    // 设置连接回调
+    onConnect: null,
+    onError: null,
+    onDisconnect: null,
+    
+    // 自动连接并设置回调
+    init() {
+      this.connect().then(() => {
+        if (this.onConnect) this.onConnect()
+      }).catch((error) => {
+        if (this.onError) this.onError(error)
+      })
+    }
+  }
+}
+
 export default webSocketClient
