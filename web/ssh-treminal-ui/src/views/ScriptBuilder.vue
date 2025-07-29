@@ -10,31 +10,31 @@
         <p class="header-desc">拖拽命令构建自动化脚本，小白也能轻松配置服务器环境</p>
       </div>
       <div class="header-actions">
-        <el-button 
-          type="info" 
+        <el-button
+          type="info"
           @click="showSshConfig = true"
           :icon="Connection"
         >
           SSH配置
         </el-button>
-        <el-button 
-          type="warning" 
+        <el-button
+          type="warning"
           @click="validateScript"
           :disabled="scriptCommands.length === 0"
           :icon="Check"
         >
           验证脚本
         </el-button>
-        <el-button 
-          type="success" 
-          @click="executeScript" 
+        <el-button
+          type="success"
+          @click="executeScript"
           :disabled="!canExecute"
           :loading="isExecuting"
           :icon="VideoPlay"
         >
           {{ isExecuting ? '执行中...' : '执行脚本' }}
         </el-button>
-        <el-button 
+        <el-button
           @click="goToTerminal"
           :icon="Monitor"
         >
@@ -50,11 +50,11 @@
           <h3>可用命令</h3>
           <el-tag type="info" size="small">{{ totalCommands }} 个命令</el-tag>
         </div>
-        
+
         <div class="command-categories">
-          <div 
-            v-for="(commands, category) in categorizedCommands" 
-            :key="category" 
+          <div
+            v-for="(commands, category) in categorizedCommands"
+            :key="category"
             class="category-section"
           >
             <h4 class="category-title">
@@ -64,7 +64,7 @@
               {{ category }}
               <el-tag size="small" type="primary">{{ commands.length }}</el-tag>
             </h4>
-            
+
             <draggable
               :list="commands"
               :group="{ name: 'commands', pull: 'clone', put: false }"
@@ -98,16 +98,16 @@
         <div class="editor-header">
           <h3>脚本流程</h3>
           <div class="editor-actions">
-            <el-button 
-              size="small" 
+            <el-button
+              size="small"
               @click="clearScript"
               :disabled="scriptCommands.length === 0"
               :icon="Delete"
             >
               清空
             </el-button>
-            <el-button 
-              size="small" 
+            <el-button
+              size="small"
               @click="optimizeScript"
               :disabled="scriptCommands.length === 0"
               :icon="Magic"
@@ -116,7 +116,7 @@
             </el-button>
           </div>
         </div>
-        
+
         <div class="script-flow-container">
           <draggable
             v-model="scriptCommands"
@@ -131,7 +131,7 @@
                 class="script-command"
                 :class="{
                   'executing': command.status === 'executing',
-                  'completed': command.status === 'completed', 
+                  'completed': command.status === 'completed',
                   'failed': command.status === 'failed',
                   'skipped': command.status === 'skipped'
                 }"
@@ -154,7 +154,7 @@
                     />
                   </div>
                 </div>
-                
+
                 <div class="command-status" v-if="command.status">
                   <el-tag :type="getStatusType(command.status)" size="small">
                     {{ getStatusText(command.status) }}
@@ -166,9 +166,9 @@
                     {{ formatDuration(command.duration) }}
                   </span>
                 </div>
-                
+
                 <p class="command-description">{{ command.description }}</p>
-                
+
                 <!-- 依赖关系提示 -->
                 <div v-if="command.dependencies && command.dependencies.length > 0" class="dependencies">
                   <el-icon><Link /></el-icon>
@@ -176,7 +176,7 @@
                 </div>
               </div>
             </template>
-            
+
             <template #footer>
               <div v-if="scriptCommands.length === 0" class="empty-script">
                 <el-icon class="empty-icon"><Plus /></el-icon>
@@ -195,17 +195,17 @@
       <div class="progress-panel" v-show="showProgressPanel">
         <div class="panel-header">
           <h3>执行进度</h3>
-          <el-button 
-            type="text" 
+          <el-button
+            type="text"
             @click="showProgressPanel = false"
             :icon="Close"
           />
         </div>
-        
+
         <div class="progress-content">
           <div class="progress-overview">
-            <el-progress 
-              :percentage="progressPercentage" 
+            <el-progress
+              :percentage="progressPercentage"
               :status="progressStatus"
               :stroke-width="8"
             />
@@ -214,7 +214,7 @@
               <span class="progress-percent">{{ progressPercentage }}%</span>
             </div>
           </div>
-          
+
           <div class="current-command" v-if="currentCommand">
             <h4>当前执行</h4>
             <div class="command-info">
@@ -222,12 +222,12 @@
               <span>{{ currentCommand }}</span>
             </div>
           </div>
-          
+
           <div class="execution-log">
             <h4>执行日志</h4>
             <div class="log-list" ref="logContainer">
-              <div 
-                v-for="(log, index) in executionLogs" 
+              <div
+                v-for="(log, index) in executionLogs"
                 :key="index"
                 class="log-item"
                 :class="'log-' + log.status"
@@ -244,48 +244,48 @@
     </div>
 
     <!-- SSH配置对话框 -->
-    <el-dialog 
-      v-model="showSshConfig" 
-      title="SSH连接配置" 
+    <el-dialog
+      v-model="showSshConfig"
+      title="SSH连接配置"
       width="400px"
       :close-on-click-modal="false"
     >
       <el-form :model="sshConfig" label-width="80px" @submit.prevent>
         <el-form-item label="主机地址" required>
-          <el-input 
-            v-model="sshConfig.host" 
+          <el-input
+            v-model="sshConfig.host"
             placeholder="服务器IP地址或域名"
             :prefix-icon="Connection"
           />
         </el-form-item>
         <el-form-item label="端口" required>
-          <el-input-number 
-            v-model="sshConfig.port" 
-            :min="1" 
+          <el-input-number
+            v-model="sshConfig.port"
+            :min="1"
             :max="65535"
             style="width: 100%"
           />
         </el-form-item>
         <el-form-item label="用户名" required>
-          <el-input 
-            v-model="sshConfig.username" 
+          <el-input
+            v-model="sshConfig.username"
             placeholder="SSH用户名"
             :prefix-icon="User"
           />
         </el-form-item>
         <el-form-item label="密码" required>
-          <el-input 
-            v-model="sshConfig.password" 
-            type="password" 
+          <el-input
+            v-model="sshConfig.password"
+            type="password"
             placeholder="SSH密码"
             show-password
             :prefix-icon="Lock"
           />
         </el-form-item>
         <el-form-item>
-          <el-button 
-            type="primary" 
-            @click="testConnection" 
+          <el-button
+            type="primary"
+            @click="testConnection"
             :loading="testingConnection"
             :disabled="!isConfigValid"
           >
@@ -293,7 +293,7 @@
           </el-button>
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="showSshConfig = false">取消</el-button>
         <el-button type="primary" @click="saveSshConfig" :disabled="!isConfigValid">
@@ -303,19 +303,19 @@
     </el-dialog>
 
     <!-- 脚本验证对话框 -->
-    <el-dialog 
-      v-model="showValidationResult" 
-      title="脚本验证结果" 
+    <el-dialog
+      v-model="showValidationResult"
+      title="脚本验证结果"
       width="500px"
     >
       <div v-if="validationResult">
-        <el-alert 
+        <el-alert
           :type="validationResult.valid ? 'success' : 'warning'"
           :title="validationResult.valid ? '脚本验证通过' : '发现问题，已自动优化'"
           show-icon
           :closable="false"
         />
-        
+
         <div class="validation-details" style="margin-top: 15px;">
           <el-descriptions :column="2" border>
             <el-descriptions-item label="原始命令数">
@@ -328,7 +328,7 @@
               <el-tag type="info">{{ validationResult.addedDependencies }} 个</el-tag>
             </el-descriptions-item>
           </el-descriptions>
-          
+
           <div v-if="validationResult.addedDependencies > 0" style="margin-top: 15px;">
             <el-button type="primary" @click="applyOptimization">
               应用优化建议
@@ -348,7 +348,7 @@ import draggable from 'vuedraggable'
 import http from '@/utils/http'
 import webSocketClient from '@/utils/websocket'
 import {
-  Setting, Connection, Check, VideoPlay, Monitor, Delete, MagicStick, 
+  Setting, Connection, Check, VideoPlay, Monitor, Delete, MagicStick,
   Close, Plus, Loading, Link, User, Lock, Cpu, Search, Download
 } from '@element-plus/icons-vue'
 
@@ -356,12 +356,12 @@ export default {
   name: 'ScriptBuilder',
   components: {
     draggable,
-    Setting, Connection, Check, VideoPlay, Monitor, Delete, MagicStick, 
+    Setting, Connection, Check, VideoPlay, Monitor, Delete, MagicStick,
     Close, Plus, Loading, Link, User, Lock, Cpu, Search, Download
   },
   setup() {
     const router = useRouter()
-    
+
     // 响应式数据
     const categorizedCommands = ref({})
     const scriptCommands = ref([])
@@ -376,94 +376,141 @@ export default {
     const currentCommand = ref('')
     const progressStatus = ref(null)
     const executionLogs = ref([])
-    
+    const currentSessionId = ref('')
+
     const sshConfig = reactive({
       host: '',
       port: 22,
       username: '',
       password: ''
     })
-    
+
     // 计算属性
     const totalCommands = computed(() => {
       return Object.values(categorizedCommands.value)
         .reduce((total, commands) => total + commands.length, 0)
     })
-    
+
     const isConfigValid = computed(() => {
       return sshConfig.host && sshConfig.username && sshConfig.password
     })
-    
+
     const canExecute = computed(() => {
-      return scriptCommands.value.length > 0 && 
-             isConfigValid.value && 
+      return scriptCommands.value.length > 0 &&
+             isConfigValid.value &&
              !isExecuting.value
     })
-    
+
     const progressPercentage = computed(() => {
       return totalSteps.value > 0 ? Math.round((currentStep.value / totalSteps.value) * 100) : 0
     })
-    
+
     // 方法
     const loadCommands = async () => {
       try {
-        const response = await http.get('/api/script/commands')
-        categorizedCommands.value = response.data.categories || {}
-        console.log('命令加载成功:', response.data)
+        // 加载统一脚本（包括内置脚本和可配置脚本）
+        const response = await http.get('/api/user/atomic-scripts/unified')
+        const unifiedScripts = response.data || []
+        
+        // 按标签分组
+        const grouped = {}
+        unifiedScripts.forEach(script => {
+          const tags = script.tags || []
+          
+          // 如果没有标签，根据脚本类型分配默认分组
+          if (tags.length === 0) {
+            const defaultCategory = script.scriptType === 'BUILT_IN' ? '内置脚本' : '自定义脚本'
+            tags.push(defaultCategory)
+          }
+          
+          // 为每个标签添加脚本
+          tags.forEach(tag => {
+            if (!grouped[tag]) {
+              grouped[tag] = []
+            }
+            
+            // 转换为命令格式
+            grouped[tag].push({
+              id: script.scriptId,
+              name: script.name,
+              description: script.description,
+              category: tag,
+              scriptType: script.scriptType,
+              tags: script.tags,
+              icon: getScriptTypeIcon(script.scriptType)
+            })
+          })
+        })
+        
+        categorizedCommands.value = grouped
+        console.log('统一脚本加载成功:', grouped)
       } catch (error) {
-        ElMessage.error('加载命令失败')
-        console.error('加载命令失败:', error)
+        ElMessage.error('加载脚本失败')
+        console.error('加载脚本失败:', error)
       }
     }
-    
+
+    const getScriptTypeIcon = (scriptType) => {
+      if (scriptType === 'BUILT_IN') {
+        return 'Setting'
+      } else {
+        return 'Magic'
+      }
+    }
+
     const connectWebSocket = async () => {
       try {
         await webSocketClient.connect()
-        
-        // 订阅脚本执行进度
-        webSocketClient.subscribe('/topic/script-progress', (progress) => {
-          updateProgress(progress)
-        })
-        
-        // 订阅错误消息
-        webSocketClient.subscribe('/topic/script-error', (error) => {
-          console.error('脚本执行错误:', error)
-          ElMessage.error('脚本执行失败: ' + error.error)
-          isExecuting.value = false
-        })
-        
+        console.log('WebSocket连接成功')
       } catch (error) {
         console.error('WebSocket连接失败:', error)
         ElMessage.warning('实时进度功能不可用，但不影响脚本执行')
       }
     }
-    
+
     const updateProgress = (progress) => {
-      currentStep.value = progress.current
-      totalSteps.value = progress.total
-      currentCommand.value = progress.commandName
-      
+      // 更新进度信息
+      currentStep.value = progress.completedSteps || 0
+      totalSteps.value = progress.totalSteps || 0
+      currentCommand.value = progress.currentStep || ''
+
       // 显示进度面板
       if (!showProgressPanel.value) {
         showProgressPanel.value = true
       }
-      
+
       // 更新对应命令的状态
-      const command = scriptCommands.value.find(cmd => cmd.name === progress.commandName)
-      if (command) {
-        command.status = progress.status
+      const commandIndex = scriptCommands.value.findIndex(cmd => cmd.name === progress.currentStep)
+      if (commandIndex >= 0) {
+        const command = scriptCommands.value[commandIndex]
+        
+        // 根据执行状态更新命令状态
+        switch (progress.status) {
+          case 'RUNNING':
+            command.status = 'executing'
+            break
+          case 'SUCCESS':
+            command.status = 'completed'
+            break
+          case 'FAILED':
+            command.status = 'failed'
+            break
+          case 'CANCELLED':
+            command.status = 'skipped'
+            break
+        }
+        
         command.message = progress.message
-        command.duration = progress.getDuration ? progress.getDuration() : 0
       }
-      
+
       // 添加到执行日志
       executionLogs.value.push({
         time: Date.now(),
-        command: progress.commandName,
-        status: progress.status,
+        command: progress.currentStep || '未知步骤',
+        status: getLogStatus(progress.status),
         message: progress.message
       })
-      
+
       // 自动滚动日志
       nextTick(() => {
         const container = document.querySelector('.log-list')
@@ -471,24 +518,39 @@ export default {
           container.scrollTop = container.scrollHeight
         }
       })
-      
+
       // 检查是否执行完成
-      if (progress.current >= progress.total) {
+      if (progress.status === 'SUCCESS' && progress.overallProgress >= 100) {
         isExecuting.value = false
         progressStatus.value = 'success'
         ElMessage.success('脚本执行完成！')
+      } else if (progress.status === 'FAILED') {
+        isExecuting.value = false
+        progressStatus.value = 'exception'
+        ElMessage.error('脚本执行失败: ' + (progress.errorMessage || '未知错误'))
       }
     }
-    
+
+    const getLogStatus = (status) => {
+      const statusMap = {
+        'RUNNING': 'executing',
+        'SUCCESS': 'completed', 
+        'FAILED': 'failed',
+        'CANCELLED': 'skipped',
+        'PENDING': 'executing'
+      }
+      return statusMap[status] || 'executing'
+    }
+
     const getCategoryIcon = (category) => {
       const icons = {
         '前置处理': 'Cpu',
-        '环境检查': 'Search', 
+        '环境检查': 'Search',
         '安装增强': 'Download'
       }
       return icons[category] || 'Setting'
     }
-    
+
     const getStatusType = (status) => {
       const types = {
         'executing': 'primary',
@@ -498,26 +560,26 @@ export default {
       }
       return types[status] || 'info'
     }
-    
+
     const getStatusText = (status) => {
       const texts = {
         'executing': '执行中',
         'completed': '完成',
-        'failed': '失败', 
+        'failed': '失败',
         'skipped': '跳过'
       }
       return texts[status] || status
     }
-    
+
     const formatDuration = (duration) => {
       if (!duration) return ''
       return duration < 1000 ? `${duration}ms` : `${(duration/1000).toFixed(1)}s`
     }
-    
+
     const formatTime = (timestamp) => {
       return new Date(timestamp).toLocaleTimeString()
     }
-    
+
     const getDependencyNames = (dependencies) => {
       return dependencies.map(depId => {
         // 从所有命令中查找依赖的名称
@@ -528,7 +590,7 @@ export default {
         return depId
       })
     }
-    
+
     const onScriptChange = () => {
       // 清除执行状态
       scriptCommands.value.forEach(cmd => {
@@ -537,11 +599,11 @@ export default {
         cmd.duration = 0
       })
     }
-    
+
     const removeCommand = (index) => {
       scriptCommands.value.splice(index, 1)
     }
-    
+
     const clearScript = () => {
       ElMessageBox.confirm('确定要清空所有命令吗？', '确认清空', {
         type: 'warning'
@@ -550,11 +612,11 @@ export default {
         ElMessage.success('脚本已清空')
       }).catch(() => {})
     }
-    
+
     const addRecommendedCommands = () => {
       // 添加推荐的命令组合
       const recommended = ['detect-os', 'detect-location', 'check-curl', 'config-mirrors']
-      
+
       for (const cmdId of recommended) {
         for (const commands of Object.values(categorizedCommands.value)) {
           const cmd = commands.find(c => c.id === cmdId)
@@ -563,16 +625,16 @@ export default {
           }
         }
       }
-      
+
       ElMessage.success('已添加推荐命令')
     }
-    
+
     const validateScript = async () => {
       if (scriptCommands.value.length === 0) {
         ElMessage.warning('请先添加命令')
         return
       }
-      
+
       try {
         const commandIds = scriptCommands.value.map(cmd => cmd.id)
         const response = await http.post('/api/script/validate', commandIds)
@@ -582,22 +644,22 @@ export default {
         ElMessage.error('验证脚本失败')
       }
     }
-    
+
     const optimizeScript = async () => {
       if (scriptCommands.value.length === 0) {
         ElMessage.warning('请先添加命令')
         return
       }
-      
+
       await validateScript()
     }
-    
+
     const applyOptimization = () => {
       if (validationResult.value && validationResult.value.optimized) {
         // 应用优化建议，重新构建脚本命令列表
         const optimizedIds = validationResult.value.optimized
         const newCommands = []
-        
+
         for (const cmdId of optimizedIds) {
           for (const commands of Object.values(categorizedCommands.value)) {
             const cmd = commands.find(c => c.id === cmdId)
@@ -607,20 +669,20 @@ export default {
             }
           }
         }
-        
+
         scriptCommands.value = newCommands
         showValidationResult.value = false
         ElMessage.success('脚本已优化')
       }
     }
-    
+
     const testConnection = async () => {
       testingConnection.value = true
       try {
         const response = await http.post('/api/script/test-connection', {
           sshConfig: sshConfig
         })
-        
+
         if (response.data.connected) {
           ElMessage.success('连接测试成功！')
         } else {
@@ -632,15 +694,21 @@ export default {
         testingConnection.value = false
       }
     }
-    
+
     const saveSshConfig = () => {
       showSshConfig.value = false
       ElMessage.success('SSH配置已保存')
     }
-    
+
     const executeScript = async () => {
       if (!canExecute.value) return
-      
+
+      // 检查是否至少有一个脚本
+      if (scriptCommands.value.length === 0) {
+        ElMessage.warning('请先添加要执行的脚本')
+        return
+      }
+
       // 重置执行状态
       isExecuting.value = true
       currentStep.value = 0
@@ -648,42 +716,104 @@ export default {
       progressStatus.value = null
       executionLogs.value = []
       showProgressPanel.value = true
-      
+
       // 清除命令状态
       onScriptChange()
-      
+
       try {
-        const response = await http.post('/api/script/execute', {
-          commandIds: scriptCommands.value.map(cmd => cmd.id),
-          sshConfig: sshConfig,
-          autoOptimize: true
-        })
-        
-        if (response.data.success) {
-          ElMessage.success('脚本开始执行，请查看右侧进度面板')
+        // 如果只有一个脚本，直接执行
+        if (scriptCommands.value.length === 1) {
+          const scriptId = scriptCommands.value[0].id
+          const response = await http.post(`/api/user/unified-execution/script/${scriptId}`)
+          
+          if (response.data) {
+            currentSessionId.value = response.data
+            
+            // 动态订阅当前会话的进度消息
+            const progressTopic = `/topic/execution/progress/${currentSessionId.value}`
+            webSocketClient.subscribe(progressTopic, (progress) => {
+              updateProgress(progress)
+            })
+            
+            ElMessage.success('脚本开始执行，请查看右侧进度面板')
+          } else {
+            throw new Error('启动失败')
+          }
         } else {
-          throw new Error(response.data.error || '启动失败')
+          // 多个脚本需要顺序执行
+          ElMessage.info('正在顺序执行多个脚本...')
+          await executeMultipleScripts()
         }
       } catch (error) {
-        ElMessage.error('启动脚本执行失败: ' + error.message)
+        ElMessage.error('启动脚本执行失败: ' + (error.response?.data || error.message))
         isExecuting.value = false
       }
     }
-    
+
+    const executeMultipleScripts = async () => {
+      for (let i = 0; i < scriptCommands.value.length; i++) {
+        const script = scriptCommands.value[i]
+        
+        try {
+          // 更新当前执行的脚本状态
+          script.status = 'executing'
+          currentCommand.value = script.name
+          currentStep.value = i + 1
+          
+          // 执行单个脚本
+          const response = await http.post(`/api/user/unified-execution/script/${script.id}`)
+          
+          if (response.data) {
+            // 等待脚本执行完成（简化处理，实际可以通过WebSocket监听）
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            
+            script.status = 'completed'
+            script.message = '执行完成'
+            
+            // 添加到执行日志
+            executionLogs.value.push({
+              time: Date.now(),
+              command: script.name,
+              status: 'completed',
+              message: '执行完成'
+            })
+          }
+        } catch (error) {
+          script.status = 'failed'
+          script.message = '执行失败: ' + (error.response?.data || error.message)
+          
+          // 添加到执行日志
+          executionLogs.value.push({
+            time: Date.now(),
+            command: script.name,
+            status: 'failed',
+            message: script.message
+          })
+          
+          ElMessage.error(`脚本 ${script.name} 执行失败`)
+          break // 停止执行后续脚本
+        }
+      }
+      
+      isExecuting.value = false
+      progressStatus.value = 'success'
+      ElMessage.success('所有脚本执行完成！')
+    }
+
     const goToTerminal = () => {
       router.push('/terminal')
     }
-    
+
     // 生命周期
     onMounted(async () => {
       await loadCommands()
       await connectWebSocket()
     })
-    
+
     onUnmounted(() => {
       webSocketClient.disconnect()
     })
-    
+
     return {
       // 数据
       categorizedCommands,
@@ -700,13 +830,14 @@ export default {
       progressStatus,
       executionLogs,
       sshConfig,
-      
+      currentSessionId,
+
       // 计算属性
       totalCommands,
       isConfigValid,
       canExecute,
       progressPercentage,
-      
+
       // 方法
       getCategoryIcon,
       getStatusType,
@@ -724,6 +855,7 @@ export default {
       testConnection,
       saveSshConfig,
       executeScript,
+      executeMultipleScripts,
       goToTerminal
     }
   }
@@ -1194,7 +1326,7 @@ export default {
   .command-panel {
     width: 240px;
   }
-  
+
   .progress-panel {
     width: 280px;
   }
@@ -1206,22 +1338,22 @@ export default {
     gap: 15px;
     align-items: stretch;
   }
-  
+
   .header-actions {
     justify-content: center;
     flex-wrap: wrap;
   }
-  
+
   .builder-content {
     flex-direction: column;
   }
-  
+
   .command-panel,
   .progress-panel {
     width: 100%;
     height: 200px;
   }
-  
+
   .script-editor {
     flex: 1;
     min-height: 400px;

@@ -1,12 +1,14 @@
 package com.fufu.terminal.service;
 
 import com.fufu.terminal.entity.AggregatedScript;
+import com.fufu.terminal.entity.ScriptGroupAggregatedScript;
 import com.fufu.terminal.repository.AggregatedScriptRepository;
+import com.fufu.terminal.repository.ScriptGroupAggregatedScriptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 聚合脚本服务类，封装了聚合脚本的业务操作
@@ -18,6 +20,9 @@ public class AggregatedScriptService {
 
     // 聚合脚本数据仓库
     private final AggregatedScriptRepository aggregatedScriptRepository;
+    
+    // 脚本组与聚合脚本关联关系仓库
+    private final ScriptGroupAggregatedScriptRepository scriptGroupAggregatedScriptRepository;
 
     /**
      * 查询所有聚合脚本
@@ -28,13 +33,27 @@ public class AggregatedScriptService {
     }
 
     /**
-     * 根据分组ID和状态查询聚合脚本，并按排序字段排序
+     * 根据分组ID查询聚合脚本，并按排序字段排序
      * @param groupId 分组ID
-     * @param status 脚本状态
      * @return 聚合脚本列表
      */
-    public List<AggregatedScript> getAggregatedScriptsByGroupAndStatus(Long groupId, AggregatedScript.Status status) {
-        return aggregatedScriptRepository.findByGroupIdAndStatusOrderBySortOrder(groupId, status);
+    public List<AggregatedScript> getAggregatedScriptsByGroup(Long groupId) {
+        List<ScriptGroupAggregatedScript> relations = scriptGroupAggregatedScriptRepository.findByGroupIdOrderBySortOrder(groupId);
+        return relations.stream()
+                .map(ScriptGroupAggregatedScript::getAggregatedScript)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 根据分组ID查询活跃状态的聚合脚本，并按排序字段排序
+     * @param groupId 分组ID
+     * @return 聚合脚本列表
+     */
+    public List<AggregatedScript> getActiveAggregatedScriptsByGroup(Long groupId) {
+        List<ScriptGroupAggregatedScript> relations = scriptGroupAggregatedScriptRepository.findActiveAggregatedScriptsByGroupId(groupId);
+        return relations.stream()
+                .map(ScriptGroupAggregatedScript::getAggregatedScript)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -108,19 +127,6 @@ public class AggregatedScriptService {
      * @return 聚合脚本列表
      */
     public List<AggregatedScript> getAggregatedScriptsByStatus(AggregatedScript.Status status) {
-        return aggregatedScriptRepository.findByStatus(status);
-    }
-
-    /**
-     * 根据分组ID查询所有激活状态的聚合脚本，按排序字段排序
-     * @param groupId 分组ID
-     * @return 激活状态的聚合脚本列表
-     */
-    public List<AggregatedScript> getActiveAggregatedScriptsByGroup(Long groupId) {
-        return getAggregatedScriptsByGroupAndStatus(groupId, AggregatedScript.Status.ACTIVE);
-    }
-
-    public List<AggregatedScript> getAggregatedScriptsByGroup(Long groupId) {
-        return aggregatedScriptRepository.findByGroupId(groupId);
+        return aggregatedScriptRepository.findByStatusOrderBySortOrder(status);
     }
 }

@@ -66,6 +66,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
+import { http } from '@/utils/http'
 
 const router = useRouter()
 const loginFormRef = ref()
@@ -94,37 +95,32 @@ const handleLogin = async () => {
     
     isLogging.value = true
     
-    // TODO: 实现真实的登录API调用
-    // const response = await http.post('/api/auth/login', loginForm)
+    // 调用登录API
+    const response = await http.post('/api/admin/login', {
+      username: loginForm.username,
+      password: loginForm.password
+    })
     
-    // 模拟登录验证
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
-      // 管理员登录
-      localStorage.setItem('user', JSON.stringify({
-        username: 'admin',
-        role: 'ADMIN',
-        token: 'admin-token-123'
-      }))
-      ElMessage.success('管理员登录成功')
-      router.push('/admin')
-    } else if (loginForm.username === 'user' && loginForm.password === 'user123') {
-      // 普通用户登录
-      localStorage.setItem('user', JSON.stringify({
-        username: 'user',
-        role: 'USER',
-        token: 'user-token-123'
-      }))
-      ElMessage.success('用户登录成功')
-      router.push('/user')
+    if (response.data.success) {
+      // 保存用户信息和token
+      const userData = {
+        ...response.data.user,
+        token: response.data.token
+      }
+      localStorage.setItem('user', JSON.stringify(userData))
+      
+      ElMessage.success('登录成功')
+      router.push('/admin/dashboard')
     } else {
-      ElMessage.error('用户名或密码错误')
+      ElMessage.error(response.data.message || '登录失败')
     }
     
   } catch (error) {
-    if (error.message) {
-      ElMessage.error('登录失败：' + error.message)
+    console.error('登录错误:', error)
+    if (error.response?.data?.message) {
+      ElMessage.error(error.response.data.message)
+    } else {
+      ElMessage.error('登录失败，请检查网络连接')
     }
   } finally {
     isLogging.value = false

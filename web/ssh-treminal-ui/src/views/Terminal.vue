@@ -93,10 +93,6 @@ const {
 </script>
 
 <style>
-/*
-  为了保持原样, 所有样式都放在顶层组件。
-  在大型项目中, 建议使用 <style scoped> 并将全局样式提取到单独的CSS文件中。
-*/
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code&display=swap');
 
@@ -110,18 +106,25 @@ const {
   --selection-bg-color: rgba(99, 102, 241, 0.3);
 }
 
-body, html, #app {
-  margin: 0; padding: 0; width: 100%; height: 100%;
+.terminal-page {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
   font-family: 'Poppins', sans-serif;
   background-color: var(--bg-color-dark);
   color: #e0e0e0;
   overflow: hidden;
 }
+
 .app-container {
-  width: 100%; height: 100%; position: relative;
+  width: 100%; 
+  height: 100vh; 
+  position: relative;
   background-image: radial-gradient(circle at 1% 1%, var(--accent-color-1), transparent 30%),
   radial-gradient(circle at 99% 99%, var(--accent-color-2), transparent 40%);
-  display: flex; flex-direction: column;
+  display: flex; 
+  flex-direction: column;
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.4s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }

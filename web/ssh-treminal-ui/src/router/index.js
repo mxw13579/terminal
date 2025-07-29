@@ -88,30 +88,30 @@ const routes = [
         }
       },
       {
+        path: 'scripts',
+        name: 'AdminScripts', 
+        component: AdminScripts,
+        meta: { 
+          title: '原子脚本管理',
+          description: '管理基础原子脚本'
+        }
+      },
+      {
         path: 'aggregated-scripts',
         name: 'AdminAggregatedScripts',
         component: AdminAggregatedScripts,
         meta: { 
           title: '聚合脚本管理',
-          description: '管理一键配置聚合脚本'
+          description: '组合原子脚本为聚合脚本'
         }
       },
       {
-        path: 'scripts',
-        name: 'AdminScripts', 
-        component: AdminScripts,
-        meta: { 
-          title: '脚本配置',
-          description: '拖拽流程设置和脚本管理'
-        }
-      },
-      {
-        path: 'script-builder',
-        name: 'ScriptBuilder',
+        path: 'aggregated-script-builder',
+        name: 'AggregatedScriptBuilder',
         component: ScriptBuilder,
         meta: { 
-          title: '可视化脚本构建器',
-          description: '拖拽式脚本编辑器'
+          title: '聚合脚本构建器',
+          description: '可视化构建聚合脚本'
         }
       },
       {

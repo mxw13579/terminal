@@ -22,11 +22,8 @@ public class AggregatedScript {
     @Column(columnDefinition = "TEXT")
     private String description;
     
-    @Column(name = "group_id", nullable = false)
-    private Long groupId;
-    
     @Column(name = "script_ids", columnDefinition = "JSON")
-    private String scriptIds; // 存储脚本ID数组的JSON
+    private String scriptIds; // 存储原子脚本ID数组的JSON
     
     @Column(name = "execution_order", columnDefinition = "JSON")
     private String executionOrder; // 存储执行顺序配置

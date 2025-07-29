@@ -23,21 +23,20 @@ import java.util.concurrent.CompletableFuture;
  * 提供命令管理和脚本执行的REST API
  * @author lizelin
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/script")
-@Slf4j
-@CrossOrigin(origins = "*")
 public class ScriptController {
-    
+
     @Autowired
     private CommandRegistry commandRegistry;
-    
+
     @Autowired
     private ScriptEngine scriptEngine;
-    
+
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
-    
+
     /**
      * 获取所有可用命令
      */
@@ -46,22 +45,22 @@ public class ScriptController {
         try {
             Map<String, CommandInfo> allCommands = commandRegistry.getAllCommands();
             Map<String, List<CommandInfo>> categories = commandRegistry.getCommandsByCategory();
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("commands", allCommands);
             result.put("categories", categories);
             result.put("total", allCommands.size());
-            
+
             log.info("返回 {} 个命令，{} 个分类", allCommands.size(), categories.size());
             return ResponseEntity.ok(result);
-            
+
         } catch (Exception e) {
             log.error("获取命令列表失败", e);
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "获取命令列表失败: " + e.getMessage()));
         }
     }
-    
+
     /**
      * 获取指定分类的命令
      */
@@ -75,7 +74,7 @@ public class ScriptController {
             return ResponseEntity.internalServerError().build();
         }
     }
-    
+
     /**
      * 验证脚本的有效性
      */
@@ -84,22 +83,22 @@ public class ScriptController {
         try {
             boolean isValid = scriptEngine.validateScript(commandIds);
             List<String> optimized = scriptEngine.optimizeScript(commandIds);
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("valid", isValid);
             result.put("original", commandIds);
             result.put("optimized", optimized);
             result.put("addedDependencies", optimized.size() - commandIds.size());
-            
+
             return ResponseEntity.ok(result);
-            
+
         } catch (Exception e) {
             log.error("验证脚本失败", e);
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "验证脚本失败: " + e.getMessage()));
         }
     }
-    
+
     /**
      * 测试SSH连接
      */
@@ -107,13 +106,13 @@ public class ScriptController {
     public ResponseEntity<Map<String, Object>> testConnection(@RequestBody ScriptRequest request) {
         try {
             boolean connected = SshConnectionUtil.testConnection(request.getSshConfig());
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("connected", connected);
             result.put("message", connected ? "连接成功" : "连接失败");
-            
+
             return ResponseEntity.ok(result);
-            
+
         } catch (Exception e) {
             log.error("测试SSH连接失败", e);
             return ResponseEntity.ok(Map.of(
@@ -122,7 +121,7 @@ public class ScriptController {
             ));
         }
     }
-    
+
     /**
      * 执行脚本
      */
@@ -134,14 +133,14 @@ public class ScriptController {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "请求参数无效"));
             }
-            
+
             // 优化脚本（如果需要）
-            List<String> commandIds = request.isAutoOptimize() ? 
-                    scriptEngine.optimizeScript(request.getCommandIds()) : 
+            List<String> commandIds = request.isAutoOptimize() ?
+                    scriptEngine.optimizeScript(request.getCommandIds()) :
                     request.getCommandIds();
-            
+
             log.info("开始执行脚本，命令数: {}", commandIds.size());
-            
+
             // 异步执行脚本
             CompletableFuture.runAsync(() -> {
                 SshConnection sshConnection = null;
@@ -149,7 +148,7 @@ public class ScriptController {
                     // 创建SSH连接
                     sshConnection = SshConnectionUtil.createConnection(request.getSshConfig());
                     CommandContext context = new CommandContext(sshConnection, null);
-                    
+
                     // 执行脚本
                     scriptEngine.executeScript(commandIds, context, progress -> {
                         try {
@@ -159,12 +158,12 @@ public class ScriptController {
                             log.error("发送进度更新失败", e);
                         }
                     });
-                    
+
                 } catch (Exception e) {
                     log.error("脚本执行异常", e);
                     // 发送错误消息
                     try {
-                        messagingTemplate.convertAndSend("/topic/script-error", 
+                        messagingTemplate.convertAndSend("/topic/script-error",
                                 Map.of("error", e.getMessage()));
                     } catch (Exception ex) {
                         log.error("发送错误消息失败", ex);
@@ -174,21 +173,21 @@ public class ScriptController {
                     SshConnectionUtil.closeConnection(sshConnection);
                 }
             });
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
             result.put("message", "脚本开始执行");
             result.put("commandCount", commandIds.size());
-            
+
             return ResponseEntity.ok(result);
-            
+
         } catch (Exception e) {
             log.error("启动脚本执行失败", e);
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "启动脚本执行失败: " + e.getMessage()));
         }
     }
-    
+
     /**
      * 获取系统状态
      */
@@ -198,7 +197,7 @@ public class ScriptController {
         status.put("commandCount", commandRegistry.getAllCommands().size());
         status.put("categories", commandRegistry.getAllCategories());
         status.put("serverTime", System.currentTimeMillis());
-        
+
         return ResponseEntity.ok(status);
     }
 }

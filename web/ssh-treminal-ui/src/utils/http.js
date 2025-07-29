@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 
 // 创建axios实例
 const http = axios.create({
-  baseURL: 'http://localhost:8080',  // 后端服务地址
+  baseURL: '',  // 使用代理，不设置baseURL
   timeout: 30000,  // 30秒超时
   headers: {
     'Content-Type': 'application/json',
@@ -18,7 +18,7 @@ http.interceptors.request.use(
     if (user) {
       const userData = JSON.parse(user)
       if (userData.token) {
-        config.headers.Authorization = `Bearer ${userData.token}`
+        config.headers['satoken'] = userData.token
       }
     }
     
@@ -51,8 +51,8 @@ http.interceptors.response.use(
           // 清除本地存储的用户信息
           localStorage.removeItem('user')
           // 跳转到登录页
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login'
+          if (window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin/login') {
+            window.location.href = '/admin/login'
           }
           break
         case 403:
