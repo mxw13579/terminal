@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import UserLayout from '@/layouts/UserLayout.vue'
 import UserHome from '@/views/user/Home.vue'
 import UserScriptExecution from '@/views/user/ScriptExecution.vue'
+import InteractiveScripts from '@/views/user/InteractiveScripts.vue'
 import Terminal from '@/views/Terminal.vue'
 
 // 管理端页面 (需要登录)
@@ -38,6 +39,15 @@ const routes = [
         meta: { 
           title: '脚本执行',
           description: '脚本执行和实时日志'
+        }
+      },
+      {
+        path: 'interactive-scripts',
+        name: 'InteractiveScripts',
+        component: InteractiveScripts,
+        meta: { 
+          title: '交互式脚本',
+          description: '交互式脚本执行和管理'
         }
       },
       {

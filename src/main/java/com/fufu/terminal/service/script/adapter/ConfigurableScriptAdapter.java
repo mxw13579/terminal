@@ -71,7 +71,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
                 log.warn("解析脚本标签失败: {}", e.getMessage());
             }
         }
-        return new String[]{atomicScript.getScriptType()};
+        return new String[]{atomicScript.getScriptType().name()};
     }
     
     @Override
@@ -222,7 +222,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
      * 执行脚本
      */
     private String executeScript(CommandContext context, String script) throws Exception {
-        String scriptType = atomicScript.getScriptType();
+        String scriptType = atomicScript.getScriptType().name();
         Integer timeout = atomicScript.getExecutionTimeout();
         
         if ("bash".equalsIgnoreCase(scriptType)) {
@@ -268,7 +268,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
         Map<String, Object> outputData = new HashMap<>();
         outputData.put("script_output", output);
         outputData.put("script_name", getName());
-        outputData.put("script_type", atomicScript.getScriptType());
+        outputData.put("script_type", atomicScript.getScriptType().name());
         
         // 尝试解析JSON格式的输出
         if (output.trim().startsWith("{") && output.trim().endsWith("}")) {

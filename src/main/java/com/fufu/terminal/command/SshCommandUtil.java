@@ -1,7 +1,9 @@
 package com.fufu.terminal.command;
 
+import com.fufu.terminal.command.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.jcraft.jsch.ChannelExec;
+import com.jcraft.jsch.Session;
 
 import java.io.ByteArrayOutputStream;
 
@@ -19,6 +21,13 @@ public class SshCommandUtil {
      * @throws Exception 如果连接或执行过程中出现IO等严重错误
      */
     public static CommandResult executeCommand(SshConnection sshConnection, String command) throws Exception {
+        Session session = sshConnection.getJschSession();
+
+        // Check if session is connected before attempting to open channel
+        if (!session.isConnected()) {
+            throw new Exception("SSH session is disconnected. Cannot execute command: " + command);
+        }
+
         ChannelExec channel = null;
         try {
             channel = (ChannelExec) sshConnection.getJschSession().openChannel("exec");

@@ -1,6 +1,7 @@
 package com.fufu.terminal.service;
 
 import com.fufu.terminal.entity.AtomicScript;
+import com.fufu.terminal.repository.AggregateAtomicRelationRepository;
 import com.fufu.terminal.repository.AtomicScriptRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 原子脚本服务类
@@ -21,6 +23,7 @@ import java.util.List;
 public class AtomicScriptService {
     
     private final AtomicScriptRepository atomicScriptRepository;
+    private final AggregateAtomicRelationRepository aggregateAtomicRelationRepository;
     private final ApplicationEventPublisher eventPublisher;
     
     /**
@@ -123,6 +126,16 @@ public class AtomicScriptService {
      */
     public List<AtomicScript> getAtomicScriptsByIds(List<Long> ids) {
         return atomicScriptRepository.findByIdInAndStatus(ids, AtomicScript.Status.ACTIVE);
+    }
+    
+    /**
+     * 根据聚合脚本ID获取原子脚本列表
+     */
+    public List<AtomicScript> getAtomicScriptsByAggregateId(Long aggregateId) {
+        return aggregateAtomicRelationRepository.findByAggregateIdOrderByExecutionOrder(aggregateId)
+                .stream()
+                .map(relation -> getAtomicScriptById(relation.getAtomicId()))
+                .collect(Collectors.toList());
     }
     
     /**

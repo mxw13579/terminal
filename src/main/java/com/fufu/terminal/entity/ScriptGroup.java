@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fufu.terminal.entity.enums.ScriptGroupType;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.springframework.data.annotation.CreatedDate;
@@ -19,14 +20,19 @@ public class ScriptGroup {
     @Column(nullable = false, length = 100)
     private String name;
     
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type")
+    private ScriptGroupType type = ScriptGroupType.PROJECT_DIMENSION; // 分组类型
+    
     @Column(columnDefinition = "TEXT")
     private String description;
     
-    @Column(name = "init_script", columnDefinition = "TEXT")
-    private String initScript;
+    @Column(name = "icon", length = 100)
+    private String icon; // 图标
     
-    @Column(name = "sort_order")
-    private Integer sortOrder = 0;
+    @Column(name = "display_order")
+    private Integer displayOrder = 0; // 显示顺序
+    
     
     @Enumerated(EnumType.STRING)
     @Column(columnDefinition = "enum('ACTIVE', 'INACTIVE') default 'ACTIVE'")

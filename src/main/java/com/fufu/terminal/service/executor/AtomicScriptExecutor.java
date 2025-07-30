@@ -107,7 +107,7 @@ public class AtomicScriptExecutor {
      * 执行脚本内容
      */
     private Object executeScriptContent(String sessionId, AtomicScript script) throws Exception {
-        String scriptType = script.getScriptType();
+        String scriptType = script.getScriptType().name();
         String scriptContent = script.getScriptContent();
         
         if ("bash".equalsIgnoreCase(scriptType)) {

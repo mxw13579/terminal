@@ -4,7 +4,11 @@
       "Bash(java:*)",
       "Bash(mvn:*)",
       "Bash(./mvnw:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(./gradlew:*)",
+      "Bash(del:*)",
+      "Bash(rm:*)",
+      "Bash(mv web/ssh-treminal-ui/src/views/admin/Scripts.vue web/ssh-treminal-ui/src/views/admin/Scripts.vue.bak)"
     ],
     "deny": []
   }

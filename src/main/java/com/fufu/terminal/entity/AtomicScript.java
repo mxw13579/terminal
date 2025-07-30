@@ -1,5 +1,7 @@
 package com.fufu.terminal.entity;
 
+import com.fufu.terminal.entity.enums.InteractionMode;
+import com.fufu.terminal.entity.enums.ScriptType;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.springframework.data.annotation.CreatedDate;
@@ -29,8 +31,9 @@ public class AtomicScript {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String scriptContent; // 脚本内容
     
+    @Enumerated(EnumType.STRING)
     @Column(name = "script_type", length = 50)
-    private String scriptType; // 脚本类型：bash, python, node等
+    private ScriptType scriptType = ScriptType.USER_SIMPLE; // 脚本类型
     
     @Column(name = "input_params", columnDefinition = "JSON")
     private String inputParams; // 输入参数定义
@@ -60,6 +63,26 @@ public class AtomicScript {
     @Column(name = "tags", columnDefinition = "JSON")
     private String tags; // 标签，用于分类和搜索
     
+    // 交互相关字段
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interaction_mode")
+    private InteractionMode interactionMode = InteractionMode.SILENT;
+    
+    @Column(name = "interaction_config", columnDefinition = "JSON")
+    private String interactionConfig; // 交互配置，JSON格式存储
+    
+    @Column(name = "input_variables", columnDefinition = "JSON")
+    private String inputVariables; // 输入变量定义
+    
+    @Column(name = "output_variables", columnDefinition = "JSON")
+    private String outputVariables; // 输出变量定义
+    
+    @Column(name = "prerequisites", columnDefinition = "JSON")
+    private String prerequisites; // 前置条件
+    
+    @Column(name = "estimated_duration")
+    private Integer estimatedDuration = 0; // 预估执行时长（秒）
+    
     @Column(name = "created_by")
     private Long createdBy;
     
@@ -77,21 +100,4 @@ public class AtomicScript {
         DRAFT      // 草稿，正在开发中
     }
     
-    public enum ScriptType {
-        BASH("bash"),
-        PYTHON("python"), 
-        NODE("node"),
-        POWERSHELL("powershell"),
-        SQL("sql");
-        
-        private final String value;
-        
-        ScriptType(String value) {
-            this.value = value;
-        }
-        
-        public String getValue() {
-            return value;
-        }
-    }
 }

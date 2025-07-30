@@ -18,7 +18,7 @@ public class ScriptGroupService {
     }
     
     public List<ScriptGroup> getActiveGroups() {
-        return scriptGroupRepository.findByStatusOrderBySortOrder(ScriptGroup.Status.ACTIVE);
+        return scriptGroupRepository.findByStatusOrderByDisplayOrder(ScriptGroup.Status.ACTIVE);
     }
     
     public ScriptGroup getGroupById(Long id) {
@@ -40,7 +40,7 @@ public class ScriptGroupService {
     
     public void updateSortOrder(Long id, Integer sortOrder) {
         ScriptGroup group = getGroupById(id);
-        group.setSortOrder(sortOrder);
+        group.setDisplayOrder(sortOrder);
         scriptGroupRepository.save(group);
     }
 }

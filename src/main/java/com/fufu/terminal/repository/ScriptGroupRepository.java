@@ -9,7 +9,7 @@ import java.util.List;
 @Repository
 public interface ScriptGroupRepository extends JpaRepository<ScriptGroup, Long> {
     
-    List<ScriptGroup> findByStatusOrderBySortOrder(ScriptGroup.Status status);
+    List<ScriptGroup> findByStatusOrderByDisplayOrder(ScriptGroup.Status status);
     
-    List<ScriptGroup> findByCreatedByOrderBySortOrder(Long createdBy);
+    List<ScriptGroup> findByCreatedByOrderByDisplayOrder(Long createdBy);
 }

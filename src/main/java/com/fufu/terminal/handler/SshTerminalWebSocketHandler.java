@@ -3,10 +3,12 @@ package com.fufu.terminal.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.command.CommandContext;
+import com.fufu.terminal.entity.interaction.InteractionResponse;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SftpService;
 import com.fufu.terminal.service.SshMonitorService;
 import com.fufu.terminal.service.TaskExecutionService;
+import com.fufu.terminal.service.execution.InteractiveScriptExecutor;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
@@ -51,6 +53,7 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
     private final SftpService sftpService;
     private final SshMonitorService sshMonitorService;
     private final TaskExecutionService taskExecutionService;
+    private final InteractiveScriptExecutor interactiveScriptExecutor;
 
 
     // 使用Map实现策略模式，用于消息分发
@@ -59,10 +62,12 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
     public SshTerminalWebSocketHandler(SftpService sftpService,
                                        SshMonitorService sshMonitorService,
                                        TaskExecutionService taskExecutionService,
+                                       InteractiveScriptExecutor interactiveScriptExecutor,
                                        @Qualifier("taskExecutor") ExecutorService executorService) {
         this.sftpService = sftpService;
         this.sshMonitorService = sshMonitorService;
         this.taskExecutionService = taskExecutionService;
+        this.interactiveScriptExecutor = interactiveScriptExecutor;
         this.executorService = executorService;
     }
 
@@ -127,6 +132,16 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
             CommandContext context = new CommandContext(connection, session);
             taskExecutionService.executeTask(taskName, context);
         });
+        
+        // 交互响应: 处理用户对交互请求的响应
+        messageHandlers.put("interaction_response", (session, connection, payload) -> {
+            try {
+                InteractionResponse response = objectMapper.treeToValue(payload, InteractionResponse.class);
+                interactiveScriptExecutor.handleUserResponse(session.getId(), response);
+            } catch (Exception e) {
+                log.error("Error processing interaction response: ", e);
+            }
+        });
     }
 
     @Override
@@ -157,10 +172,6 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
 
             // 启动一个线程来读取SSH Shell的输出并转发到WebSocket客户端
             startShellOutputForwarder(session, sshConnection);
-
-            // 在后台自动执行初始化任务，例如检测操作系统
-            taskExecutionService.executeTask("initialize_environment", new CommandContext(sshConnection, session));
-
         } catch (Exception e) {
             log.error("Error establishing SSH connection for session {}: ", session.getId(), e);
             sendJsonError(session, "Connection failed: " + e.getMessage());
@@ -183,7 +194,13 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
                     log.error("Error reading from shell or writing to session {}: ", session.getId(), e);
                 }
             } finally {
-                closeConnection(session);
+                // Only close connection if WebSocket session is also closed
+                // This prevents premature cleanup while background tasks are running
+                if (!session.isOpen()) {
+                    closeConnection(session);
+                } else {
+                    log.warn("Shell forwarder exited but WebSocket session {} is still open", session.getId());
+                }
             }
         });
     }

@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fufu.terminal.entity.enums.AggregateScriptType;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.springframework.data.annotation.CreatedDate;
@@ -22,6 +23,10 @@ public class AggregatedScript {
     @Column(columnDefinition = "TEXT")
     private String description;
     
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type")
+    private AggregateScriptType type = AggregateScriptType.GENERIC_TEMPLATE; // 聚合脚本类型
+    
     @Column(name = "script_ids", columnDefinition = "JSON")
     private String scriptIds; // 存储原子脚本ID数组的JSON
     
@@ -34,6 +39,9 @@ public class AggregatedScript {
     @Enumerated(EnumType.STRING)
     @Column(columnDefinition = "enum('ACTIVE', 'INACTIVE') default 'ACTIVE'")
     private Status status = Status.ACTIVE;
+    
+    @Column(name = "config_template", columnDefinition = "JSON")
+    private String configTemplate; // 配置模板，用于通用模板类型
     
     @Column(name = "created_by")
     private Long createdBy;
