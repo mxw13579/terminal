@@ -24,24 +24,86 @@
         </div>
       </div>
 
-      <!-- 脚本分组卡片 -->
-      <div
-        v-for="group in scriptGroups"
-        :key="group.id"
-        class="card-item script-group-card"
-        @click="goToScriptExecution(group.id)"
-      >
-        <div class="card-content">
-          <div class="card-icon-wrapper">
-            <div class="card-icon">
-              <el-icon><Document /></el-icon>
+      <!-- 分组展示：按维度分类 -->
+      <div v-if="projectGroups.length > 0" class="section-divider">
+        <h2 class="section-title">项目管理</h2>
+        <div class="group-cards">
+          <div
+            v-for="group in projectGroups"
+            :key="group.id"
+            class="card-item script-group-card project-card"
+            @click="goToScriptExecution(group.id)"
+          >
+            <div class="card-content">
+              <div class="card-icon-wrapper">
+                <div class="card-icon">
+                  <el-icon><Box /></el-icon>
+                </div>
+              </div>
+              <div class="card-info">
+                <h3>{{ group.name }}</h3>
+                <p>{{ group.description || '暂无描述' }}</p>
+                <div class="card-footer">
+                  <el-tag size="small" type="primary">项目维度</el-tag>
+                  <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="card-info">
-            <h3>{{ group.name }}</h3>
-            <p>{{ group.description || '暂无描述' }}</p>
-            <div class="card-footer">
-              <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+        </div>
+      </div>
+
+      <div v-if="functionGroups.length > 0" class="section-divider">
+        <h2 class="section-title">功能工具</h2>
+        <div class="group-cards">
+          <div
+            v-for="group in functionGroups"
+            :key="group.id"
+            class="card-item script-group-card function-card"
+            @click="goToScriptExecution(group.id)"
+          >
+            <div class="card-content">
+              <div class="card-icon-wrapper">
+                <div class="card-icon">
+                  <el-icon><Tools /></el-icon>
+                </div>
+              </div>
+              <div class="card-info">
+                <h3>{{ group.name }}</h3>
+                <p>{{ group.description || '暂无描述' }}</p>
+                <div class="card-footer">
+                  <el-tag size="small" type="success">功能维度</el-tag>
+                  <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 兼容：显示未分类的分组 -->
+      <div v-if="otherGroups.length > 0" class="section-divider">
+        <h2 class="section-title">其他分组</h2>
+        <div class="group-cards">
+          <div
+            v-for="group in otherGroups"
+            :key="group.id"
+            class="card-item script-group-card"
+            @click="goToScriptExecution(group.id)"
+          >
+            <div class="card-content">
+              <div class="card-icon-wrapper">
+                <div class="card-icon">
+                  <el-icon><Document /></el-icon>
+                </div>
+              </div>
+              <div class="card-info">
+                <h3>{{ group.name }}</h3>
+                <p>{{ group.description || '暂无描述' }}</p>
+                <div class="card-footer">
+                  <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -51,15 +113,28 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Document } from '@element-plus/icons-vue'
+import { Monitor, Document, Box, Tools } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { http } from '@/utils/http'
 
 const router = useRouter()
 const scriptGroups = ref([])
 const scriptCounts = ref({})
+
+// 按分组类型分类
+const projectGroups = computed(() => 
+  scriptGroups.value.filter(group => group.type === 'PROJECT_DIMENSION')
+)
+
+const functionGroups = computed(() => 
+  scriptGroups.value.filter(group => group.type === 'FUNCTION_DIMENSION')
+)
+
+const otherGroups = computed(() => 
+  scriptGroups.value.filter(group => !group.type || (group.type !== 'PROJECT_DIMENSION' && group.type !== 'FUNCTION_DIMENSION'))
+)
 
 const loadScriptGroups = async () => {
   try {
@@ -123,9 +198,28 @@ onMounted(() => {
 }
 
 .content-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.section-divider {
+  width: 100%;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  padding-left: 8px;
+  border-left: 4px solid var(--el-color-primary);
+}
+
+.group-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 40px;
+  gap: 30px;
   justify-items: center;
 }
 
@@ -213,9 +307,27 @@ onMounted(() => {
   gap: 10px;
 }
 
+/* 项目维度卡片样式 */
+.project-card .card-icon {
+  background: radial-gradient(circle, rgba(24, 144, 255, 0.2) 0%, transparent 70%);
+}
+
+/* 功能维度卡片样式 */
+.function-card .card-icon {
+  background: radial-gradient(circle, rgba(82, 196, 26, 0.2) 0%, transparent 70%);
+}
+
 /* 暗色主题特殊样式 */
 .dark-theme .ssh-card {
   background: rgba(93, 151, 255, 0.1);
+}
+
+.dark-theme .project-card {
+  background: rgba(24, 144, 255, 0.05);
+}
+
+.dark-theme .function-card {
+  background: rgba(82, 196, 26, 0.05);
 }
 
 .dark-theme .script-group-card {

@@ -1,5 +1,9 @@
 package com.fufu.terminal.service.script;
 
+import com.fufu.terminal.command.impl.builtin.DockerInstallCommand;
+import com.fufu.terminal.command.impl.builtin.MySQLInstallCommand;
+import com.fufu.terminal.command.impl.builtin.RedisInstallCommand;
+import com.fufu.terminal.command.impl.builtin.SystemInfoCommand;
 import com.fufu.terminal.command.impl.enhancement.ConfigureDockerMirrorCommand;
 import com.fufu.terminal.command.impl.enhancement.ConfigureSystemMirrorsCommand;
 import com.fufu.terminal.command.impl.environment.*;
@@ -11,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -104,6 +109,31 @@ public class UnifiedScriptRegistrationService implements ApplicationRunner {
             new ConfigureSystemMirrorsCommand(),
             "configure_system_mirrors",
             new String[]{"系统增强", "软件源", "镜像配置", "包管理"}
+        );
+
+        // 新增：内置安装脚本
+        scriptRegistry.registerBuiltInAtomicScript(
+            new DockerInstallCommand(),
+            "docker_install", 
+            new String[]{"安装", "容器", "docker", "内置"}
+        );
+
+        scriptRegistry.registerBuiltInAtomicScript(
+            new MySQLInstallCommand(),
+            "mysql_install",
+            new String[]{"安装", "数据库", "mysql", "内置", "参数化"}
+        );
+
+        scriptRegistry.registerBuiltInAtomicScript(
+            new RedisInstallCommand(),
+            "redis_install", 
+            new String[]{"安装", "缓存", "redis", "内置", "参数化"}
+        );
+
+        scriptRegistry.registerBuiltInAtomicScript(
+            new SystemInfoCommand(),
+            "system_info",
+            new String[]{"系统信息", "监控", "内置", "静态"}
         );
 
         log.info("内置脚本注册完成，共注册 {} 个脚本", scriptRegistry.getBuiltInScripts().size());

@@ -12,4 +12,10 @@ public interface ScriptExecutionLogRepository extends JpaRepository<ScriptExecut
     List<ScriptExecutionLog> findBySessionIdOrderByTimestamp(String sessionId);
     
     List<ScriptExecutionLog> findByAtomicScriptIdOrderByTimestamp(Long atomicScriptId);
+    
+    List<ScriptExecutionLog> findByExecutionIdOrderByStepOrderAscTimestampAsc(Long executionId);
+    
+    List<ScriptExecutionLog> findByExecutionIdAndLogType(Long executionId, String logType);
+    
+    void deleteByExecutionId(Long executionId);
 }

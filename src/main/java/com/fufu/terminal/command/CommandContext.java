@@ -1,5 +1,6 @@
 package com.fufu.terminal.command;
 
+import com.fufu.terminal.command.model.enums.SystemType;
 import com.fufu.terminal.model.SshConnection;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,12 +34,59 @@ public class CommandContext {
         return this.properties.get(key);
     }
 
-    @SuppressWarnings("unchecked")
-    public <T> T getProperty(String key, Class<T> type) {
-        Object value = this.properties.get(key);
-        if (type.isInstance(value)) {
-            return (T) value;
+    /**
+     * 获取变量值，如果不存在则返回默认值
+     */
+    public String getVariable(String name, String defaultValue) {
+        Object value = properties.get("variable_" + name);
+        return value != null ? value.toString() : defaultValue;
+    }
+
+    /**
+     * 获取变量值
+     */
+    public String getVariable(String name) {
+        Object value = properties.get("variable_" + name);
+        return value != null ? value.toString() : null;
+    }
+
+    /**
+     * 设置变量
+     */
+    public void setVariable(String name, String value) {
+        properties.put("variable_" + name, value);
+    }
+
+    /**
+     * 执行脚本
+     */
+    public CommandResult executeScript(String script) {
+        try {
+            if (sshConnection != null && sshConnection.isConnected()) {
+                return SshCommandUtil.executeCommand(sshConnection, script);
+            } else {
+                return CommandResult.failure("SSH连接未建立或已断开");
+            }
+        } catch (Exception e) {
+            return CommandResult.failure("脚本执行异常: " + e.getMessage());
         }
-        return null;
+    }
+
+    /**
+     * 获取系统类型（模拟实现）
+     */
+    public SystemType getSystemType() {
+        Object systemType = properties.get("systemType");
+        if (systemType instanceof SystemType) {
+            return (SystemType) systemType;
+        }
+        return SystemType.UBUNTU; // 默认值
+    }
+
+    /**
+     * 设置系统类型
+     */
+    public void setSystemType(SystemType systemType) {
+        properties.put("systemType", systemType);
     }
 }

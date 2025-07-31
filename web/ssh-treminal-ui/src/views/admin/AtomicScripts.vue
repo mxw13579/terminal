@@ -2,7 +2,35 @@
   <div class="atomic-scripts-admin">
     <div class="page-header">
       <h2>原子脚本管理</h2>
-      <button @click="openModal()" class="btn btn-primary">新增脚本</button>
+      <div class="page-actions">
+        <div class="filter-tabs">
+          <button 
+            :class="['tab-btn', { active: currentTab === 'all' }]"
+            @click="switchTab('all')"
+          >
+            全部脚本
+          </button>
+          <button 
+            :class="['tab-btn', { active: currentTab === 'builtin-no-vars' }]"
+            @click="switchTab('builtin-no-vars')"
+          >
+            内置脚本(无变量)
+          </button>
+          <button 
+            :class="['tab-btn', { active: currentTab === 'builtin-with-vars' }]"
+            @click="switchTab('builtin-with-vars')"
+          >
+            内置脚本(需变量)
+          </button>
+          <button 
+            :class="['tab-btn', { active: currentTab === 'user' }]"
+            @click="switchTab('user')"
+          >
+            用户自定义
+          </button>
+        </div>
+        <button @click="openModal()" class="btn btn-primary">新增脚本</button>
+      </div>
     </div>
 
     <div class="scripts-table-container">
@@ -25,7 +53,7 @@
           <tr v-else-if="scripts.length === 0">
             <td colspan="7" class="text-center">暂无数据</td>
           </tr>
-          <tr v-for="script in scripts" :key="script.id">
+          <tr v-for="script in filteredScripts" :key="script.id">
             <td>{{ script.id }}</td>
             <td>{{ script.name }}</td>
             <td><span class="badge" :class="`badge-${script.scriptType}`">{{ getScriptTypeLabel(script.scriptType) }}</span></td>
@@ -33,8 +61,13 @@
             <td>{{ formatDateTime(script.createdAt) }}</td>
             <td>{{ formatDateTime(script.updatedAt) }}</td>
             <td>
-              <button @click="openModal(script)" class="btn btn-secondary btn-sm">编辑</button>
-              <button @click="confirmDelete(script.id)" class="btn btn-danger btn-sm">删除</button>
+              <template v-if="isBuiltInScript(script)">
+                <span class="built-in-label">内置脚本</span>
+              </template>
+              <template v-else>
+                <button @click="openModal(script)" class="btn btn-secondary btn-sm">编辑</button>
+                <button @click="confirmDelete(script.id)" class="btn btn-danger btn-sm">删除</button>
+              </template>
             </td>
           </tr>
         </tbody>
@@ -63,8 +96,7 @@
               <label>脚本类型</label>
               <select v-model="currentScript.scriptType">
                 <option value="USER_SIMPLE">用户自定义</option>
-                <option value="BUILT_IN_TEMPLATE">内置模板</option>
-                 <option value="BUILT_IN_INTERACTIVE">内置可交互</option>
+                <option value="USER_TEMPLATE">用户模板脚本</option>
               </select>
             </div>
             <div class="form-group">
@@ -87,13 +119,39 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, computed } from 'vue';
 
 const scripts = ref([]);
 const loading = ref(true);
 const submitting = ref(false);
 const isModalOpen = ref(false);
 const isEditing = ref(false);
+const currentTab = ref('all');
+
+// Tab切换功能
+const switchTab = (tab) => {
+  currentTab.value = tab;
+};
+
+// 根据当前tab过滤脚本
+const filteredScripts = computed(() => {
+  if (currentTab.value === 'all') {
+    return scripts.value;
+  } else if (currentTab.value === 'builtin-no-vars') {
+    return scripts.value.filter(script => 
+      script.scriptType === 'BUILT_IN_STATIC'
+    );
+  } else if (currentTab.value === 'builtin-with-vars') {
+    return scripts.value.filter(script => 
+      script.scriptType === 'BUILT_IN_PARAM'
+    );
+  } else if (currentTab.value === 'user') {
+    return scripts.value.filter(script => 
+      script.scriptType === 'USER_SIMPLE' || script.scriptType === 'USER_TEMPLATE'
+    );
+  }
+  return scripts.value;
+});
 
 const initialScriptState = {
   name: '',
@@ -179,9 +237,15 @@ const confirmDelete = async (id) => {
 // --- Helper Functions ---
 const getScriptTypeLabel = (type) => ({
   'USER_SIMPLE': '用户自定义',
-  'BUILT_IN_TEMPLATE': '内置模板',
-  'BUILT_IN_INTERACTIVE': '内置可交互'
+  'BUILT_IN_STATIC': '内置静态脚本',
+  'BUILT_IN_PARAM': '内置参数化脚本',
+  'USER_TEMPLATE': '用户模板脚本'
 }[type] || type);
+
+// 判断是否为内置脚本
+const isBuiltInScript = (script) => {
+  return script.scriptType === 'BUILT_IN_STATIC' || script.scriptType === 'BUILT_IN_PARAM';
+};
 
 const getStatusLabel = (status) => ({
   'ACTIVE': '活跃',
@@ -206,6 +270,39 @@ const formatDateTime = (dateTime) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  color: #666;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.tab-btn.active {
+  background: #1890ff;
+  color: white;
+  border-color: #1890ff;
 }
 
 h2 {
@@ -282,8 +379,9 @@ td .btn {
   text-transform: uppercase;
 }
 .badge-USER_SIMPLE { background-color: #e6f7ff; color: #1890ff; }
-.badge-BUILT_IN_TEMPLATE { background-color: #fffbe6; color: #faad14; }
-.badge-BUILT_IN_INTERACTIVE { background-color: #e6fffb; color: #13c2c2; }
+.badge-BUILT_IN_STATIC { background-color: #fffbe6; color: #faad14; }
+.badge-BUILT_IN_PARAM { background-color: #e6fffb; color: #13c2c2; }
+.badge-USER_TEMPLATE { background-color: #f0f5ff; color: #722ed1; }
 .badge-ACTIVE { background-color: #f6ffed; color: #52c41a; }
 .badge-INACTIVE { background-color: #f5f5f5; color: #bfbfbf; }
 .badge-DRAFT { background-color: #fff0f6; color: #eb2f96; }
@@ -352,5 +450,17 @@ td .btn {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 24px;
+}
+
+/* 内置脚本标签样式 */
+.built-in-label {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
 }
 </style>

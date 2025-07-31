@@ -20,4 +20,32 @@ public class CommandResult {
     public boolean isSuccess() {
         return exitStatus == 0;
     }
+
+    /**
+     * 创建成功的命令结果
+     */
+    public static CommandResult success(String output) {
+        return new CommandResult(output, "", 0);
+    }
+
+    /**
+     * 创建失败的命令结果
+     */
+    public static CommandResult failure(String errorMessage) {
+        return new CommandResult("", errorMessage, 1);
+    }
+
+    /**
+     * 获取错误消息
+     */
+    public String getErrorMessage() {
+        return stderr;
+    }
+
+    /**
+     * 获取输出内容
+     */
+    public String getOutput() {
+        return stdout;
+    }
 }

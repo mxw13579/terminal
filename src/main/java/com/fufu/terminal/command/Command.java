@@ -12,9 +12,17 @@ public interface Command {
     String getName();
 
     /**
+     * 获取命令的描述
+     * @return 命令描述
+     */
+    default String getDescription() {
+        return getName();
+    }
+
+    /**
      * 执行命令的核心逻辑
      * @param context 命令执行的上下文环境
-     * @throws Exception 执行过程中可能抛出异常
+     * @throws Exception 命令执行过程中的异常
      */
     void execute(CommandContext context) throws Exception;
 

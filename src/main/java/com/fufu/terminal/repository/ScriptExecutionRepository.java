@@ -15,4 +15,6 @@ public interface ScriptExecutionRepository extends JpaRepository<ScriptExecution
     List<ScriptExecution> findByUserIdOrderByStartTimeDesc(Long userId);
     
     Optional<ScriptExecution> findBySessionId(String sessionId);
+    
+    List<ScriptExecution> findAllByOrderByStartTimeDesc();
 }

@@ -11,7 +11,7 @@ import Terminal from '@/views/Terminal.vue'
 import Login from '@/views/Login.vue'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import AdminScriptGroups from '@/views/admin/ScriptGroups.vue'
-import AdminScripts from '@/views/admin/Scripts.vue'
+import AdminAtomicScripts from '@/views/admin/AtomicScripts.vue'
 import AdminAggregatedScripts from '@/views/admin/AggregatedScripts.vue'  // 新增聚合脚本管理
 import AdminUsers from '@/views/admin/Users.vue'
 import ScriptBuilder from '@/views/ScriptBuilder.vue'
@@ -100,7 +100,7 @@ const routes = [
       {
         path: 'scripts',
         name: 'AdminScripts', 
-        component: AdminScripts,
+        component: AdminAtomicScripts,
         meta: { 
           title: '原子脚本管理',
           description: '管理基础原子脚本'

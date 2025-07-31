@@ -92,6 +92,14 @@ public class SshConnection {
         }
     }
 
+    /**
+     * 检查SSH连接是否还活跃
+     */
+    public boolean isConnected() {
+        return session != null && session.isConnected() && 
+               channelShell != null && channelShell.isConnected();
+    }
+
     // 新增方法
     public synchronized void setMonitoringTask(Future<?> monitoringTask) {
         cancelMonitoringTask(); // 取消任何旧任务

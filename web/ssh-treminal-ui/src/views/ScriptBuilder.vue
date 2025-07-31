@@ -411,24 +411,24 @@ export default {
         // 加载统一脚本（包括内置脚本和可配置脚本）
         const response = await http.get('/api/user/atomic-scripts/unified')
         const unifiedScripts = response.data || []
-        
+
         // 按标签分组
         const grouped = {}
         unifiedScripts.forEach(script => {
           const tags = script.tags || []
-          
+
           // 如果没有标签，根据脚本类型分配默认分组
           if (tags.length === 0) {
             const defaultCategory = script.scriptType === 'BUILT_IN' ? '内置脚本' : '自定义脚本'
             tags.push(defaultCategory)
           }
-          
+
           // 为每个标签添加脚本
           tags.forEach(tag => {
             if (!grouped[tag]) {
               grouped[tag] = []
             }
-            
+
             // 转换为命令格式
             grouped[tag].push({
               id: script.scriptId,
@@ -441,7 +441,7 @@ export default {
             })
           })
         })
-        
+
         categorizedCommands.value = grouped
         console.log('统一脚本加载成功:', grouped)
       } catch (error) {
@@ -483,7 +483,7 @@ export default {
       const commandIndex = scriptCommands.value.findIndex(cmd => cmd.name === progress.currentStep)
       if (commandIndex >= 0) {
         const command = scriptCommands.value[commandIndex]
-        
+
         // 根据执行状态更新命令状态
         switch (progress.status) {
           case 'RUNNING':
@@ -499,7 +499,7 @@ export default {
             command.status = 'skipped'
             break
         }
-        
+
         command.message = progress.message
       }
 
@@ -534,7 +534,7 @@ export default {
     const getLogStatus = (status) => {
       const statusMap = {
         'RUNNING': 'executing',
-        'SUCCESS': 'completed', 
+        'SUCCESS': 'completed',
         'FAILED': 'failed',
         'CANCELLED': 'skipped',
         'PENDING': 'executing'
@@ -700,8 +700,36 @@ export default {
       ElMessage.success('SSH配置已保存')
     }
 
+    const testConnection = async () => {
+      if (!isConfigValid.value) {
+        ElMessage.warning('请填写完整的SSH配置信息')
+        return
+      }
+
+      testingConnection.value = true
+      try {
+        const response = await http.post('/api/ssh/test-connection', sshConfig)
+        if (response.data && response.data.success) {
+          ElMessage.success('SSH连接测试成功')
+        } else {
+          ElMessage.error('SSH连接测试失败: ' + (response.data?.message || '未知错误'))
+        }
+      } catch (error) {
+        ElMessage.error('SSH连接测试失败: ' + (error.response?.data || error.message))
+      } finally {
+        testingConnection.value = false
+      }
+    }
+
     const executeScript = async () => {
       if (!canExecute.value) return
+
+      // 检查SSH配置是否有效
+      if (!isConfigValid.value) {
+        ElMessage.warning('请先配置SSH连接信息')
+        showSshConfig.value = true
+        return
+      }
 
       // 检查是否至少有一个脚本
       if (scriptCommands.value.length === 0) {
@@ -724,17 +752,17 @@ export default {
         // 如果只有一个脚本，直接执行
         if (scriptCommands.value.length === 1) {
           const scriptId = scriptCommands.value[0].id
-          const response = await http.post(`/api/user/unified-execution/script/${scriptId}`)
-          
+          const response = await http.post(`/api/user/unified-execution/script/${scriptId}`, sshConfig)
+
           if (response.data) {
             currentSessionId.value = response.data
-            
+
             // 动态订阅当前会话的进度消息
             const progressTopic = `/topic/execution/progress/${currentSessionId.value}`
             webSocketClient.subscribe(progressTopic, (progress) => {
               updateProgress(progress)
             })
-            
+
             ElMessage.success('脚本开始执行，请查看右侧进度面板')
           } else {
             throw new Error('启动失败')
@@ -753,23 +781,23 @@ export default {
     const executeMultipleScripts = async () => {
       for (let i = 0; i < scriptCommands.value.length; i++) {
         const script = scriptCommands.value[i]
-        
+
         try {
           // 更新当前执行的脚本状态
           script.status = 'executing'
           currentCommand.value = script.name
           currentStep.value = i + 1
-          
+
           // 执行单个脚本
-          const response = await http.post(`/api/user/unified-execution/script/${script.id}`)
-          
+          const response = await http.post(`/api/user/unified-execution/script/${script.id}`, sshConfig)
+
           if (response.data) {
             // 等待脚本执行完成（简化处理，实际可以通过WebSocket监听）
             await new Promise(resolve => setTimeout(resolve, 2000))
-            
+
             script.status = 'completed'
             script.message = '执行完成'
-            
+
             // 添加到执行日志
             executionLogs.value.push({
               time: Date.now(),
@@ -781,7 +809,7 @@ export default {
         } catch (error) {
           script.status = 'failed'
           script.message = '执行失败: ' + (error.response?.data || error.message)
-          
+
           // 添加到执行日志
           executionLogs.value.push({
             time: Date.now(),
@@ -789,12 +817,12 @@ export default {
             status: 'failed',
             message: script.message
           })
-          
+
           ElMessage.error(`脚本 ${script.name} 执行失败`)
           break // 停止执行后续脚本
         }
       }
-      
+
       isExecuting.value = false
       progressStatus.value = 'success'
       ElMessage.success('所有脚本执行完成！')

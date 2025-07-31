@@ -184,7 +184,7 @@ const executeScript = async (script) => {
       connectToExecutionLogs(response.data.id)
     } catch (error) {
       console.error('后端API调用失败，使用模拟执行:', error)
-      // 使用模拟执行
+      // 如果后端API失败，仍然使用模拟执行
       simulateScriptExecution(script)
     }
 

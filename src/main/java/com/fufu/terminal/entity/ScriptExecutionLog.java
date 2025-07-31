@@ -18,6 +18,9 @@ public class ScriptExecutionLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
+    @Column(name = "execution_id")
+    private Long executionId;
+    
     @Column(name = "session_id", nullable = false, length = 36)
     private String sessionId;
     
@@ -27,6 +30,9 @@ public class ScriptExecutionLog {
     @Column(name = "step_name", length = 100)
     private String stepName;
     
+    @Column(name = "log_type", length = 20)
+    private String logType = "INFO";
+    
     @Enumerated(EnumType.STRING)
     private ExecutionStatus status;
     
@@ -35,6 +41,9 @@ public class ScriptExecutionLog {
     
     @Column(columnDefinition = "TEXT")
     private String output; // 命令输出
+    
+    @Column(name = "step_order")
+    private Integer stepOrder = 0;
     
     @Column(name = "execution_time")
     private Integer executionTime; // 执行耗时（毫秒）

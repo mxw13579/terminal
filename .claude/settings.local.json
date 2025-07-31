@@ -8,7 +8,10 @@
       "Bash(./gradlew:*)",
       "Bash(del:*)",
       "Bash(rm:*)",
-      "Bash(mv web/ssh-treminal-ui/src/views/admin/Scripts.vue web/ssh-treminal-ui/src/views/admin/Scripts.vue.bak)"
+      "Bash(mv web/ssh-treminal-ui/src/views/admin/Scripts.vue web/ssh-treminal-ui/src/views/admin/Scripts.vue.bak)",
+      "Bash(grep:*)",
+      "Bash(npm run serve:*)",
+      "Bash(npm run dev:*)"
     ],
     "deny": []
   }

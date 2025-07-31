@@ -1,7 +1,9 @@
 package com.fufu.terminal.service.script;
 
+import com.fufu.terminal.command.AtomicScriptCommand;
 import com.fufu.terminal.command.Command;
 import com.fufu.terminal.entity.AtomicScript;
+import com.fufu.terminal.service.script.adapter.AtomicScriptCommandAdapter;
 import com.fufu.terminal.service.script.adapter.BuiltInScriptAdapter;
 import com.fufu.terminal.service.script.adapter.ConfigurableScriptAdapter;
 import lombok.RequiredArgsConstructor;
@@ -31,12 +33,21 @@ public class UnifiedScriptRegistry {
     private final Map<String, List<UnifiedAtomicScript>> scriptsByTag = new ConcurrentHashMap<>();
     
     /**
-     * 注册内置脚本
+     * 注册内置脚本 (Command接口)
      */
     public void registerBuiltInScript(Command command, String scriptId, String[] tags) {
         BuiltInScriptAdapter adapter = new BuiltInScriptAdapter(command, scriptId, tags);
         registerScript(adapter);
-        log.debug("注册内置脚本: {} -> {}", scriptId, adapter.getName());
+        log.debug("注册内置脚本(Command): {} -> {}", scriptId, adapter.getName());
+    }
+    
+    /**
+     * 注册内置原子脚本命令 (AtomicScriptCommand接口)
+     */
+    public void registerBuiltInAtomicScript(AtomicScriptCommand atomicCommand, String scriptId, String[] tags) {
+        AtomicScriptCommandAdapter adapter = new AtomicScriptCommandAdapter(atomicCommand, scriptId, tags);
+        registerScript(adapter);
+        log.debug("注册内置原子脚本命令: {} -> {}", scriptId, adapter.getName());
     }
     
     /**

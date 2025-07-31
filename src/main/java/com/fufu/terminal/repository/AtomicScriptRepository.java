@@ -47,4 +47,9 @@ public interface AtomicScriptRepository extends JpaRepository<AtomicScript, Long
      */
     @Query("SELECT a FROM AtomicScript a WHERE a.status = 'ACTIVE' ORDER BY a.scriptType, a.sortOrder")
     List<AtomicScript> findAllActiveForRegistry();
+    
+    /**
+     * 根据名称查找脚本（用于内置脚本注册检查）
+     */
+    AtomicScript findByName(String name);
 }

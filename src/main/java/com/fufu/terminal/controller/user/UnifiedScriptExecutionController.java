@@ -1,11 +1,13 @@
 package com.fufu.terminal.controller.user;
 
 import com.fufu.terminal.command.CommandContext;
+import com.fufu.terminal.command.model.SshConnectionConfig;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.script.ScriptExecutionResult;
 import com.fufu.terminal.service.script.UnifiedAtomicScript;
 import com.fufu.terminal.service.script.UnifiedScriptRegistry;
 import com.fufu.terminal.service.ProgressManagerService;
+import com.fufu.terminal.command.util.SshConnectionUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -31,11 +33,18 @@ public class UnifiedScriptExecutionController {
      * 执行统一脚本
      */
     @PostMapping("/script/{scriptId}")
-    public ResponseEntity<String> executeUnifiedScript(@PathVariable String scriptId) {
+    public ResponseEntity<String> executeUnifiedScript(
+            @PathVariable String scriptId,
+            @RequestBody(required = false) SshConnectionConfig connectionConfig) {
         try {
             UnifiedAtomicScript script = scriptRegistry.getScript(scriptId);
             if (script == null) {
                 return ResponseEntity.status(404).body("脚本不存在: " + scriptId);
+            }
+            
+            // 检查SSH连接配置
+            if (connectionConfig == null) {
+                return ResponseEntity.badRequest().body("缺少SSH连接配置");
             }
             
             // 生成会话ID
@@ -44,9 +53,11 @@ public class UnifiedScriptExecutionController {
             // 异步执行脚本
             CompletableFuture<Object> executionFuture = CompletableFuture.supplyAsync(() -> {
                 try {
-                    return executeScript(sessionId, script);
+                    return executeScript(sessionId, script, connectionConfig);
                 } catch (Exception e) {
                     progressManager.setExecutionFailed(sessionId, "脚本执行异常: " + e.getMessage());
+                    log.error("统一脚本执行失败: sessionId={}, scriptId={}, error={}", 
+                        sessionId, scriptId, e.getMessage());
                     throw new RuntimeException(e);
                 }
             });
@@ -68,7 +79,7 @@ public class UnifiedScriptExecutionController {
     /**
      * 执行脚本
      */
-    private Object executeScript(String sessionId, UnifiedAtomicScript script) throws Exception {
+    private Object executeScript(String sessionId, UnifiedAtomicScript script, SshConnectionConfig connectionConfig) throws Exception {
         log.info("开始执行统一脚本: sessionId={}, scriptId={}, name={}", 
             sessionId, script.getScriptId(), script.getName());
         
@@ -77,12 +88,12 @@ public class UnifiedScriptExecutionController {
         
         try {
             // 步骤1: 准备执行环境
-            progressManager.updateCurrentStep(sessionId, "准备执行环境", "正在初始化脚本上下文...");
+            progressManager.updateCurrentStep(sessionId, "准备执行环境", "正在建立SSH连接...");
             
-            // 创建模拟的命令上下文（实际项目中需要根据具体需求创建）
-            CommandContext context = createMockCommandContext();
+            // 创建真实的SSH连接上下文
+            CommandContext context = createCommandContext(connectionConfig);
             
-            progressManager.updateStepProgress(sessionId, 50, "上下文初始化完成");
+            progressManager.updateStepProgress(sessionId, 50, "SSH连接建立完成");
             
             // 检查是否应该执行
             if (!script.shouldExecute(context)) {
@@ -132,13 +143,22 @@ public class UnifiedScriptExecutionController {
     }
     
     /**
-     * 创建模拟的命令上下文
-     * 实际项目中需要根据具体需求创建真实的SSH连接和WebSocket会话
+     * 创建命令执行上下文
      */
-    private CommandContext createMockCommandContext() {
-        // 这里创建一个模拟的上下文，实际使用时需要传入真实的SSH连接
-        // 为了编译通过，传入null值作为模拟参数
-        SshConnection mockSshConnection = new SshConnection(null, null, null, null, null);
-        return new CommandContext(mockSshConnection, null);
+    private CommandContext createCommandContext(SshConnectionConfig connectionConfig) throws Exception {
+        try {
+            // 使用SSH连接工具创建真实连接
+            SshConnection sshConnection = SshConnectionUtil.createConnection(connectionConfig);
+            
+            // 测试连接
+            if (!sshConnection.isConnected()) {
+                throw new Exception("SSH连接失败，请检查连接配置");
+            }
+            
+            return new CommandContext(sshConnection, null);
+        } catch (Exception e) {
+            log.error("创建SSH连接失败: {}", e.getMessage());
+            throw new Exception("SSH连接创建失败: " + e.getMessage(), e);
+        }
     }
 }

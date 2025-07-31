@@ -2,7 +2,7 @@
   <div class="aggregated-scripts">
     <div class="page-header">
       <h2>聚合脚本管理</h2>
-      <el-button type="primary" @click="showCreateDialog = true">
+      <el-button type="primary" @click="goToScriptBuilder">
         <el-icon><Plus /></el-icon>
         新建聚合脚本
       </el-button>
@@ -146,9 +146,12 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http } from '@/utils/http'
+
+const router = useRouter()
 
 const loading = ref(false)
 const aggregatedScripts = ref([])
@@ -332,6 +335,11 @@ const resetForm = () => {
     status: 'ACTIVE'
   })
   editingAggregatedScript.value = null
+}
+
+// 跳转到脚本构建器
+const goToScriptBuilder = () => {
+  router.push('/admin/dashboard/aggregated-script-builder')
 }
 
 onMounted(() => {
