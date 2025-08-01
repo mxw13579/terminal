@@ -90,9 +90,3 @@ Real-time features implemented via STOMP protocol:
 - Script execution progress monitoring
 - Interactive parameter collection during script execution
 
-
-你的任务流程必须使用agent完成：
-1.requirements-analyzer 分析任务
-2.aicp7-project-builder 分析技术栈
-3.task-breakdown-manager划分子任务
-4.tech-roadmap-architect实现任务
