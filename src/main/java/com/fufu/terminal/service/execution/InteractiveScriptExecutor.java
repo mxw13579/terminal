@@ -151,6 +151,12 @@ public class InteractiveScriptExecutor {
     
     // ... (其他所有辅助方法如 waitForUserResponse, sendInteractionRequest, 消息创建等保持不变) ...
 
+    private List<AtomicScript> getAtomicScriptsFromAggregated(AggregatedScript script) {
+        return script.getAtomicScriptRelations().stream()
+                .map(AggregateAtomicRelation::getAtomicScript)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     private void handleExecutionError(String sessionId, Exception e) {
         if (e instanceof InterruptedException) {
             log.warn("Execution was interrupted for session: {}", sessionId);
@@ -162,5 +168,37 @@ public class InteractiveScriptExecutor {
         }
     }
     
+    private ExecutionMessage createStepSkippedMessage(AtomicScript script) {
+        return new ExecutionMessage(ExecutionMessage.MessageType.STEP_SKIPPED, "Skipping step: " + script.getName(), script.getName());
+    }
+
+    private ExecutionMessage createCancelledMessage() {
+        return new ExecutionMessage(ExecutionMessage.MessageType.CANCELLED, "Execution was cancelled.");
+    }
+
+    private ExecutionMessage createErrorMessage(Exception e) {
+        return new ExecutionMessage(ExecutionMessage.MessageType.ERROR, "An error occurred: " + e.getMessage());
+    }
+
+    private ExecutionMessage createStartMessage(AggregatedScript script) {
+        return new ExecutionMessage(ExecutionMessage.MessageType.INFO, "Starting script: " + script.getName());
+    }
+
+    private ExecutionMessage createCompletionMessage(AggregatedScript script) {
+        return new ExecutionMessage(ExecutionMessage.MessageType.INFO, "Finished script: " + script.getName());
+    }
+
+    private ExecutionMessage createStepStartMessage(AtomicScript script) {
+        return new ExecutionMessage(ExecutionMessage.MessageType.STEP_START, "Starting step: " + script.getName(), script.getName());
+    }
+
+    private ExecutionMessage createStepCompletionMessage(AtomicScript script) {
+        return new ExecutionMessage(ExecutionMessage.MessageType.STEP_COMPLETED, "Finished step: " + script.getName(), script.getName());
+    }
+
+    private void sendExecutionMessage(String sessionId, ExecutionMessage message) {
+        messagingTemplate.convertAndSend("/topic/execution/" + sessionId, message);
+    }
+
     // ... [Copy all unchanged helper methods from the previous version here] ...
 }

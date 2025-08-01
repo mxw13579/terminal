@@ -56,6 +56,9 @@ public class AtomicScript {
     @Column(columnDefinition = "json")
     private String prerequisites; // e.g., [{"type": "command", "value": "docker"}, {"type": "os", "value": "debian"}]
 
+    @Column(columnDefinition = "TEXT")
+    private String conditionExpression;
+
     @Column(name = "estimated_duration")
     private Integer estimatedDuration = 0; // In seconds
     
@@ -71,6 +74,10 @@ public class AtomicScript {
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
+
+    public String getConditionExpression() {
+        return conditionExpression;
+    }
 
     // Simplified status enum
     public enum Status {

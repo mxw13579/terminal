@@ -1,5 +1,6 @@
 package com.fufu.terminal.service;
 
+import com.fufu.terminal.entity.AggregateAtomicRelation;
 import com.fufu.terminal.entity.AtomicScript;
 import com.fufu.terminal.repository.AggregateAtomicRelationRepository;
 import com.fufu.terminal.repository.AtomicScriptRepository;
@@ -134,7 +135,7 @@ public class AtomicScriptService {
     public List<AtomicScript> getAtomicScriptsByAggregateId(Long aggregateId) {
         return aggregateAtomicRelationRepository.findByAggregateIdOrderByExecutionOrder(aggregateId)
                 .stream()
-                .map(relation -> getAtomicScriptById(relation.getAtomicId()))
+                .map(AggregateAtomicRelation::getAtomicScript)
                 .collect(Collectors.toList());
     }
     
