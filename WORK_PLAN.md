@@ -20,11 +20,28 @@
 *   [✅] **P1: 上下文与条件执行** `(已完成)`
 *   [✅] **P2: 数据模型重构 (脚本与分组)** `(已完成)`
 *   [✅] **P3: 聚合脚本构建器 (支持参数化)** `(已完成)`
-*   [▶️] **P4: 用户端首页重构与体验优化** `(正在进行)`
+*   [✅] **P4: 用户端首页重构与体验优化** `(已完成)`
 
 ---
 
 ## 3. 详细工作与决策日志 (Action & Decision Log)
+
+`[2025-08-01]`
+#### **完成 (P4): 用户端首页重构与体验优化**
+
+**思考与决策:**
+*   **目标:** 全面提升核心用户界面的性能、健壮性和功能完整性，使其与后端强大的功能对齐。主要涉及`Home.vue`和`ScriptExecution.vue`两个视图。
+*   **决策路径:**
+    1.  **优化数据加载:** 我首先分析了`Home.vue`的加载机制，发现了一个严重的N+1查询性能问题（为获取脚本数量，对每个分组都进行一次API调用）。我立即重构了前端逻辑，使其能够利用已有的高效后端API (`/api/user/script-groups`)，仅通过一次网络请求就获取所有需要的数据，显著提升了首页加载速度。
+    2.  **重构执行页面:** 对于`ScriptExecution.vue`，我同样发现其数据加载逻辑是低效且错误的（调用了两个独立的API，其中一个还是管理员接口）。我通过在后端`ScriptGroupService`和`UserScriptGroupController`中增加一个新的、专用的API端点 (`/api/user/script-groups/{groupId}`) 来解决此问题，该端点一次性返回了脚本执行页面所需的所有数据。这不仅提高了性能，还修复了权限bug。
+    3.  **移除技术债务:** 在重构过程中，我移除了`UserScriptExecution.vue`中所有用于模拟执行的硬编码逻辑 (`simulateScriptExecution`)。这些代码是过时的技术债务，移除后使组件更简洁、更易于维护，且完全依赖于真实的后端WebSocket通信。
+    4.  **实现交互式UI:** 最后，我完成了交互式执行的闭环。我创建了一个新的可复用组件`InteractionModal.vue`来处理所有类型的用户交互（确认、文本输入、密码输入）。然后，我将此组件集成到`UserScriptExecution.vue`中，并添加了新的WebSocket订阅逻辑来监听和显示交互请求，并通过`handleInteractionResponse`方法将用户的响应安全地提交回后端。
+*   **影响:**
+    *   **后端:** `ScriptGroupService.java`, `UserScriptGroupController.java`, `ScriptGroupRepository.java`
+    *   **前端:** `views/user/Home.vue`, `views/user/ScriptExecution.vue`, `components/InteractionModal.vue` (新文件)
+
+**代码快照 (Git Commit):** `68905b2ccb468c50579641a47e53ae2b08aa62ad`
+
 
 `[2025-08-01]`
 #### **完成 (P3): 实现聚合脚本构建器 (端到端)**
@@ -39,6 +56,8 @@
 *   **影响:**
     *   **后端:** `AggregatedScriptService.java`, `AdminAggregatedScriptController.java`, `dto/AggregatedScriptCreateRequest.java`
     *   **前端:** `views/ScriptBuilder.vue`
+
+**代码快照 (Git Commit):** `68905b2ccb468c50579641a47e53ae2b08aa62ad`
 
 
 `[2025-08-01]`
@@ -93,5 +112,5 @@
 
 ## 4. 当前状态
 
-*   **当前阶段:** P1 - 上下文与条件执行
-*   **下一步行动:** 增强 `EnhancedScriptContext` 使其支持在聚合脚本的完整生命周期内持久化，确保一个原子脚本写入的变量，可以被后续的脚本读取和使用。
+*   **当前阶段:** 全部完成
+*   **下一步行动:** 项目核心功能已全部完成。可以进行最终的集成测试，准备部署。

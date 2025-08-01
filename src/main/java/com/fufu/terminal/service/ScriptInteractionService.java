@@ -6,6 +6,7 @@ import com.fufu.terminal.entity.ScriptInteraction;
 import com.fufu.terminal.entity.enums.InteractionType;
 import com.fufu.terminal.entity.interaction.InteractionRequest;
 import com.fufu.terminal.entity.interaction.InteractionResponse;
+import com.fufu.terminal.repository.ScriptExecutionSessionRepository;
 import com.fufu.terminal.repository.ScriptInteractionRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;

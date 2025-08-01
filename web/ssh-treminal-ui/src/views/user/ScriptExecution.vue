@@ -111,6 +111,7 @@
         </div>
       </div>
     </div>
+    <InteractionModal v-model="interactionRequest" @submit="handleInteractionResponse" />
   </div>
 </template>
 
@@ -121,6 +122,7 @@ import { ArrowLeft, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { http } from '@/utils/http'
 import { connectWebSocket } from '@/utils/websocket'
+import InteractionModal from '@/components/InteractionModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -133,30 +135,22 @@ const executionLogs = ref([])
 const currentExecution = ref(null)
 const isExecuting = ref(false)
 const autoScroll = ref(true)
+const interactionRequest = ref(null)
 
 const logsContainer = ref(null)
 let wsConnection = null
 
-const loadGroupInfo = async () => {
+const loadGroupData = async () => {
   try {
-    const response = await http.get(`/api/admin/script-groups/${groupId.value}`)
+    const response = await http.get(`/api/user/script-groups/${groupId.value}`)
     groupInfo.value = response.data
-  } catch (error) {
-    console.error('加载分组信息失败:', error)
-    ElMessage.error('加载分组信息失败')
-  }
-}
-
-const loadAggregatedScripts = async () => {
-  try {
-    const response = await http.get(`/api/user/aggregated-scripts/group/${groupId.value}`)
-    scripts.value = response.data
+    scripts.value = response.data.aggregatedScripts
     if (scripts.value.length > 0) {
       selectedScript.value = scripts.value[0]
     }
   } catch (error) {
-    console.error('加载聚合脚本列表失败:', error)
-    ElMessage.error('加载聚合脚本列表失败')
+    console.error('加载脚本组信息失败:', error)
+    ElMessage.error('加载脚本组信息失败')
   }
 }
 
@@ -170,79 +164,16 @@ const executeScript = async (script) => {
   try {
     isExecuting.value = true
     executionLogs.value = []
-    currentExecution.value = {
-      id: Date.now(),
-      scriptId: script.id,
-      status: 'RUNNING',
-      startTime: new Date().toISOString()
-    }
 
-    // 尝试调用后端API
-    try {
-      const response = await http.post(`/api/user/script-execution/execute/${script.id}`)
-      currentExecution.value = response.data
-      connectToExecutionLogs(response.data.id)
-    } catch (error) {
-      console.error('后端API调用失败，使用模拟执行:', error)
-      // 如果后端API失败，仍然使用模拟执行
-      simulateScriptExecution(script)
-    }
+    const response = await http.post(`/api/user/script-execution/execute/${script.id}`)
+    currentExecution.value = response.data
+    connectToExecutionLogs(response.data.id)
 
     ElMessage.success('脚本开始执行')
   } catch (error) {
     ElMessage.error('执行脚本失败')
     isExecuting.value = false
   }
-}
-
-// 模拟脚本执行
-const simulateScriptExecution = (script) => {
-  const executionId = currentExecution.value.id
-  
-  // 模拟执行日志
-  const mockLogs = [
-    { stepName: '初始化', logType: 'INFO', message: `开始执行脚本: ${script.name}`, stepOrder: 1 },
-    { stepName: '环境检测', logType: 'INFO', message: '正在检测系统环境...', stepOrder: 2 },
-    { stepName: '环境检测', logType: 'SUCCESS', message: '操作系统: Linux Ubuntu 20.04 LTS', stepOrder: 2 },
-    { stepName: '环境检测', logType: 'SUCCESS', message: 'CPU架构: x86_64', stepOrder: 2 },
-    { stepName: '环境检测', logType: 'SUCCESS', message: '内存: 8GB', stepOrder: 2 },
-    { stepName: '依赖检查', logType: 'INFO', message: '正在检查依赖包...', stepOrder: 3 },
-    { stepName: '依赖检查', logType: 'SUCCESS', message: 'Python 3.8.10 已安装', stepOrder: 3 },
-    { stepName: '依赖检查', logType: 'SUCCESS', message: 'Node.js v16.20.0 已安装', stepOrder: 3 },
-    { stepName: '执行任务', logType: 'INFO', message: '开始执行主要任务...', stepOrder: 4 },
-    { stepName: '执行任务', logType: 'SUCCESS', message: '任务执行成功', stepOrder: 4 },
-    { stepName: '清理', logType: 'INFO', message: '正在清理临时文件...', stepOrder: 5 },
-    { stepName: '完成', logType: 'SUCCESS', message: '脚本执行完成', stepOrder: 6 }
-  ]
-  
-  // 逐步添加日志
-  let index = 0
-  const addLog = () => {
-    if (index < mockLogs.length) {
-      const log = {
-        ...mockLogs[index],
-        id: Date.now() + index,
-        executionId: executionId,
-        timestamp: new Date().toISOString()
-      }
-      executionLogs.value.push(log)
-      scrollToBottom()
-      index++
-      
-      // 随机延迟500-2000ms
-      const delay = Math.random() * 1500 + 500
-      setTimeout(addLog, delay)
-    } else {
-      // 执行完成
-      currentExecution.value.status = 'SUCCESS'
-      currentExecution.value.endTime = new Date().toISOString()
-      isExecuting.value = false
-      ElMessage.success('脚本执行完成')
-    }
-  }
-  
-  // 开始模拟执行
-  setTimeout(addLog, 1000)
 }
 
 const connectToExecutionLogs = (executionId) => {
@@ -267,6 +198,11 @@ const connectToExecutionLogs = (executionId) => {
         }
       }
     })
+
+    // 订阅交互请求
+    ws.subscribe(`/topic/execution/${executionId}/interaction`, (request) => {
+      interactionRequest.value = request
+    })
   }
 
   ws.onError = (error) => {
@@ -279,6 +215,15 @@ const connectToExecutionLogs = (executionId) => {
   ws.init()
   
   wsConnection = ws
+}
+
+const handleInteractionResponse = async (response) => {
+  try {
+    await http.post(`/api/user/interactive-execution/respond`, response)
+  } catch (error) {
+    console.error('提交交互响应失败:', error)
+    ElMessage.error('提交交互响应失败')
+  }
 }
 
 const scrollToBottom = () => {
@@ -332,15 +277,14 @@ const getExecutionStatusText = (status) => {
 }
 
 const goBack = () => {
-  router.push('/user')
+  router.back()
 }
 
 // 自动滚动监听
 watch(executionLogs, scrollToBottom, { deep: true })
 
 onMounted(() => {
-  loadGroupInfo()
-  loadAggregatedScripts()
+  loadGroupData()
 })
 
 onUnmounted(() => {

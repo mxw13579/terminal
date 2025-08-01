@@ -34,10 +34,9 @@ public class InteractiveScriptExecutionController {
         try {
             AggregatedScript script = aggregatedScriptService.getAggregatedScriptById(aggregateScriptId);
             String sessionId = UUID.randomUUID().toString();
-            EnhancedScriptContext context = new EnhancedScriptContext();
 
-            // 异步执行
-            interactiveScriptExecutor.executeAggregateScript(sessionId, script, context);
+            // 异步执行，执行器内部会创建和管理上下文
+            interactiveScriptExecutor.executeAggregateScript(sessionId, script);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

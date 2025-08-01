@@ -45,7 +45,7 @@
                 <p>{{ group.description || '暂无描述' }}</p>
                 <div class="card-footer">
                   <el-tag size="small" type="primary">项目维度</el-tag>
-                  <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+                  <el-tag size="small">{{ getScriptCount(group) }} 个脚本</el-tag>
                 </div>
               </div>
             </div>
@@ -73,7 +73,7 @@
                 <p>{{ group.description || '暂无描述' }}</p>
                 <div class="card-footer">
                   <el-tag size="small" type="success">功能维度</el-tag>
-                  <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+                  <el-tag size="small">{{ getScriptCount(group) }} 个脚本</el-tag>
                 </div>
               </div>
             </div>
@@ -101,7 +101,7 @@
                 <h3>{{ group.name }}</h3>
                 <p>{{ group.description || '暂无描述' }}</p>
                 <div class="card-footer">
-                  <el-tag size="small">{{ getScriptCount(group.id) }} 个脚本</el-tag>
+                  <el-tag size="small">{{ getScriptCount(group) }} 个脚本</el-tag>
                 </div>
               </div>
             </div>
@@ -121,18 +121,17 @@ import { http } from '@/utils/http'
 
 const router = useRouter()
 const scriptGroups = ref([])
-const scriptCounts = ref({})
 
 // 按分组类型分类
-const projectGroups = computed(() => 
+const projectGroups = computed(() =>
   scriptGroups.value.filter(group => group.type === 'PROJECT_DIMENSION')
 )
 
-const functionGroups = computed(() => 
+const functionGroups = computed(() =>
   scriptGroups.value.filter(group => group.type === 'FUNCTION_DIMENSION')
 )
 
-const otherGroups = computed(() => 
+const otherGroups = computed(() =>
   scriptGroups.value.filter(group => !group.type || (group.type !== 'PROJECT_DIMENSION' && group.type !== 'FUNCTION_DIMENSION'))
 )
 
@@ -140,20 +139,14 @@ const loadScriptGroups = async () => {
   try {
     const response = await http.get('/api/user/script-groups')
     scriptGroups.value = response.data
-    
-    // 加载每个分组的聚合脚本数量
-    for (const group of scriptGroups.value) {
-      const scriptsResponse = await http.get(`/api/user/aggregated-scripts/group/${group.id}`)
-      scriptCounts.value[group.id] = scriptsResponse.data.length
-    }
   } catch (error) {
     console.error('加载脚本分组失败:', error)
     ElMessage.error('加载脚本分组失败')
   }
 }
 
-const getScriptCount = (groupId) => {
-  return scriptCounts.value[groupId] || 0
+const getScriptCount = (group) => {
+  return group.aggregatedScripts ? group.aggregatedScripts.length : 0
 }
 
 const goToTerminal = () => {

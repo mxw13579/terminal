@@ -62,15 +62,6 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
     
     @Override
     public String[] getTags() {
-        if (atomicScript.getTags() != null) {
-            try {
-                List<String> tagList = objectMapper.readValue(atomicScript.getTags(), 
-                    new TypeReference<List<String>>() {});
-                return tagList.toArray(new String[0]);
-            } catch (Exception e) {
-                log.warn("解析脚本标签失败: {}", e.getMessage());
-            }
-        }
         return new String[]{atomicScript.getScriptType().name()};
     }
     
