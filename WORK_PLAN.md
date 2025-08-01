@@ -19,12 +19,27 @@
 *   [✅] **P0: 交互式执行机制 (后端+前端)** `(已完成)`
 *   [✅] **P1: 上下文与条件执行** `(已完成)`
 *   [✅] **P2: 数据模型重构 (脚本与分组)** `(已完成)`
-*   [▶️] **P3: 聚合脚本构建器 (支持参数化)** `(正在进行)`
-*   [🔲] **P4: 用户端首页重构与体验优化**
+*   [✅] **P3: 聚合脚本构建器 (支持参数化)** `(已完成)`
+*   [▶️] **P4: 用户端首页重构与体验优化** `(正在进行)`
 
 ---
 
 ## 3. 详细工作与决策日志 (Action & Decision Log)
+
+`[2025-08-01]`
+#### **完成 (P3): 实现聚合脚本构建器 (端到端)**
+
+**思考与决策:**
+*   **目标:** 提供一个端到端的功能，允许用户通过可视化界面创建、配置和保存由多个原子脚本组成的复杂工作流。这是应用的核心价值所在。
+*   **决策路径:**
+    1.  **DTO先行:** 我首先定义了一个 `AggregatedScriptCreateRequest` DTO。这个决策至关重要，因为它创建了一个清晰、稳定的数据契约，解耦了前端的视图模型和后端的持久化实体。这使得前后端可以并行开发，并且降低了因后端实体变化而破坏前端的风险。
+    2.  **服务层逻辑:** 接下来，我重构了 `AggregatedScriptService`，用一个新的、更智能的 `createAggregatedScript` 方法取代了旧的、简单的CRUD方法。该方法负责接收DTO，并将其转换为 `AggregatedScript` 实体及其所有关联的 `AggregateAtomicRelation` 子实体，封装了所有的业务逻辑和持久化操作。
+    3.  **暴露API端点:** 我更新了 `AdminAggregatedScriptController`，使其能够接收新的DTO请求并调用我们刚刚创建的服务方法。这完成了后端的闭环。
+    4.  **前端实现:** 最后，我重构了 `ScriptBuilder.vue` 组件。我添加了用于输入元数据（名称、描述）的表单，并实现了核心的 `saveScript` 方法。该方法负责收集用户在UI上的所有输入（包括拖拽的命令顺序和配置的条件），构建与后端DTO完全匹配的JSON载荷，并将其发送到我们创建的API端点。
+*   **影响:**
+    *   **后端:** `AggregatedScriptService.java`, `AdminAggregatedScriptController.java`, `dto/AggregatedScriptCreateRequest.java`
+    *   **前端:** `views/ScriptBuilder.vue`
+
 
 `[2025-08-01]`
 #### **完成 (P2): 完成核心实体的数据模型重构**
@@ -38,7 +53,7 @@
 *   **影响:**
     *   **后端:** `AtomicScript.java`, `AggregatedScript.java`, `ScriptGroup.java`, `AggregateAtomicRelation.java`, `GroupAggregateRelation.java`
 
-**代码快照 (Git Commit):** `(将在下一步生成)`
+**代码快照 (Git Commit):** `0a01f9e67afd9bb68b54545949f04f6a0cdfb260`
 
 `[2025-08-01]`
 #### **完成 (P1): 实现上下文持久化与条件执行**
