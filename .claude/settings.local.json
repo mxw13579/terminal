@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
       "Bash(java:*)",
@@ -14,9 +15,9 @@
       "Bash(npm run dev:*)",
       "Bash(git add .)",
       "Bash(git commit -m \"feat(P0): Implement end-to-end interactive execution\")",
-      "Bash(git rev-parse HEAD)"
+      "Bash(git rev-parse HEAD)",
+      "Bash(git commit -m \"feat(P1): Implement context persistence and conditional execution\")"
     ],
     "deny": []
-  },
-  "$schema": "https://json.schemastore.org/claude-code-settings.json"
+  }
 }
