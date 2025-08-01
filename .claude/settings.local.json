@@ -11,8 +11,12 @@
       "Bash(mv web/ssh-treminal-ui/src/views/admin/Scripts.vue web/ssh-treminal-ui/src/views/admin/Scripts.vue.bak)",
       "Bash(grep:*)",
       "Bash(npm run serve:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(git add .)",
+      "Bash(git commit -m \"feat(P0): Implement end-to-end interactive execution\")",
+      "Bash(git rev-parse HEAD)"
     ],
     "deny": []
-  }
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
 }
