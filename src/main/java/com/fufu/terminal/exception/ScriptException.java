@@ -19,7 +19,7 @@ public class ScriptException extends BaseException {
      */
     public static class ScriptNotFoundException extends ScriptException {
         public ScriptNotFoundException(String message) {
-            super("SCRIPT_NOT_FOUND", "Script not found: " + message, 404);
+            super("Script not found: " + message);
         }
     }
     
@@ -41,7 +41,7 @@ public class ScriptException extends BaseException {
      */
     public static class TimeoutException extends ScriptException {
         public TimeoutException(String message) {
-            super("SCRIPT_TIMEOUT", "Script execution timeout: " + message, 408);
+            super("Script execution timeout: " + message);
         }
     }
     
@@ -50,11 +50,11 @@ public class ScriptException extends BaseException {
      */
     public static class ValidationException extends ScriptException {
         public ValidationException(String message) {
-            super("SCRIPT_VALIDATION_ERROR", "Script validation failed: " + message, 400);
+            super("Script validation failed: " + message);
         }
         
         public ValidationException(String message, Object data) {
-            super("SCRIPT_VALIDATION_ERROR", "Script validation failed: " + message, 400, null, data);
+            super("Script validation failed: " + message);
         }
     }
     
@@ -63,7 +63,7 @@ public class ScriptException extends BaseException {
      */
     public static class InteractionException extends ScriptException {
         public InteractionException(String message) {
-            super("SCRIPT_INTERACTION_ERROR", "Script interaction failed: " + message, 400);
+            super("Script interaction failed: " + message);
         }
     }
 }

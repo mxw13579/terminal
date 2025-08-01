@@ -18,6 +18,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.14.0</version> <!-- 推荐使用最新版本 -->
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
@@ -62,20 +69,20 @@
             <artifactId>bcrypt</artifactId>
             <version>0.10.2</version>
         </dependency>
-        
+
         <!-- Jakarta Validation for Spring Boot 3.x -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-        
+
         <!-- Spring Boot Actuator for monitoring -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
             <version>${spring-boot.version}</version>
         </dependency>
-        
+
         <!-- Micrometer for metrics -->
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -87,7 +94,7 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        
+
         <!-- Additional testing dependencies -->
         <dependency>
             <groupId>org.testcontainers</groupId>

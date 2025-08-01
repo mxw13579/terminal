@@ -1,5 +1,6 @@
 package com.fufu.terminal.service.execution;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.entity.AggregatedScript;
 import com.fufu.terminal.entity.AtomicScript;
@@ -10,11 +11,13 @@ import com.fufu.terminal.entity.enums.ExecutionStatus;
 import com.fufu.terminal.entity.enums.InteractionMode;
 import com.fufu.terminal.entity.enums.InteractionType;
 import com.fufu.terminal.entity.interaction.ExecutionMessage;
+import com.fufu.terminal.entity.enums.MessageType;
 import com.fufu.terminal.entity.interaction.InteractionRequest;
 import com.fufu.terminal.entity.interaction.InteractionResponse;
 import com.fufu.terminal.repository.ScriptExecutionSessionRepository;
 import com.fufu.terminal.service.AtomicScriptService;
 import com.fufu.terminal.service.ScriptInteractionService;
+import com.fufu.terminal.service.validation.ScriptValidationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -26,6 +29,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+
 /**
  * 交互式脚本执行引擎 (已重构，支持上下文持久化)
  */
@@ -34,15 +40,76 @@ import java.util.concurrent.*;
 @RequiredArgsConstructor
 public class InteractiveScriptExecutor {
 
+    // Thread pool configuration constants
+    private static final int THREAD_POOL_CORE_SIZE = 5;
+    private static final int THREAD_POOL_MAX_SIZE = 20;
+    private static final long THREAD_POOL_KEEP_ALIVE_TIME = 60L;
+    private static final int THREAD_POOL_QUEUE_CAPACITY = 100;
+    
+    // Condition evaluation constants
+    private static final String CONDITION_TRUE = "true";
+    
+    // Response constants
+    private static final String RESPONSE_YES = "yes";
+
     private final SimpMessagingTemplate messagingTemplate;
     private final AtomicScriptService atomicScriptService;
     private final ScriptExecutionSessionRepository sessionRepository;
     private final ScriptInteractionService interactionService;
+    private final ScriptValidationService validationService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
+    private ThreadPoolExecutor executorService;
 
     private final ConcurrentHashMap<Long, CompletableFuture<InteractionResponse>> pendingInteractions = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    private void initializeThreadPool() {
+        // Create a properly configured thread pool with bounded queue and rejection policy
+        ThreadFactory threadFactory = new ThreadFactory() {
+            private int threadNumber = 1;
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread thread = new Thread(r, "script-executor-" + threadNumber++);
+                thread.setDaemon(false); // Prevent JVM from shutting down while scripts are running
+                return thread;
+            }
+        };
+
+        this.executorService = new ThreadPoolExecutor(
+            THREAD_POOL_CORE_SIZE,
+            THREAD_POOL_MAX_SIZE,
+            THREAD_POOL_KEEP_ALIVE_TIME,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_CAPACITY),
+            threadFactory,
+            new ThreadPoolExecutor.CallerRunsPolicy() // Handle rejected tasks by running in caller thread
+        );
+        
+        log.info("Script execution thread pool initialized with core={}, max={}, queue={}",
+            THREAD_POOL_CORE_SIZE, THREAD_POOL_MAX_SIZE, THREAD_POOL_QUEUE_CAPACITY);
+    }
+
+    @PreDestroy
+    private void shutdownThreadPool() {
+        if (executorService != null && !executorService.isShutdown()) {
+            log.info("Shutting down script execution thread pool...");
+            executorService.shutdown();
+            try {
+                if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
+                    log.warn("Thread pool did not terminate gracefully, forcing shutdown...");
+                    executorService.shutdownNow();
+                    if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
+                        log.error("Thread pool did not terminate after forced shutdown");
+                    }
+                }
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for thread pool shutdown");
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
 
     /**
      * 执行聚合脚本 (已重构，负责上下文生命周期)
@@ -170,13 +237,48 @@ public class InteractiveScriptExecutor {
     }
 
     /**
-     * 处理用户响应到上下文 (已重构)
+     * 处理用户响应到上下文 (已重构，添加验证)
      */
     private void processUserResponse(InteractionRequest interaction, InteractionResponse userResponse, EnhancedScriptContext context) {
         if (userResponse.getResponse() != null) {
-            // 使用新的统一 setVariable 方法
-            context.setVariable(interaction.getInteractionId(), userResponse.getResponse());
+            String rawResponse = userResponse.getResponse().toString();
+            
+            // Validate and sanitize user input based on interaction type
+            ScriptValidationService.ValidationResult validationResult = 
+                validationService.validateUserInput(rawResponse, interaction.getType());
+            
+            if (!validationResult.isValid()) {
+                log.warn("Invalid user response for interaction {}: {}", 
+                    interaction.getInteractionId(), validationResult.getErrors());
+                // For invalid responses, use sanitized input as fallback
+                rawResponse = validationService.sanitizeUserInput(rawResponse, interaction.getType());
+            }
+            
+            // Sanitize the response before storing in context
+            String sanitizedResponse = validationService.sanitizeUserInput(rawResponse, interaction.getType());
+            
+            log.debug("Processing user response - Original: '{}', Sanitized: '{}', Type: {}", 
+                rawResponse, sanitizedResponse, interaction.getType());
+            
+            // Store both raw and sanitized responses in context for different use cases
+            context.setVariable(interaction.getInteractionId(), sanitizedResponse);
+            context.setVariable(interaction.getInteractionId() + "_raw", rawResponse);
+            
+            // For confirmation types, also store boolean representation
+            if (isConfirmationType(interaction.getType())) {
+                boolean confirmed = RESPONSE_YES.equalsIgnoreCase(sanitizedResponse);
+                context.setVariable(interaction.getInteractionId() + "_confirmed", confirmed);
+            }
         }
+    }
+    
+    /**
+     * Checks if the interaction type is a confirmation type
+     */
+    private boolean isConfirmationType(InteractionType type) {
+        return type == InteractionType.CONFIRMATION || 
+               type == InteractionType.CONFIRM_YES_NO || 
+               type == InteractionType.CONFIRM_RECOMMENDATION;
     }
 
     private boolean shouldExecuteStep(AtomicScript script, EnhancedScriptContext context) {
@@ -187,7 +289,7 @@ public class InteractiveScriptExecutor {
         log.debug("Evaluating condition for step '{}': Original: '{}' -> Resolved: '{}'", script.getName(), script.getConditionExpression(), resolvedCondition);
         // 简化的条件评估：我们假设条件解析后，结果为 "true" (不区分大小写) 才执行
         // 复杂的逻辑可以使用脚本引擎如 MVEL, SpEL, or Nashorn.
-        return "true".equalsIgnoreCase(resolvedCondition);
+        return CONDITION_TRUE.equalsIgnoreCase(resolvedCondition);
     }
 
     private ScriptExecutionSession createOrGetExecutionSession(String sessionId, AggregatedScript script) {
@@ -211,7 +313,7 @@ public class InteractiveScriptExecutor {
         // Parse interaction configuration from script
         if (script.getInteractionConfig() != null && !script.getInteractionConfig().trim().isEmpty()) {
             try {
-                Map<String, Object> config = objectMapper.readValue(script.getInteractionConfig(), Map.class);
+                Map<String, Object> config = objectMapper.readValue(script.getInteractionConfig(), new TypeReference<Map<String, Object>>() {});
                 request.setType(InteractionType.valueOf(((String) config.get("type")).toUpperCase()));
                 request.setPrompt((String) config.get("prompt"));
                 
@@ -238,7 +340,7 @@ public class InteractiveScriptExecutor {
     
     private void sendInteractionRequest(String sessionId, InteractionRequest request) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.INTERACTION_REQUEST);
+        message.setMessageType(MessageType.INTERACTION_REQUEST);
         message.setMessage("Waiting for user input: " + request.getPrompt());
         message.setOutput(request.getPrompt());
         message.setTimestamp(System.currentTimeMillis());
@@ -265,7 +367,7 @@ public class InteractiveScriptExecutor {
     
     private ExecutionMessage createStepSkippedMessage(AtomicScript script) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.WARNING);
+        message.setMessageType(MessageType.WARNING);
         message.setMessage("Skipping step: " + script.getName());
         message.setOutput(script.getName());
         message.setTimestamp(System.currentTimeMillis());
@@ -274,7 +376,7 @@ public class InteractiveScriptExecutor {
 
     private ExecutionMessage createCancelledMessage() {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.WARNING);
+        message.setMessageType(MessageType.WARNING);
         message.setMessage("Execution was cancelled.");
         message.setTimestamp(System.currentTimeMillis());
         return message;
@@ -282,7 +384,7 @@ public class InteractiveScriptExecutor {
 
     private ExecutionMessage createErrorMessage(Exception e) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.ERROR);
+        message.setMessageType(MessageType.ERROR);
         message.setMessage("An error occurred: " + e.getMessage());
         message.setTimestamp(System.currentTimeMillis());
         return message;
@@ -290,7 +392,7 @@ public class InteractiveScriptExecutor {
 
     private ExecutionMessage createStartMessage(AggregatedScript script) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.INFO);
+        message.setMessageType(MessageType.INFO);
         message.setMessage("Starting script: " + script.getName());
         message.setTimestamp(System.currentTimeMillis());
         return message;
@@ -298,7 +400,7 @@ public class InteractiveScriptExecutor {
 
     private ExecutionMessage createCompletionMessage(AggregatedScript script) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.SUCCESS);
+        message.setMessageType(MessageType.SUCCESS);
         message.setMessage("Finished script: " + script.getName());
         message.setTimestamp(System.currentTimeMillis());
         return message;
@@ -306,7 +408,7 @@ public class InteractiveScriptExecutor {
 
     private ExecutionMessage createStepStartMessage(AtomicScript script) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.STEP_START);
+        message.setMessageType(MessageType.STEP_START);
         message.setMessage("Starting step: " + script.getName());
         message.setOutput(script.getName());
         message.setTimestamp(System.currentTimeMillis());
@@ -315,7 +417,7 @@ public class InteractiveScriptExecutor {
 
     private ExecutionMessage createStepCompletionMessage(AtomicScript script) {
         ExecutionMessage message = new ExecutionMessage();
-        message.setMessageType(ExecutionMessage.MessageType.STEP_COMPLETE);
+        message.setMessageType(MessageType.STEP_COMPLETE);
         message.setMessage("Finished step: " + script.getName());
         message.setOutput(script.getName());
         message.setTimestamp(System.currentTimeMillis());

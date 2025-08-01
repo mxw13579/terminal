@@ -49,8 +49,8 @@ public class BuiltInScriptAdapter implements UnifiedAtomicScript {
     }
     
     @Override
-    public ScriptType getScriptType() {
-        return ScriptType.BUILT_IN;
+    public UnifiedAtomicScript.ScriptType getScriptType() {
+        return UnifiedAtomicScript.ScriptType.BUILT_IN;
     }
     
     @Override

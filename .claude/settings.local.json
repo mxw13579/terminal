@@ -22,7 +22,8 @@
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(where mvn)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(cmd /c:*)"
     ],
     "deny": []
   }

@@ -45,7 +45,7 @@ public class SecurityException extends BaseException {
         }
         
         public ValidationException(String message, Object data) {
-            super("VALIDATION_ERROR", "Input validation failed: " + message, 400, null, data);
+            super("Input validation failed: " + message);
         }
     }
     
@@ -54,7 +54,7 @@ public class SecurityException extends BaseException {
      */
     public static class RateLimitException extends SecurityException {
         public RateLimitException(String message) {
-            super("RATE_LIMIT_EXCEEDED", "Rate limit exceeded: " + message, 429);
+            super("Rate limit exceeded: " + message);
         }
     }
 }

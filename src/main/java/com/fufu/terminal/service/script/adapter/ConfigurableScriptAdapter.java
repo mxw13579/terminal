@@ -28,6 +28,10 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
     
+    // Script type constants to replace magic strings
+    private static final String SCRIPT_TYPE_BASH = "bash";
+    private static final String SCRIPT_TYPE_PYTHON = "python";
+    
     private final AtomicScript atomicScript;
     private final ObjectMapper objectMapper;
     private ScriptParameter[] inputParameters;
@@ -56,8 +60,8 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
     }
     
     @Override
-    public ScriptType getScriptType() {
-        return ScriptType.CONFIGURABLE;
+    public UnifiedAtomicScript.ScriptType getScriptType() {
+        return UnifiedAtomicScript.ScriptType.CONFIGURABLE;
     }
     
     @Override
@@ -137,7 +141,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
         }
         
         try {
-            Map<String, Object> paramsMap = objectMapper.readValue(parametersJson, Map.class);
+            Map<String, Object> paramsMap = objectMapper.readValue(parametersJson, new TypeReference<Map<String, Object>>() {});
             return paramsMap.entrySet().stream()
                 .map(entry -> {
                     String name = entry.getKey();
@@ -216,9 +220,9 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
         String scriptType = atomicScript.getScriptType().name();
         Integer timeout = atomicScript.getExecutionTimeout();
         
-        if ("bash".equalsIgnoreCase(scriptType)) {
+        if (SCRIPT_TYPE_BASH.equalsIgnoreCase(scriptType)) {
             return executeBashScript(context, script, timeout);
-        } else if ("python".equalsIgnoreCase(scriptType)) {
+        } else if (SCRIPT_TYPE_PYTHON.equalsIgnoreCase(scriptType)) {
             return executePythonScript(context, script, timeout);
         } else {
             // 默认使用SSH直接执行
@@ -264,7 +268,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
         // 尝试解析JSON格式的输出
         if (output.trim().startsWith("{") && output.trim().endsWith("}")) {
             try {
-                Map<String, Object> jsonOutput = objectMapper.readValue(output, Map.class);
+                Map<String, Object> jsonOutput = objectMapper.readValue(output, new TypeReference<Map<String, Object>>() {});
                 outputData.putAll(jsonOutput);
             } catch (Exception e) {
                 log.debug("输出不是有效的JSON格式，作为普通文本处理");

@@ -17,6 +17,12 @@ import java.io.OutputStream;
 @Slf4j
 public class SshConnectionUtil {
     
+    // SSH configuration constants
+    private static final String SSH_CONFIG_STRICT_HOST_KEY_CHECKING = "StrictHostKeyChecking";
+    private static final String SSH_CONFIG_NO = "no";
+    private static final String SSH_CHANNEL_SHELL = "shell";
+    private static final String SSH_PTY_TYPE_XTERM = "xterm";
+    
     /**
      * 根据配置创建SSH连接
      */
@@ -34,12 +40,12 @@ public class SshConnectionUtil {
             // 创建会话
             Session session = jsch.getSession(config.getUsername(), config.getHost(), config.getPort());
             session.setPassword(config.getPassword());
-            session.setConfig("StrictHostKeyChecking", "no");
+            session.setConfig(SSH_CONFIG_STRICT_HOST_KEY_CHECKING, SSH_CONFIG_NO);
             session.connect(config.getConnectTimeout());
             
             // 创建Shell通道
-            ChannelShell channelShell = (ChannelShell) session.openChannel("shell");
-            channelShell.setPtyType("xterm");
+            ChannelShell channelShell = (ChannelShell) session.openChannel(SSH_CHANNEL_SHELL);
+            channelShell.setPtyType(SSH_PTY_TYPE_XTERM);
             
             // 获取输入输出流
             InputStream inputStream = channelShell.getInputStream();

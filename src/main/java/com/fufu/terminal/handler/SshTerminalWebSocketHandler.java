@@ -45,6 +45,9 @@ import java.util.stream.Collectors;
 @Component
 public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
 
+    // SSH configuration constants  
+    private static final String SSH_CONFIG_NO = "no";
+
     private final Map<String, SshConnection> connections = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -156,7 +159,7 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
             JSch jsch = new JSch();
             Session jschSession = jsch.getSession(user, host, port);
             jschSession.setPassword(password);
-            jschSession.setConfig("StrictHostKeyChecking", "no");
+            jschSession.setConfig("StrictHostKeyChecking", SSH_CONFIG_NO);
             jschSession.connect(30000);
 
             ChannelShell channel = (ChannelShell) jschSession.openChannel("shell");

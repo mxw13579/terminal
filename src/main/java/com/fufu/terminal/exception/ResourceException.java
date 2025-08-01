@@ -19,7 +19,7 @@ public class ResourceException extends BaseException {
      */
     public static class NotFoundException extends ResourceException {
         public NotFoundException(String message) {
-            super("RESOURCE_NOT_FOUND", "Resource not found: " + message, 404);
+            super("Resource not found: " + message);
         }
     }
     
@@ -28,7 +28,7 @@ public class ResourceException extends BaseException {
      */
     public static class ConflictException extends ResourceException {
         public ConflictException(String message) {
-            super("RESOURCE_CONFLICT", "Resource conflict: " + message, 409);
+            super("Resource conflict: " + message);
         }
     }
     
@@ -37,7 +37,7 @@ public class ResourceException extends BaseException {
      */
     public static class AccessException extends ResourceException {
         public AccessException(String message) {
-            super("RESOURCE_ACCESS_DENIED", "Resource access denied: " + message, 403);
+            super("Resource access denied: " + message);
         }
     }
 }

@@ -22,6 +22,10 @@ import java.util.Optional;
 @AllArgsConstructor
 public class ScriptInteractionService {
 
+    // Interaction status constants
+    private static final String STATUS_PENDING = "PENDING";
+    private static final String STATUS_COMPLETED = "COMPLETED";
+
     private final ScriptInteractionRepository interactionRepository;
     private final ScriptExecutionSessionRepository sessionRepository;
 
@@ -38,9 +42,9 @@ public class ScriptInteractionService {
         ScriptInteraction interaction = new ScriptInteraction();
         interaction.setSessionId(session.getId());
         interaction.setAtomicScriptId(atomicScript.getId());
-        interaction.setInteractionType(InteractionType.valueOf(request.getType().toUpperCase())); // Ensure type matches ENUM
+        interaction.setInteractionType(request.getType()); // Type is already InteractionType enum
         interaction.setPromptMessage(request.getPrompt());
-        interaction.setStatus("PENDING");
+        interaction.setStatus(STATUS_PENDING);
         interaction.setCreatedAt(LocalDateTime.now());
         return interactionRepository.save(interaction);
     }
@@ -58,7 +62,7 @@ public class ScriptInteractionService {
         if (optionalInteraction.isPresent()) {
             ScriptInteraction interaction = optionalInteraction.get();
             interaction.setUserResponse(response.getResponseDataAsJson()); // Assuming response data is JSON
-            interaction.setStatus("COMPLETED");
+            interaction.setStatus(STATUS_COMPLETED);
             interaction.setRespondedAt(LocalDateTime.now());
             return Optional.of(interactionRepository.save(interaction));
         }

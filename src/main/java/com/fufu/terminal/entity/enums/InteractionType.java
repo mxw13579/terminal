@@ -4,6 +4,7 @@ package com.fufu.terminal.entity.enums;
  * 交互类型枚举
  */
 public enum InteractionType {
+    CONFIRMATION("确认操作"),             // 通用确认操作
     CONFIRM_YES_NO("是否确认"),           // 是/否 确认
     CONFIRM_RECOMMENDATION("建议确认"),    // 基于检测结果的建议确认
     INPUT_TEXT("文本输入"),               // 单个文本输入

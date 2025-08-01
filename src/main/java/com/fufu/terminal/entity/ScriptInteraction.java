@@ -13,27 +13,33 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "script_interactions")
 public class ScriptInteraction {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(name = "session_id", nullable = false, length = 36)
     private String sessionId;
-    
+
     @Column(name = "atomic_script_id")
     private Long atomicScriptId;
-    
+
     @Enumerated(EnumType.STRING)
     @Column(name = "interaction_type")
     private InteractionType interactionType;
-    
+
     @Column(name = "prompt_message", columnDefinition = "TEXT")
     private String promptMessage;
-    
+
     @Column(name = "user_response", columnDefinition = "JSON")
     private String userResponse;
-    
+
     @Column(name = "response_time")
     private LocalDateTime responseTime;
+
+    @Column(name = "status")
+    private String status;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 }
