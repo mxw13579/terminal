@@ -8,6 +8,7 @@ import lombok.Data;
 import org.hibernate.annotations.Type;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 
@@ -17,7 +18,12 @@ import java.time.LocalDateTime;
  */
 @Data
 @Entity
-@Table(name = "atomic_scripts")
+@Table(name = "atomic_scripts", indexes = {
+    @Index(name = "idx_atomic_script_status_sort", columnList = "status, sortOrder"),
+    @Index(name = "idx_atomic_script_type_status", columnList = "script_type_enum, status"),
+    @Index(name = "idx_atomic_script_created_by", columnList = "created_by")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class AtomicScript {
 
     @Id
@@ -64,15 +70,22 @@ public class AtomicScript {
     
     @Column(name = "version", length = 20)
     private String version = "1.0.0";
+    
+    @Column(name = "sort_order")
+    private Integer sortOrder = 0;
+    
+    @Column(name = "created_by")
+    private Long createdBy;
 
     @Enumerated(EnumType.STRING)
     private Status status = Status.DRAFT;
 
     @CreatedDate
-    @Column(updatable = false)
+    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @LastModifiedDate
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
     public String getConditionExpression() {

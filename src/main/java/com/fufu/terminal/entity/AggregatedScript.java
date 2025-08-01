@@ -7,6 +7,7 @@ import lombok.Data;
 import org.hibernate.annotations.Type;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -18,7 +19,11 @@ import java.util.List;
  */
 @Data
 @Entity
-@Table(name = "aggregated_scripts")
+@Table(name = "aggregated_scripts", indexes = {
+    @Index(name = "idx_aggregated_script_status_sort", columnList = "status, sortOrder"),
+    @Index(name = "idx_aggregated_script_created_by", columnList = "created_by")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class AggregatedScript {
 
     @Id
@@ -33,6 +38,12 @@ public class AggregatedScript {
 
     @Enumerated(EnumType.STRING)
     private AggregateScriptType type = AggregateScriptType.GENERIC_TEMPLATE;
+    
+    @Column(name = "sort_order")
+    private Integer sortOrder = 0;
+    
+    @Column(name = "created_by")
+    private Long createdBy;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "aggregate_id") // This assumes a foreign key in the relation table
@@ -47,10 +58,11 @@ public class AggregatedScript {
     private Status status = Status.ACTIVE;
 
     @CreatedDate
-    @Column(updatable = false)
+    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @LastModifiedDate
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
     public enum Status {

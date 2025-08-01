@@ -50,13 +50,30 @@ public class AggregatedScriptService {
         return aggregatedScriptRepository.save(newScript);
     }
 
-    public List<AggregatedScript> getAllAggregatedScripts() {
-        return aggregatedScriptRepository.findAll();
+    /**
+     * Get aggregated script by ID with optimized fetching to prevent N+1 queries
+     */
+    public AggregatedScript getAggregatedScriptById(Long id) {
+        return aggregatedScriptRepository.findByIdWithAtomicScripts(id)
+                .orElseThrow(() -> new RuntimeException("AggregatedScript not found with id: " + id));
+    }
+    
+    /**
+     * Get all active aggregated scripts with optimized fetching
+     */
+    public List<AggregatedScript> getActiveAggregatedScripts() {
+        return aggregatedScriptRepository.findByStatusWithAtomicScripts(AggregatedScript.Status.ACTIVE);
+    }
+    
+    /**
+     * Get aggregated scripts by IDs with optimized fetching
+     */
+    public List<AggregatedScript> getAggregatedScriptsByIds(List<Long> ids) {
+        return aggregatedScriptRepository.findByIdInAndStatusWithAtomicScripts(ids, AggregatedScript.Status.ACTIVE);
     }
 
-    public AggregatedScript getAggregatedScriptById(Long id) {
-        return aggregatedScriptRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("AggregatedScript not found with id: " + id));
+    public List<AggregatedScript> getAllAggregatedScripts() {
+        return aggregatedScriptRepository.findAll();
     }
 
     @Transactional

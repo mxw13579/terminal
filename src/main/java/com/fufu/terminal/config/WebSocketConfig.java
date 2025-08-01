@@ -2,6 +2,7 @@ package com.fufu.terminal.config;
 
 import com.fufu.terminal.handler.SshTerminalWebSocketHandler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -17,13 +18,17 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketConfigurer {
     private final SshTerminalWebSocketHandler sshTerminalWebSocketHandler;
+    private final WebSocketAuthInterceptor webSocketAuthInterceptor;
+    
+    @Value("${app.security.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
+    private String[] allowedOrigins;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // 直接使用注入的handler实例，它已经包含了所有必要的依赖
+        // 注册WebSocket处理器并添加认证拦截器
         registry.addHandler(sshTerminalWebSocketHandler, "/ws/terminal")
-                // 允许所有来源的连接，方便本地开发，生产环境需要配置具体的来源
-                .setAllowedOrigins("*");
+                .setAllowedOrigins(allowedOrigins)
+                .addInterceptors(webSocketAuthInterceptor);
     }
 
     /**
@@ -37,6 +42,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
         container.setMaxTextMessageBufferSize(2 * 1024 * 1024);
         // 设置二进制消息的最大缓冲区大小为 2MB
         container.setMaxBinaryMessageBufferSize(2 * 1024 * 1024);
+        // 设置会话空闲超时时间为 30 分钟
+        container.setMaxSessionIdleTimeout(30 * 60 * 1000L);
         return container;
     }
 

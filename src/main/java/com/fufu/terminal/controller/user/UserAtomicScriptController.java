@@ -1,6 +1,7 @@
 package com.fufu.terminal.controller.user;
 
 import com.fufu.terminal.entity.AtomicScript;
+import com.fufu.terminal.entity.enums.ScriptType;
 import com.fufu.terminal.service.AtomicScriptService;
 import com.fufu.terminal.service.script.UnifiedAtomicScript;
 import com.fufu.terminal.service.script.UnifiedScriptRegistry;
@@ -89,17 +90,13 @@ public class UserAtomicScriptController {
      */
     @GetMapping("/type/{scriptType}")
     public ResponseEntity<List<AtomicScript>> getActiveAtomicScriptsByType(@PathVariable String scriptType) {
-        List<AtomicScript> scripts = atomicScriptService.getActiveAtomicScriptsByType(scriptType);
-        return ResponseEntity.ok(scripts);
-    }
-    
-    /**
-     * 根据标签搜索原子脚本
-     */
-    @GetMapping("/search/tag")
-    public ResponseEntity<List<AtomicScript>> searchByTag(@RequestParam String tag) {
-        List<AtomicScript> scripts = atomicScriptService.searchAtomicScriptsByTag(tag);
-        return ResponseEntity.ok(scripts);
+        try {
+            ScriptType type = ScriptType.valueOf(scriptType.toUpperCase());
+            List<AtomicScript> scripts = atomicScriptService.getActiveAtomicScriptsByType(type);
+            return ResponseEntity.ok(scripts);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
     
     /**

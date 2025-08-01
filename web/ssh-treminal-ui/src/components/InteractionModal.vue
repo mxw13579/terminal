@@ -1,27 +1,27 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    :title="interactionRequest.promptMessage"
+    :title="interactionRequest.prompt"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     :show-close="false"
     width="500px"
   >
-    <div v-if="interactionRequest.interactionType === 'CONFIRMATION'">
-      <p>{{ interactionRequest.promptMessage }}</p>
+    <div v-if="interactionRequest.type === 'CONFIRMATION'">
+      <p>{{ interactionRequest.prompt }}</p>
     </div>
-    <div v-if="interactionRequest.interactionType === 'TEXT_INPUT'">
-      <el-input v-model="responseText" :placeholder="interactionRequest.promptMessage"></el-input>
+    <div v-if="interactionRequest.type === 'TEXT_INPUT'">
+      <el-input v-model="responseText" :placeholder="interactionRequest.prompt"></el-input>
     </div>
-    <div v-if="interactionRequest.interactionType === 'PASSWORD'">
-      <el-input v-model="responseText" :placeholder="interactionRequest.promptMessage" type="password"></el-input>
+    <div v-if="interactionRequest.type === 'PASSWORD'">
+      <el-input v-model="responseText" :placeholder="interactionRequest.prompt" type="password"></el-input>
     </div>
 
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="handleResponse(false)" v-if="interactionRequest.interactionType === 'CONFIRMATION'">No</el-button>
+        <el-button @click="handleResponse(false)" v-if="interactionRequest.type === 'CONFIRMATION'">No</el-button>
         <el-button type="primary" @click="handleResponse(true)">
-          {{ interactionRequest.interactionType === 'CONFIRMATION' ? 'Yes' : 'Submit' }}
+          {{ interactionRequest.type === 'CONFIRMATION' ? 'Yes' : 'Submit' }}
         </el-button>
       </span>
     </template>
@@ -56,11 +56,11 @@ watch(() => props.modelValue, (newVal) => {
 
 const handleResponse = (response) => {
   let responseData = response
-  if (interactionRequest.value.interactionType !== 'CONFIRMATION') {
+  if (interactionRequest.value.type !== 'CONFIRMATION') {
     responseData = responseText.value
   }
   emit('submit', {
-    interactionId: interactionRequest.value.id,
+    interactionId: interactionRequest.value.interactionId,
     responseData: responseData
   })
   dialogVisible.value = false

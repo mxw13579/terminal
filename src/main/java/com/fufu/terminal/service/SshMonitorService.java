@@ -399,4 +399,35 @@ public class SshMonitorService {
         String pre = "KMGTPE".charAt(exp - 1) + "i";
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
+    
+    // -------------------- 健康检查相关方法 --------------------
+    
+    /**
+     * 获取当前活跃SSH连接数量
+     * @return 活跃连接数
+     */
+    public int getActiveConnectionCount() {
+        // 这里需要从SSH连接管理器中获取实际的连接数
+        // 暂时返回一个模拟值，实际应该从连接管理器获取
+        return 0; // TODO: 实现实际连接数统计
+    }
+    
+    /**
+     * 获取最大SSH连接数量
+     * @return 最大连接数
+     */
+    public int getMaxConnectionCount() {
+        // 从配置中获取最大连接数
+        return 100; // TODO: 从配置中获取实际值
+    }
+    
+    /**
+     * 检查SSH连接池是否健康
+     * @return 连接池健康状态
+     */
+    public boolean isConnectionPoolHealthy() {
+        // 检查连接池健康状态
+        // 这里可以检查是否有僵死连接、连接超时等问题
+        return true; // TODO: 实现实际健康检查逻辑
+    }
 }

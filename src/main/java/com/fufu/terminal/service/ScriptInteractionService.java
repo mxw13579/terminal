@@ -64,4 +64,15 @@ public class ScriptInteractionService {
         }
         return Optional.empty();
     }
+
+    /**
+     * Updates an existing interaction.
+     *
+     * @param interaction The interaction to update.
+     * @return The updated ScriptInteraction entity.
+     */
+    @Transactional
+    public ScriptInteraction updateInteraction(ScriptInteraction interaction) {
+        return interactionRepository.save(interaction);
+    }
 }

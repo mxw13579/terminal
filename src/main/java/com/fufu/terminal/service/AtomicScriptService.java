@@ -2,6 +2,7 @@ package com.fufu.terminal.service;
 
 import com.fufu.terminal.entity.AggregateAtomicRelation;
 import com.fufu.terminal.entity.AtomicScript;
+import com.fufu.terminal.entity.enums.ScriptType;
 import com.fufu.terminal.repository.AggregateAtomicRelationRepository;
 import com.fufu.terminal.repository.AtomicScriptRepository;
 import lombok.RequiredArgsConstructor;
@@ -97,15 +98,8 @@ public class AtomicScriptService {
     /**
      * 根据脚本类型获取活跃的原子脚本
      */
-    public List<AtomicScript> getActiveAtomicScriptsByType(String scriptType) {
+    public List<AtomicScript> getActiveAtomicScriptsByType(ScriptType scriptType) {
         return atomicScriptRepository.findByScriptTypeAndStatusOrderBySortOrder(scriptType, AtomicScript.Status.ACTIVE);
-    }
-    
-    /**
-     * 根据标签搜索原子脚本
-     */
-    public List<AtomicScript> searchAtomicScriptsByTag(String tag) {
-        return atomicScriptRepository.findByTagAndStatus(tag, AtomicScript.Status.ACTIVE);
     }
     
     /**

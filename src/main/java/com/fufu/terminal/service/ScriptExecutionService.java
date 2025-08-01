@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -24,8 +25,14 @@ public class ScriptExecutionService {
     private final AtomicScriptRepository atomicScriptRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
+    
+    // 用于监控的计数器
+    private final AtomicInteger activeExecutionCount = new AtomicInteger(0);
+    private final AtomicInteger queuedExecutionCount = new AtomicInteger(0);
 
     public ScriptExecution startExecution(Long scriptId, Long userId, String sessionId) {
+        activeExecutionCount.incrementAndGet(); // 增加活跃执行计数
+        
         ScriptExecution execution = new ScriptExecution();
         execution.setScriptId(scriptId);
         execution.setUserId(userId);
@@ -223,5 +230,42 @@ public class ScriptExecutionService {
 
     public ScriptExecution getExecutionById(Long executionId) {
         return scriptExecutionRepository.findById(executionId).orElse(null);
+    }
+    
+    // -------------------- 健康检查相关方法 --------------------
+    
+    /**
+     * 获取当前活跃执行数量
+     * @return 活跃执行数
+     */
+    public int getActiveExecutionCount() {
+        return activeExecutionCount.get();
+    }
+    
+    /**
+     * 获取最大并发执行数量
+     * @return 最大并发执行数
+     */
+    public int getMaxConcurrentExecutions() {
+        return 10; // TODO: 从配置中获取实际值
+    }
+    
+    /**
+     * 获取排队执行数量
+     * @return 排队执行数
+     */
+    public int getQueuedExecutionCount() {
+        return queuedExecutionCount.get();
+    }
+    
+    /**
+     * 获取长时间运行的执行数量
+     * @return 长时间运行的执行数
+     */
+    public int getLongRunningExecutionCount() {
+        // 查询运行时间超过30分钟的执行
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(30);
+        return scriptExecutionRepository.countByStatusAndStartTimeBefore(
+            ScriptExecution.Status.RUNNING, threshold);
     }
 }

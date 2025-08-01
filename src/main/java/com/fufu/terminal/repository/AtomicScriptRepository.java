@@ -1,6 +1,7 @@
 package com.fufu.terminal.repository;
 
 import com.fufu.terminal.entity.AtomicScript;
+import com.fufu.terminal.entity.enums.ScriptType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,13 +20,7 @@ public interface AtomicScriptRepository extends JpaRepository<AtomicScript, Long
     /**
      * 根据脚本类型查询活跃的原子脚本
      */
-    List<AtomicScript> findByScriptTypeAndStatusOrderBySortOrder(String scriptType, AtomicScript.Status status);
-    
-    /**
-     * 根据标签搜索原子脚本（JSON字段模糊查询）
-     */
-    @Query("SELECT a FROM AtomicScript a WHERE a.status = :status AND a.tags LIKE %:tag%")
-    List<AtomicScript> findByTagAndStatus(@Param("tag") String tag, @Param("status") AtomicScript.Status status);
+    List<AtomicScript> findByScriptTypeAndStatusOrderBySortOrder(ScriptType scriptType, AtomicScript.Status status);
     
     /**
      * 根据名称模糊查询活跃的原子脚本

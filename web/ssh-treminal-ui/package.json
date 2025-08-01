@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "coverage": "vitest --coverage"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.1.0",
@@ -23,8 +26,11 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/test-utils": "^2.4.3",
+    "happy-dom": "^12.10.3",
     "prettier": "3.5.3",
     "vite": "^7.0.0",
-    "vite-plugin-vue-devtools": "^7.7.7"
+    "vite-plugin-vue-devtools": "^7.7.7",
+    "vitest": "^1.0.4"
   }
 }

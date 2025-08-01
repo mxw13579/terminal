@@ -8,6 +8,7 @@ import com.fufu.terminal.entity.ScriptInteraction;
 import com.fufu.terminal.entity.context.EnhancedScriptContext;
 import com.fufu.terminal.entity.enums.ExecutionStatus;
 import com.fufu.terminal.entity.enums.InteractionMode;
+import com.fufu.terminal.entity.enums.InteractionType;
 import com.fufu.terminal.entity.interaction.ExecutionMessage;
 import com.fufu.terminal.entity.interaction.InteractionRequest;
 import com.fufu.terminal.entity.interaction.InteractionResponse;
@@ -21,6 +22,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 
 /**
@@ -104,15 +107,66 @@ public class InteractiveScriptExecutor {
         sendExecutionMessage(session.getId(), createStepCompletionMessage(script));
     }
 
-    private void handleScriptInteraction(ScriptExecutionSession session, AtomicScript script, EnhancedScriptContext context) {
-       // ... (此方法逻辑不变) ...
+    private void handleScriptInteraction(ScriptExecutionSession session, AtomicScript script, EnhancedScriptContext context) throws Exception {
+        log.info("Handling script interaction for script: {} (session: {})", script.getName(), session.getId());
+        
+        // Create interaction request based on script configuration
+        InteractionRequest request = createInteractionRequest(script, context);
+        
+        // Save interaction to database
+        ScriptInteraction interaction = interactionService.createInteraction(
+            session, script, request);
+        
+        // Send WebSocket message to frontend
+        sendInteractionRequest(session.getId(), request);
+        
+        // Wait for user response with timeout
+        CompletableFuture<InteractionResponse> future = new CompletableFuture<>();
+        pendingInteractions.put(interaction.getId(), future);
+        
+        try {
+            InteractionResponse userResponse = future.get(5, TimeUnit.MINUTES);
+            
+            // Process user response and update context
+            processUserResponse(request, userResponse, context);
+            
+            // Update interaction record with response
+            interaction.setUserResponse(objectMapper.writeValueAsString(userResponse));
+            interaction.setResponseTime(LocalDateTime.now());
+            interactionService.updateInteraction(interaction);
+            
+            log.info("User interaction completed for script: {}", script.getName());
+            
+        } catch (TimeoutException e) {
+            log.warn("User interaction timeout for script: {} (session: {})", script.getName(), session.getId());
+            throw new RuntimeException("User interaction timeout", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interaction was interrupted", e);
+        } finally {
+            pendingInteractions.remove(interaction.getId());
+        }
     }
 
     /**
      * 由Controller调用，处理来自前端的用户响应 (已重构)
      */
     public void handleUserResponse(InteractionResponse response) {
-        // ... (此方法逻辑不变) ...
+        log.info("Handling user response for interactionId: {}", response.getInteractionId());
+        
+        CompletableFuture<InteractionResponse> future = pendingInteractions.get(response.getInteractionId());
+        if (future != null) {
+            future.complete(response);
+        } else {
+            log.warn("No pending interaction found for interactionId: {}", response.getInteractionId());
+        }
+    }
+    
+    /**
+     * Alternative method signature to handle WebSocket responses
+     */
+    public void handleUserResponse(String sessionId, InteractionResponse response) {
+        handleUserResponse(response);
     }
 
     /**
@@ -151,9 +205,50 @@ public class InteractiveScriptExecutor {
     
     // ... (其他所有辅助方法如 waitForUserResponse, sendInteractionRequest, 消息创建等保持不变) ...
 
+    private InteractionRequest createInteractionRequest(AtomicScript script, EnhancedScriptContext context) {
+        InteractionRequest request = new InteractionRequest();
+        
+        // Parse interaction configuration from script
+        if (script.getInteractionConfig() != null && !script.getInteractionConfig().trim().isEmpty()) {
+            try {
+                Map<String, Object> config = objectMapper.readValue(script.getInteractionConfig(), Map.class);
+                request.setType(InteractionType.valueOf(((String) config.get("type")).toUpperCase()));
+                request.setPrompt((String) config.get("prompt"));
+                
+                // Resolve variables in prompt message
+                if (context != null && request.getPrompt() != null) {
+                    request.setPrompt(context.resolveVariables(request.getPrompt()));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse interaction config for script: {}, using defaults", script.getName(), e);
+                request.setType(InteractionType.CONFIRMATION);
+                request.setPrompt("Continue with " + script.getName() + "?");
+            }
+        } else {
+            // Default interaction configuration
+            request.setType(InteractionType.CONFIRMATION);
+            request.setPrompt("Continue with " + script.getName() + "?");
+        }
+        
+        request.setInteractionId(UUID.randomUUID().toString());
+        // InteractionRequest doesn't have setTimestamp method, will set timestamp in ExecutionMessage
+        
+        return request;
+    }
+    
+    private void sendInteractionRequest(String sessionId, InteractionRequest request) {
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.INTERACTION_REQUEST);
+        message.setMessage("Waiting for user input: " + request.getPrompt());
+        message.setOutput(request.getPrompt());
+        message.setTimestamp(System.currentTimeMillis());
+        message.setInteractionRequest(request);
+        sendExecutionMessage(sessionId, message);
+    }
+
     private List<AtomicScript> getAtomicScriptsFromAggregated(AggregatedScript script) {
         return script.getAtomicScriptRelations().stream()
-                .map(AggregateAtomicRelation::getAtomicScript)
+                .map(relation -> relation.getAtomicScript())
                 .collect(java.util.stream.Collectors.toList());
     }
 
@@ -169,31 +264,62 @@ public class InteractiveScriptExecutor {
     }
     
     private ExecutionMessage createStepSkippedMessage(AtomicScript script) {
-        return new ExecutionMessage(ExecutionMessage.MessageType.STEP_SKIPPED, "Skipping step: " + script.getName(), script.getName());
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.WARNING);
+        message.setMessage("Skipping step: " + script.getName());
+        message.setOutput(script.getName());
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private ExecutionMessage createCancelledMessage() {
-        return new ExecutionMessage(ExecutionMessage.MessageType.CANCELLED, "Execution was cancelled.");
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.WARNING);
+        message.setMessage("Execution was cancelled.");
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private ExecutionMessage createErrorMessage(Exception e) {
-        return new ExecutionMessage(ExecutionMessage.MessageType.ERROR, "An error occurred: " + e.getMessage());
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.ERROR);
+        message.setMessage("An error occurred: " + e.getMessage());
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private ExecutionMessage createStartMessage(AggregatedScript script) {
-        return new ExecutionMessage(ExecutionMessage.MessageType.INFO, "Starting script: " + script.getName());
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.INFO);
+        message.setMessage("Starting script: " + script.getName());
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private ExecutionMessage createCompletionMessage(AggregatedScript script) {
-        return new ExecutionMessage(ExecutionMessage.MessageType.INFO, "Finished script: " + script.getName());
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.SUCCESS);
+        message.setMessage("Finished script: " + script.getName());
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private ExecutionMessage createStepStartMessage(AtomicScript script) {
-        return new ExecutionMessage(ExecutionMessage.MessageType.STEP_START, "Starting step: " + script.getName(), script.getName());
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.STEP_START);
+        message.setMessage("Starting step: " + script.getName());
+        message.setOutput(script.getName());
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private ExecutionMessage createStepCompletionMessage(AtomicScript script) {
-        return new ExecutionMessage(ExecutionMessage.MessageType.STEP_COMPLETED, "Finished step: " + script.getName(), script.getName());
+        ExecutionMessage message = new ExecutionMessage();
+        message.setMessageType(ExecutionMessage.MessageType.STEP_COMPLETE);
+        message.setMessage("Finished step: " + script.getName());
+        message.setOutput(script.getName());
+        message.setTimestamp(System.currentTimeMillis());
+        return message;
     }
 
     private void sendExecutionMessage(String sessionId, ExecutionMessage message) {
