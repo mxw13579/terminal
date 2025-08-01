@@ -1,39 +1,45 @@
 package com.fufu.terminal.entity;
 
+import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.Data;
+import org.hibernate.annotations.Type;
 import org.springframework.data.annotation.CreatedDate;
 
 import java.time.LocalDateTime;
 
 /**
- * 聚合脚本-原子脚本关联实体
+ * 聚合脚本-原子脚本关联实体 (已重构)
+ * 这个类作为中间表，定义了聚合脚本中每个步骤的细节。
  */
 @Data
 @Entity
 @Table(name = "aggregate_atomic_relations")
 public class AggregateAtomicRelation {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
-    @Column(name = "aggregate_id", nullable = false)
+
+    // This column is managed by the @JoinColumn in AggregatedScript
+    @Column(name = "aggregate_id", nullable = false, updatable = false, insertable = false)
     private Long aggregateId;
-    
-    @Column(name = "atomic_id", nullable = false)
-    private Long atomicId;
-    
-    @Column(name = "execution_order", nullable = false)
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "atomic_id", nullable = false)
+    private AtomicScript atomicScript;
+
+    @Column(nullable = false)
     private Integer executionOrder;
-    
-    @Column(name = "variable_mapping", columnDefinition = "JSON")
-    private String variableMapping; // 变量映射配置
-    
-    @Column(name = "condition_expression", length = 500)
-    private String conditionExpression; // 执行条件表达式
-    
+
+    @Type(JsonType.class)
+    @Column(columnDefinition = "json")
+    private String variableMapping; // Maps outputs of previous steps to inputs of this step
+
+    @Column(length = 500)
+    private String conditionExpression; // e.g., "${OS_TYPE} == 'Debian'"
+
     @CreatedDate
-    @Column(name = "created_at")
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 }

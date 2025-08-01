@@ -7,49 +7,58 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
+/**
+ * 脚本分组实体 (已重构)
+ * Organizes aggregated scripts into logical groups for display and management.
+ */
 @Data
 @Entity
 @Table(name = "script_groups")
 public class ScriptGroup {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(nullable = false, length = 100)
     private String name;
-    
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "type")
-    private ScriptGroupType type = ScriptGroupType.PROJECT_DIMENSION; // 分组类型
-    
+    private ScriptGroupType type = ScriptGroupType.PROJECT_DIMENSION;
+
     @Column(columnDefinition = "TEXT")
     private String description;
-    
-    @Column(name = "icon", length = 100)
-    private String icon; // 图标
-    
-    @Column(name = "display_order")
-    private Integer displayOrder = 0; // 显示顺序
-    
-    
+
+    @Column(length = 100)
+    private String icon;
+
+    @OneToMany(mappedBy = "scriptGroup", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("displayOrder ASC")
+    private List<GroupAggregateRelation> aggregateRelations = new ArrayList<>();
+
     @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "enum('ACTIVE', 'INACTIVE') default 'ACTIVE'")
     private Status status = Status.ACTIVE;
-    
-    @Column(name = "created_by")
-    private Long createdBy;
-    
+
     @CreatedDate
-    @Column(name = "created_at")
+    @Column(updatable = false)
     private LocalDateTime createdAt;
-    
+
     @LastModifiedDate
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-    
+
     public enum Status {
         ACTIVE, INACTIVE
+    }
+
+    // Helper method to simplify adding aggregated scripts
+    public void addAggregatedScript(AggregatedScript aggregatedScript, int displayOrder) {
+        GroupAggregateRelation relation = new GroupAggregateRelation();
+        relation.setScriptGroup(this);
+        relation.setAggregatedScript(aggregatedScript);
+        relation.setDisplayOrder(displayOrder);
+        this.aggregateRelations.add(relation);
     }
 }

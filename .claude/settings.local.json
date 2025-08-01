@@ -16,7 +16,8 @@
       "Bash(git add .)",
       "Bash(git commit -m \"feat(P0): Implement end-to-end interactive execution\")",
       "Bash(git rev-parse HEAD)",
-      "Bash(git commit -m \"feat(P1): Implement context persistence and conditional execution\")"
+      "Bash(git commit -m \"feat(P1): Implement context persistence and conditional execution\")",
+      "Bash(git commit -m \"feat(P2): Refactor data model entities\")"
     ],
     "deny": []
   }

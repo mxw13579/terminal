@@ -18,13 +18,27 @@
 
 *   [✅] **P0: 交互式执行机制 (后端+前端)** `(已完成)`
 *   [✅] **P1: 上下文与条件执行** `(已完成)`
-*   [▶️] **P2: 数据模型重构 (脚本与分组)** `(正在进行)`
-*   [🔲] **P3: 聚合脚本构建器 (支持参数化)**
+*   [✅] **P2: 数据模型重构 (脚本与分组)** `(已完成)`
+*   [▶️] **P3: 聚合脚本构建器 (支持参数化)** `(正在进行)`
 *   [🔲] **P4: 用户端首页重构与体验优化**
 
 ---
 
 ## 3. 详细工作与决策日志 (Action & Decision Log)
+
+`[2025-08-01]`
+#### **完成 (P2): 完成核心实体的数据模型重构**
+
+**思考与决策:**
+*   **目标:** 使Java实体类与数据库Schema完全对齐，并用现代JPA实践（如关联关系映射）替换掉旧的、基于JSON的变通方法。一个干净、类型安全的数据模型是后续所有业务功能开发的基础。
+*   **决策路径:**
+    1.  **自下而上:** 我遵循了从 `AtomicScript` -> `AggregatedScript` -> `ScriptGroup` 的自下而上的重构顺序。这种方法是有效的，因为它确保了在构建更高级别的关系（如 `AggregatedScript` 对 `AtomicScript` 的 `OneToMany`）之前，其依赖的实体（`AtomicScript`）已经被清理和稳定下来。
+    2.  **清理代替修补:** 对于 `AtomicScript`，我选择了直接移除冗余字段（如 `inputParams`）而不是试图去兼容它们。这虽然改动较大，但从长远来看，它消除了代码中的歧义和未来的维护成本。
+    3.  **用对象关系代替ID引用:** 在所有关联实体中（如 `AggregateAtomicRelation`），我用标准的 `@ManyToOne` 对象引用替换了原始的 `Long` 类型ID字段。这是JPA的核心实践，它极大地简化了数据查询（例如，可以从一个`AggregateAtomicRelation`对象直接通过 `getAtomicScript()` 获取脚本，而无需再次查询数据库），并使代码更具可读性和面向对象。
+*   **影响:**
+    *   **后端:** `AtomicScript.java`, `AggregatedScript.java`, `ScriptGroup.java`, `AggregateAtomicRelation.java`, `GroupAggregateRelation.java`
+
+**代码快照 (Git Commit):** `(将在下一步生成)`
 
 `[2025-08-01]`
 #### **完成 (P1): 实现上下文持久化与条件执行**
@@ -39,7 +53,7 @@
 *   **影响:**
     *   **后端:** `EnhancedScriptContext`, `InteractiveScriptExecutor`
 
-**代码快照 (Git Commit):** `(将在下一步生成)`
+**代码快照 (Git Commit):** `d76f43499fbfc644edb635eec12024550f37d5a7`
 
 
 `[2025-08-01]`
