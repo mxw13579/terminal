@@ -32,22 +32,22 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 @RequiredArgsConstructor
 public class ProductionSshConnectionService {
-    
+
     private final ScriptExecutionProperties properties;
     private final ConcurrentHashMap<String, ObjectPool<SshConnection>> connectionPools = new ConcurrentHashMap<>();
     private final AtomicInteger activeConnections = new AtomicInteger(0);
     private final AtomicInteger totalConnectionsCreated = new AtomicInteger(0);
     private final AtomicInteger connectionFailures = new AtomicInteger(0);
-    
+
     private RetryTemplate retryTemplate;
-    
+
     @PostConstruct
     public void initialize() {
         setupRetryTemplate();
-        log.info("ProductionSshConnectionService initialized with max pool size: {}", 
+        log.info("ProductionSshConnectionService initialized with max pool size: {}",
                 properties.getSsh().getConnectionPool().getMaxSize());
     }
-    
+
     @PreDestroy
     public void cleanup() {
         log.info("Cleaning up SSH connection pools...");
@@ -61,16 +61,16 @@ public class ProductionSshConnectionService {
         connectionPools.clear();
         log.info("SSH connection service cleanup completed");
     }
-    
+
     /**
      * Create SSH connection with validation and retry mechanism
      */
     public SshConnection createConnection(SshConnectionConfig config) throws ConnectionException {
         validateConfiguration(config);
-        
+
         String poolKey = generatePoolKey(config);
         ObjectPool<SshConnection> pool = getOrCreateConnectionPool(poolKey, config);
-        
+
         try {
             return retryTemplate.execute(new RetryCallback<SshConnection, ConnectionException>() {
                 @Override
@@ -78,7 +78,7 @@ public class ProductionSshConnectionService {
                     try {
                         log.debug("Attempting to get connection from pool (attempt: {})", context.getRetryCount() + 1);
                         SshConnection connection = pool.borrowObject();
-                        
+
                         // Test connection validity
                         if (!testConnection(connection)) {
                             // Return invalid connection to pool for cleanup
@@ -88,33 +88,33 @@ public class ProductionSshConnectionService {
                                 log.warn("Error invalidating connection", e);
                             }
                             throw new ConnectionException(
-                                "Connection validation failed", 
-                                config.getHost(), 
-                                config.getPort(), 
+                                "Connection validation failed",
+                                config.getHost(),
+                                config.getPort(),
                                 config.getUsername(),
                                 context.getRetryCount()
                             );
                         }
-                        
+
                         activeConnections.incrementAndGet();
-                        log.debug("Successfully obtained SSH connection to {}@{}:{}", 
+                        log.debug("Successfully obtained SSH connection to {}@{}:{}",
                                 config.getUsername(), config.getHost(), config.getPort());
                         return connection;
-                        
+
                     } catch (Exception e) {
                         connectionFailures.incrementAndGet();
                         throw new ConnectionException(
                             "Failed to create SSH connection: " + e.getMessage(),
                             e,
                             config.getHost(),
-                            config.getPort(), 
+                            config.getPort(),
                             config.getUsername(),
                             context.getRetryCount()
                         );
                     }
                 }
             });
-            
+
         } catch (Exception e) {
             if (e instanceof ConnectionException) {
                 throw (ConnectionException) e;
@@ -129,7 +129,7 @@ public class ProductionSshConnectionService {
             );
         }
     }
-    
+
     /**
      * Return connection to the pool
      */
@@ -137,15 +137,15 @@ public class ProductionSshConnectionService {
         if (connection == null) {
             return;
         }
-        
+
         String poolKey = generatePoolKey(config);
         ObjectPool<SshConnection> pool = connectionPools.get(poolKey);
-        
+
         if (pool != null) {
             try {
                 activeConnections.decrementAndGet();
                 pool.returnObject(connection);
-                log.debug("Connection returned to pool for {}@{}:{}", 
+                log.debug("Connection returned to pool for {}@{}:{}",
                         config.getUsername(), config.getHost(), config.getPort());
             } catch (Exception e) {
                 log.warn("Error returning connection to pool", e);
@@ -158,14 +158,14 @@ public class ProductionSshConnectionService {
         } else {
             // Pool not found, close connection directly
             try {
-                connection.close();
+                connection.getSession().disconnect();
                 log.debug("Connection closed directly (pool not found)");
             } catch (Exception e) {
                 log.warn("Error closing connection", e);
             }
         }
     }
-    
+
     /**
      * Test connection validity by executing a simple command
      */
@@ -174,25 +174,25 @@ public class ProductionSshConnectionService {
             if (connection == null || !connection.isConnected()) {
                 return false;
             }
-            
+
             Session session = connection.getJschSession();
             if (session == null || !session.isConnected()) {
                 return false;
             }
-            
+
             // Execute validation command
             String validationQuery = properties.getSsh().getConnectionPool().getValidationQuery();
-            com.fufu.terminal.command.CommandResult result = 
+            com.fufu.terminal.command.CommandResult result =
                 com.fufu.terminal.command.SshCommandUtil.executeCommand(connection, validationQuery);
-            
+
             return result != null && result.getExitStatus() == 0;
-            
+
         } catch (Exception e) {
             log.debug("Connection validation failed", e);
             return false;
         }
     }
-    
+
     /**
      * Get connection pool health status
      */
@@ -200,7 +200,7 @@ public class ProductionSshConnectionService {
         int totalActive = 0;
         int totalIdle = 0;
         int totalPools = connectionPools.size();
-        
+
         for (ObjectPool<SshConnection> pool : connectionPools.values()) {
             if (pool instanceof GenericObjectPool) {
                 GenericObjectPool<SshConnection> genericPool = (GenericObjectPool<SshConnection>) pool;
@@ -208,7 +208,7 @@ public class ProductionSshConnectionService {
                 totalIdle += genericPool.getNumIdle();
             }
         }
-        
+
         return ConnectionPoolHealth.builder()
             .totalPools(totalPools)
             .totalActiveConnections(totalActive)
@@ -219,7 +219,7 @@ public class ProductionSshConnectionService {
             .healthy(connectionFailures.get() < totalConnectionsCreated.get() * 0.1) // Less than 10% failure rate
             .build();
     }
-    
+
     /**
      * Validate SSH connection configuration
      */
@@ -227,42 +227,42 @@ public class ProductionSshConnectionService {
         if (config == null) {
             throw new ConnectionException("SSH configuration is null", "", 0, "");
         }
-        
+
         if (config.getHost() == null || config.getHost().trim().isEmpty()) {
-            throw new ConnectionException("SSH host is required", 
+            throw new ConnectionException("SSH host is required",
                 config.getHost(), config.getPort(), config.getUsername());
         }
-        
+
         if (config.getPort() <= 0 || config.getPort() > 65535) {
-            throw new ConnectionException("SSH port must be between 1 and 65535", 
+            throw new ConnectionException("SSH port must be between 1 and 65535",
                 config.getHost(), config.getPort(), config.getUsername());
         }
-        
+
         if (config.getUsername() == null || config.getUsername().trim().isEmpty()) {
-            throw new ConnectionException("SSH username is required", 
+            throw new ConnectionException("SSH username is required",
                 config.getHost(), config.getPort(), config.getUsername());
         }
-        
+
         if (config.getPassword() == null || config.getPassword().trim().isEmpty()) {
-            throw new ConnectionException("SSH password is required", 
+            throw new ConnectionException("SSH password is required",
                 config.getHost(), config.getPort(), config.getUsername());
         }
     }
-    
+
     /**
      * Generate unique pool key for connection configuration
      */
     private String generatePoolKey(SshConnectionConfig config) {
         return String.format("%s@%s:%d", config.getUsername(), config.getHost(), config.getPort());
     }
-    
+
     /**
      * Get or create connection pool for the given configuration
      */
     private ObjectPool<SshConnection> getOrCreateConnectionPool(String poolKey, SshConnectionConfig config) {
         return connectionPools.computeIfAbsent(poolKey, key -> {
             log.info("Creating new SSH connection pool for: {}", key);
-            
+
             GenericObjectPoolConfig<SshConnection> poolConfig = new GenericObjectPoolConfig<>();
             poolConfig.setMaxTotal(properties.getSsh().getConnectionPool().getMaxSize());
             poolConfig.setMaxIdle(properties.getSsh().getConnectionPool().getMaxIdle());
@@ -275,35 +275,35 @@ public class ProductionSshConnectionService {
             poolConfig.setMinEvictableIdleTimeMillis(
                 properties.getSsh().getConnectionPool().getMinEvictableIdleTime().toMillis());
             poolConfig.setMaxWaitMillis(properties.getSsh().getConnectionPool().getMaxWaitTime().toMillis());
-            
+
             SshConnectionFactory factory = new SshConnectionFactory(config, properties);
             return new GenericObjectPool<>(factory, poolConfig);
         });
     }
-    
+
     /**
      * Setup retry template with exponential backoff
      */
     private void setupRetryTemplate() {
         retryTemplate = new RetryTemplate();
-        
+
         // Configure retry policy
         SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy();
         retryPolicy.setMaxAttempts(properties.getSsh().getRetry().getMaxAttempts());
         retryTemplate.setRetryPolicy(retryPolicy);
-        
+
         // Configure backoff policy
         ExponentialBackOffPolicy backOffPolicy = new ExponentialBackOffPolicy();
         backOffPolicy.setInitialInterval(properties.getSsh().getRetry().getBackoffDelay().toMillis());
         backOffPolicy.setMaxInterval(properties.getSsh().getRetry().getMaxBackoffDelay().toMillis());
         backOffPolicy.setMultiplier(properties.getSsh().getRetry().getMultiplier());
         retryTemplate.setBackOffPolicy(backOffPolicy);
-        
-        log.info("Retry template configured with {} max attempts and {}ms initial backoff", 
+
+        log.info("Retry template configured with {} max attempts and {}ms initial backoff",
                 properties.getSsh().getRetry().getMaxAttempts(),
                 properties.getSsh().getRetry().getBackoffDelay().toMillis());
     }
-    
+
     /**
      * Connection pool health status
      */
@@ -317,12 +317,12 @@ public class ProductionSshConnectionService {
         private int connectionFailures;
         private int maxPoolSize;
         private boolean healthy;
-        
+
         public double getUtilizationPercentage() {
             if (maxPoolSize == 0) return 0.0;
             return (double) totalActiveConnections / maxPoolSize * 100.0;
         }
-        
+
         public double getFailureRate() {
             if (totalConnectionsCreated == 0) return 0.0;
             return (double) connectionFailures / totalConnectionsCreated * 100.0;

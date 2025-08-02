@@ -66,9 +66,16 @@ public class ScriptTypeRegistry {
 
         BuiltInScriptMetadata metadata = builtInScriptsMetadata.get(scriptId);
         if (metadata != null) {
-            return metadata.getType() == BuiltInScriptType.STATIC 
-                ? ScriptSourceType.BUILT_IN_STATIC 
-                : ScriptSourceType.BUILT_IN_DYNAMIC;
+            switch (metadata.getType()) {
+                case STATIC:
+                    return ScriptSourceType.BUILT_IN_STATIC;
+                case DYNAMIC:
+                    return ScriptSourceType.BUILT_IN_DYNAMIC;
+                case INTERACTIVE:
+                    return ScriptSourceType.BUILT_IN_INTERACTIVE;
+                default:
+                    return ScriptSourceType.BUILT_IN_STATIC; // 默认处理
+            }
         }
 
         // 默认认为是用户定义脚本
@@ -95,6 +102,17 @@ public class ScriptTypeRegistry {
     public boolean isDynamicBuiltInScript(String scriptId) {
         BuiltInScriptMetadata metadata = builtInScriptsMetadata.get(scriptId);
         return metadata != null && metadata.getType() == BuiltInScriptType.DYNAMIC;
+    }
+
+    /**
+     * 检查是否为交互内置脚本
+     * 
+     * @param scriptId 脚本ID
+     * @return 是否为交互内置脚本
+     */
+    public boolean isInteractiveBuiltInScript(String scriptId) {
+        BuiltInScriptMetadata metadata = builtInScriptsMetadata.get(scriptId);
+        return metadata != null && metadata.getType() == BuiltInScriptType.INTERACTIVE;
     }
 
     /**

@@ -31,7 +31,21 @@ public class DockerInstallCommand implements AtomicScriptCommand, BuiltInScriptM
             Boolean installCompose = context.getVariable("install_compose", Boolean.class);
             Boolean enableNonRootAccess = context.getVariable("enable_non_root_access", Boolean.class);
 
+            // 新增：获取前置脚本传递的变量
+            String serverLocation = context.getScriptVariable("SERVER_LOCATION", String.class);
+            String osType = context.getScriptVariable("OS_TYPE", String.class);
+            
+            log.info("检测到服务器位置: {}, 操作系统: {}", serverLocation, osType);
+
             SystemType systemType = context.getSystemType();
+
+            // 智能选择镜像源
+            if (registryMirror == null || "default".equals(registryMirror)) {
+                if ("China".equals(serverLocation)) {
+                    registryMirror = "https://mirror.aliyun.com/docker-ce";
+                    log.info("检测到中国服务器，自动使用阿里云镜像源");
+                }
+            }
 
             // 根据系统类型和参数生成安装脚本
             String installScript = generateInstallScript(systemType, registryMirror, installCompose, enableNonRootAccess);
@@ -41,7 +55,10 @@ public class DockerInstallCommand implements AtomicScriptCommand, BuiltInScriptM
 
             if (result.isSuccess()) {
                 log.info("Docker 安装成功");
-                return CommandResult.success("Docker 安装成功");
+                // 设置输出变量
+                context.setScriptVariable("DOCKER_INSTALLED", true);
+                context.setScriptVariable("DOCKER_MIRROR", registryMirror);
+                return CommandResult.success("Docker 安装成功，使用镜像源: " + registryMirror);
             } else {
                 log.error("Docker 安装失败: {}", result.getErrorMessage());
                 return CommandResult.failure("Docker 安装失败: " + result.getErrorMessage());
@@ -253,16 +270,16 @@ public class DockerInstallCommand implements AtomicScriptCommand, BuiltInScriptM
     @Override
     public List<ScriptParameter> getParameters() {
         return Arrays.asList(
-            createParameter("registry_mirror", ScriptParameter.ParameterType.STRING, 
+            createParameter("registry_mirror", ScriptParameter.ParameterType.STRING,
                 "Docker 镜像加速器地址", false, "default"),
-            createParameter("install_compose", ScriptParameter.ParameterType.BOOLEAN, 
+            createParameter("install_compose", ScriptParameter.ParameterType.BOOLEAN,
                 "是否安装 Docker Compose", false, true),
-            createParameter("enable_non_root_access", ScriptParameter.ParameterType.BOOLEAN, 
+            createParameter("enable_non_root_access", ScriptParameter.ParameterType.BOOLEAN,
                 "是否允许非 root 用户访问 Docker", false, true)
         );
     }
 
-    private ScriptParameter createParameter(String name, ScriptParameter.ParameterType type, 
+    private ScriptParameter createParameter(String name, ScriptParameter.ParameterType type,
                                           String description, boolean required, Object defaultValue) {
         ScriptParameter param = new ScriptParameter();
         param.setName(name);

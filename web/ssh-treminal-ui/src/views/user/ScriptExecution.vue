@@ -51,6 +51,16 @@
               >
                 {{ isExecuting ? '执行中...' : '配置执行' }}
               </el-button>
+              <!-- 交互脚本：交互执行按钮 -->
+              <el-button
+                v-else-if="selectedScript?.id === script.id && script.sourceType === 'BUILT_IN_INTERACTIVE'"
+                type="danger"
+                size="small"
+                @click.stop="executeInteractiveScript(script)"
+                :loading="isExecuting"
+              >
+                {{ isExecuting ? '执行中...' : '交互执行' }}
+              </el-button>
               <!-- 默认执行按钮（兼容性） -->
               <el-button
                 v-else-if="selectedScript?.id === script.id && !script.sourceType"
@@ -310,6 +320,7 @@ const getScriptTypeText = (sourceType) => {
   const typeMap = {
     'BUILT_IN_STATIC': '静态',
     'BUILT_IN_DYNAMIC': '动态',
+    'BUILT_IN_INTERACTIVE': '交互', // 新增
     'USER_DEFINED': '自定义'
   }
   return typeMap[sourceType] || '未知'
@@ -319,9 +330,47 @@ const getScriptTypeColor = (sourceType) => {
   const colorMap = {
     'BUILT_IN_STATIC': 'success',
     'BUILT_IN_DYNAMIC': 'warning', 
+    'BUILT_IN_INTERACTIVE': 'danger', // 新增，用红色表示需要交互
     'USER_DEFINED': 'info'
   }
   return colorMap[sourceType] || 'info'
+}
+
+// 新增：交互脚本执行方法
+const executeInteractiveScript = async (script) => {
+  if (isExecuting.value) return
+
+  try {
+    isExecuting.value = true
+    executionLogs.value = []
+
+    // 使用新的统一API
+    const response = await http.post(`/api/user/scripts/execute/${script.id}`, {
+      sshConfig: getSshConfig(),
+      parameters: {},
+      async: true, // 交互脚本需要异步执行
+      userId: getCurrentUserId(),
+      sessionId: generateSessionId()
+    })
+    
+    currentExecution.value = response.data
+    
+    // 检查是否需要交互
+    if (response.data.requiresInteraction) {
+      // 显示交互界面
+      interactionRequest.value = response.data.interactionData
+    }
+    
+    // 连接WebSocket监听执行状态
+    connectToExecutionLogs(response.data.id)
+    
+    ElMessage.success('交互脚本开始执行')
+    
+  } catch (error) {
+    console.error('交互脚本执行失败:', error)
+    ElMessage.error('脚本执行失败')
+    isExecuting.value = false
+  }
 }
 
 // 静态脚本立即执行

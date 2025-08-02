@@ -17,6 +17,11 @@ public enum ScriptSourceType {
     BUILT_IN_DYNAMIC("内置动态脚本", "系统预定义的参数化脚本"),
     
     /**
+     * 内置交互脚本：需要用户实时交互的脚本
+     */
+    BUILT_IN_INTERACTIVE("内置交互脚本", "需要用户实时交互的脚本"),
+    
+    /**
      * 用户定义脚本：数据库驱动，完全可定制
      */
     USER_DEFINED("用户定义脚本", "用户自定义的数据库存储脚本");
@@ -41,7 +46,7 @@ public enum ScriptSourceType {
      * 判断是否为内置脚本
      */
     public boolean isBuiltIn() {
-        return this == BUILT_IN_STATIC || this == BUILT_IN_DYNAMIC;
+        return this == BUILT_IN_STATIC || this == BUILT_IN_DYNAMIC || this == BUILT_IN_INTERACTIVE;
     }
     
     /**
@@ -49,5 +54,12 @@ public enum ScriptSourceType {
      */
     public boolean requiresParameters() {
         return this == BUILT_IN_DYNAMIC || this == USER_DEFINED;
+    }
+    
+    /**
+     * 判断是否需要用户交互
+     */
+    public boolean requiresInteraction() {
+        return this == BUILT_IN_INTERACTIVE;
     }
 }

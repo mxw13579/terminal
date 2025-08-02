@@ -32,16 +32,16 @@ public class DynamicBuiltInScriptStrategy implements ScriptExecutionStrategy {
 
     @Override
     public boolean canHandle(String scriptId, ScriptSourceType sourceType) {
-        return ScriptSourceType.BUILT_IN_DYNAMIC == sourceType && 
+        return ScriptSourceType.BUILT_IN_DYNAMIC == sourceType &&
                scriptTypeRegistry.isDynamicBuiltInScript(scriptId);
     }
 
     @Override
     public ScriptExecutionResult execute(ScriptExecutionRequest request) {
         log.info("开始执行动态内置脚本: {}", request.getScriptId());
-        
+
         LocalDateTime startTime = LocalDateTime.now();
-        
+
         try {
             // 获取内置脚本命令
             AtomicScriptCommand command = scriptTypeRegistry.getBuiltInScriptCommand(request.getScriptId());
@@ -70,19 +70,19 @@ public class DynamicBuiltInScriptStrategy implements ScriptExecutionStrategy {
             CommandContext context = request.getCommandContext();
             if (request.getParameters() != null) {
                 for (Map.Entry<String, Object> entry : request.getParameters().entrySet()) {
-                    context.setVariable(entry.getKey(), entry.getValue());
+                    context.setVariable(entry.getKey(), entry.getValue().toString());
                 }
             }
 
             // 执行脚本命令
             CommandResult commandResult = command.execute(context);
-            
+
             LocalDateTime endTime = LocalDateTime.now();
             long duration = java.time.Duration.between(startTime, endTime).toMillis();
 
             if (commandResult.isSuccess()) {
                 log.info("动态内置脚本执行成功: {}, 耗时: {}ms", request.getScriptId(), duration);
-                
+
                 ScriptExecutionResult result = new ScriptExecutionResult();
                 result.setSuccess(true);
                 result.setMessage("脚本执行成功");
@@ -97,21 +97,21 @@ public class DynamicBuiltInScriptStrategy implements ScriptExecutionStrategy {
                     "parameters", request.getParameters() != null ? request.getParameters() : Collections.emptyMap(),
                     "output", commandResult.getOutput()
                 ));
-                
+
                 return result;
             } else {
                 String errorMsg = "脚本执行失败: " + commandResult.getErrorMessage();
                 log.error("动态内置脚本执行失败: {}, 错误: {}", request.getScriptId(), errorMsg);
-                
+
                 ScriptExecutionResult result = createFailureResult(errorMsg, startTime);
                 result.setEndTime(endTime);
                 result.setDuration(duration);
                 result.setDisplayOutput(commandResult.getOutput());
                 result.setDisplayToUser(true);
-                
+
                 return result;
             }
-            
+
         } catch (Exception e) {
             String errorMsg = "脚本执行异常: " + e.getMessage();
             log.error("动态内置脚本执行异常: {}", request.getScriptId(), e);
@@ -214,7 +214,7 @@ public class DynamicBuiltInScriptStrategy implements ScriptExecutionStrategy {
         result.setEndTime(LocalDateTime.now());
         result.setDuration(java.time.Duration.between(startTime, result.getEndTime()).toMillis());
         result.setDisplayToUser(true);
-        
+
         return result;
     }
 }

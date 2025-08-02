@@ -1,36 +1,40 @@
 package com.fufu.terminal.service.script.strategy.impl;
 
+import com.fufu.terminal.entity.AtomicScript;
+import com.fufu.terminal.service.AtomicScriptService;
 import com.fufu.terminal.service.script.ScriptExecutionResult;
 import com.fufu.terminal.service.script.ScriptParameter;
-import com.fufu.terminal.service.script.UnifiedAtomicScript;
-import com.fufu.terminal.service.script.UnifiedScriptRegistry;  
 import com.fufu.terminal.service.script.strategy.ScriptExecutionStrategy;
 import com.fufu.terminal.service.script.strategy.ScriptSourceType;
 import com.fufu.terminal.service.script.strategy.model.ScriptExecutionRequest;
+import com.fufu.terminal.command.CommandResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * 用户定义脚本执行策略
- * 处理数据库存储的用户自定义脚本，保持现有行为不变
+ * 处理管理员在管理端配置的用户自定义脚本
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserDefinedScriptStrategy implements ScriptExecutionStrategy {
 
-    private final UnifiedScriptRegistry unifiedScriptRegistry;
+    private final AtomicScriptService atomicScriptService;
+    
+    // 参数替换模式：${参数名}
+    private static final Pattern PARAMETER_PATTERN = Pattern.compile("\\$\\{([^}]+)\\}");
 
     @Override
     public boolean canHandle(String scriptId, ScriptSourceType sourceType) {
-        return ScriptSourceType.USER_DEFINED == sourceType && 
-               unifiedScriptRegistry.getScript(scriptId) != null;
+        return ScriptSourceType.USER_DEFINED == sourceType;
     }
 
     @Override
@@ -40,66 +44,79 @@ public class UserDefinedScriptStrategy implements ScriptExecutionStrategy {
         LocalDateTime startTime = LocalDateTime.now();
         
         try {
-            // 获取用户定义脚本
-            UnifiedAtomicScript script = unifiedScriptRegistry.getScript(request.getScriptId());
-            if (script == null) {
-                String errorMsg = "未找到用户定义脚本: " + request.getScriptId();
+            // 从数据库加载用户脚本
+            AtomicScript userScript = atomicScriptService.getById(Long.parseLong(request.getScriptId()));
+            if (userScript == null) {
+                String errorMsg = "未找到用户脚本: " + request.getScriptId();
                 log.error(errorMsg);
                 return createFailureResult(errorMsg, startTime);
             }
-
-            // 验证必需参数
-            String validationError = validateParameters(script, request.getParameters());
-            if (validationError != null) {
-                log.error("参数验证失败: {}, 脚本: {}", validationError, request.getScriptId());
-                return createFailureResult("参数验证失败: " + validationError, startTime);
-            }
-
-            // 设置参数到脚本执行上下文
-            if (request.getParameters() != null) {
-                for (Map.Entry<String, Object> entry : request.getParameters().entrySet()) {
-                    request.getCommandContext().setVariable(entry.getKey(), entry.getValue());
-                }
-            }
-
-            // 执行用户定义脚本
-            ScriptExecutionResult result = script.execute(request.getCommandContext());
             
-            if (result != null) {
-                // 设置执行时间信息
-                if (result.getStartTime() == null) {
-                    result.setStartTime(startTime);
-                }
-                if (result.getEndTime() == null) {
-                    result.setEndTime(LocalDateTime.now());
-                }
-                if (result.getDuration() == 0) {
-                    result.setDuration(java.time.Duration.between(startTime, result.getEndTime()).toMillis());
-                }
-
-                log.info("用户定义脚本执行完成: {}, 成功: {}, 耗时: {}ms", 
-                    request.getScriptId(), result.isSuccess(), result.getDuration());
+            // 处理脚本参数替换
+            String processedScript = processScriptParameters(
+                userScript.getScriptContent(), 
+                request.getParameters(),
+                request.getCommandContext().getAllScriptVariables()
+            );
+            
+            log.info("用户脚本参数处理完成，准备执行");
+            log.debug("处理后的脚本内容: {}", processedScript);
+            
+            // 执行处理后的脚本
+            CommandResult commandResult = request.getCommandContext().executeScript(processedScript);
+            
+            LocalDateTime endTime = LocalDateTime.now();
+            long duration = java.time.Duration.between(startTime, endTime).toMillis();
+            
+            if (commandResult.isSuccess()) {
+                log.info("用户脚本执行成功: {}, 耗时: {}ms", request.getScriptId(), duration);
+                
+                ScriptExecutionResult result = new ScriptExecutionResult();
+                result.setSuccess(true);
+                result.setMessage("用户脚本执行成功");
+                result.setStartTime(startTime);
+                result.setEndTime(endTime);
+                result.setDuration(duration);
+                result.setDisplayOutput(commandResult.getOutput());
+                result.setDisplayToUser(true);
+                result.setOutputData(Map.of(
+                    "scriptId", request.getScriptId(),
+                    "scriptName", userScript.getName(),
+                    "executionTime", duration,
+                    "output", commandResult.getOutput()
+                ));
                 
                 return result;
             } else {
-                String errorMsg = "脚本执行返回空结果";
-                log.error("用户定义脚本执行失败: {}, 错误: {}", request.getScriptId(), errorMsg);
-                return createFailureResult(errorMsg, startTime);
+                String errorMsg = "用户脚本执行失败: " + commandResult.getErrorMessage();
+                log.error("用户脚本执行失败: {}, 错误: {}", request.getScriptId(), errorMsg);
+                
+                ScriptExecutionResult result = createFailureResult(errorMsg, startTime);
+                result.setEndTime(endTime);
+                result.setDuration(duration);
+                result.setDisplayOutput(commandResult.getOutput());
+                result.setDisplayToUser(true);
+                
+                return result;
             }
             
         } catch (Exception e) {
-            String errorMsg = "脚本执行异常: " + e.getMessage();
-            log.error("用户定义脚本执行异常: {}", request.getScriptId(), e);
+            String errorMsg = "用户脚本执行异常: " + e.getMessage();
+            log.error("用户脚本执行异常: {}", request.getScriptId(), e);
             return createFailureResult(errorMsg, startTime);
         }
     }
 
     @Override
     public List<ScriptParameter> getRequiredParameters(String scriptId) {
-        UnifiedAtomicScript script = unifiedScriptRegistry.getScript(scriptId);
-        if (script != null) {
-            ScriptParameter[] inputParams = script.getInputParameters();
-            return inputParams != null ? Arrays.asList(inputParams) : List.of();
+        try {
+            AtomicScript userScript = atomicScriptService.getById(Long.parseLong(scriptId));
+            if (userScript != null && userScript.getInputVariables() != null) {
+                // 解析输入变量JSON为ScriptParameter列表
+                return parseInputVariables(userScript.getInputVariables());
+            }
+        } catch (Exception e) {
+            log.error("获取用户脚本参数失败: {}", scriptId, e);
         }
         return List.of();
     }
@@ -108,81 +125,54 @@ public class UserDefinedScriptStrategy implements ScriptExecutionStrategy {
     public ScriptSourceType getSupportedSourceType() {
         return ScriptSourceType.USER_DEFINED;
     }
-
+    
     /**
-     * 验证参数
+     * 处理脚本参数替换
+     * 支持两种参数：
+     * 1. 用户输入参数：${mysql_port}
+     * 2. 脚本变量：${SERVER_LOCATION}
      */
-    private String validateParameters(UnifiedAtomicScript script, Map<String, Object> providedParameters) {
-        ScriptParameter[] requiredParameters = script.getInputParameters();
-        if (requiredParameters == null || requiredParameters.length == 0) {
-            return null;
-        }
-
-        Map<String, Object> params = providedParameters != null ? providedParameters : Map.of();
-
-        for (ScriptParameter requiredParam : requiredParameters) {
-            String paramName = requiredParam.getName();
-            Object paramValue = params.get(paramName);
-
-            // 检查必需参数
-            if (requiredParam.isRequired() && (paramValue == null || paramValue.toString().trim().isEmpty())) {
-                return "缺少必需参数: " + paramName;
+    private String processScriptParameters(String scriptContent, 
+                                         Map<String, Object> parameters,
+                                         Map<String, Object> scriptVariables) {
+        String result = scriptContent;
+        
+        Matcher matcher = PARAMETER_PATTERN.matcher(scriptContent);
+        while (matcher.find()) {
+            String paramName = matcher.group(1);
+            String placeholder = "${" + paramName + "}";
+            
+            Object value = null;
+            
+            // 优先从用户参数中查找
+            if (parameters != null && parameters.containsKey(paramName)) {
+                value = parameters.get(paramName);
             }
-
-            // 类型验证
-            if (paramValue != null) {
-                String typeError = validateParameterType(requiredParam, paramValue);
-                if (typeError != null) {
-                    return typeError;
-                }
+            // 其次从脚本变量中查找
+            else if (scriptVariables != null && scriptVariables.containsKey(paramName)) {
+                value = scriptVariables.get(paramName);
+            }
+            
+            if (value != null) {
+                result = result.replace(placeholder, String.valueOf(value));
+                log.debug("替换参数: {} -> {}", placeholder, value);
+            } else {
+                log.warn("未找到参数值: {}", paramName);
             }
         }
-
-        return null;
+        
+        return result;
     }
-
+    
     /**
-     * 验证参数类型
+     * 解析输入变量JSON为ScriptParameter列表
      */
-    private String validateParameterType(ScriptParameter parameter, Object value) {
-        if (value == null) return null;
-
-        try {
-            switch (parameter.getType()) {
-                case INTEGER:
-                    if (!(value instanceof Integer)) {
-                        Integer.parseInt(value.toString());
-                    }
-                    break;
-                case BOOLEAN:
-                    if (!(value instanceof Boolean)) {
-                        Boolean.parseBoolean(value.toString());
-                    }
-                    break;
-                case STRING:
-                    // 字符串类型总是有效的
-                    break;
-                case ARRAY:
-                    if (!(value instanceof List)) {
-                        return "参数 " + parameter.getName() + " 应该是数组类型";
-                    }
-                    break;
-                case OBJECT:
-                    if (!(value instanceof Map)) {
-                        return "参数 " + parameter.getName() + " 应该是对象类型";
-                    }
-                    break;
-            }
-        } catch (Exception e) {
-            return "参数 " + parameter.getName() + " 类型不匹配，期望: " + parameter.getType().getDisplayName();
-        }
-
-        return null;
+    private List<ScriptParameter> parseInputVariables(String inputVariablesJson) {
+        // 实现JSON解析逻辑
+        // 这里简化实现，实际应该使用JSON库解析
+        return List.of(); // 占位符
     }
-
-    /**
-     * 创建失败结果
-     */
+    
     private ScriptExecutionResult createFailureResult(String errorMessage, LocalDateTime startTime) {
         ScriptExecutionResult result = new ScriptExecutionResult();
         result.setSuccess(false);

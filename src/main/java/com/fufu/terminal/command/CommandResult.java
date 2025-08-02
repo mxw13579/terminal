@@ -1,15 +1,29 @@
 package com.fufu.terminal.command;
 
 import lombok.Getter;
+import lombok.Setter;
+
+import java.util.Map;
 
 /**
  * 封装SSH命令执行的结果
  */
 @Getter
+@Setter
 public class CommandResult {
     private final String stdout;
     private final String stderr;
     private final int exitStatus;
+    
+    /**
+     * 是否需要用户交互
+     */
+    private boolean requiresUserInteraction = false;
+
+    /**
+     * 交互数据（用于前端显示交互界面）
+     */
+    private Map<String, Object> interactionData;
 
     public CommandResult(String stdout, String stderr, int exitStatus) {
         this.stdout = stdout;
@@ -47,5 +61,22 @@ public class CommandResult {
      */
     public String getOutput() {
         return stdout;
+    }
+
+    public boolean isRequiresUserInteraction() {
+        return requiresUserInteraction;
+    }
+
+    public void setRequiresUserInteraction(boolean requiresUserInteraction) {
+        this.requiresUserInteraction = requiresUserInteraction;
+    }
+
+    public Map<String, Object> getInteractionData() {
+        return interactionData;
+    }
+
+    public void setInteractionData(Map<String, Object> interactionData) {
+        this.interactionData = interactionData;
+        this.requiresUserInteraction = true;
     }
 }

@@ -61,6 +61,16 @@ public class ScriptExecutionResult {
     private boolean displayToUser;
     
     /**
+     * 是否需要用户交互
+     */
+    private boolean requiresInteraction = false;
+
+    /**
+     * 交互数据
+     */
+    private Map<String, Object> interactionData;
+    
+    /**
      * 创建成功结果
      */
     public static ScriptExecutionResult success(String message, Map<String, Object> outputData) {

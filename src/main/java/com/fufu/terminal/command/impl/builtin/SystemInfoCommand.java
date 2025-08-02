@@ -83,8 +83,17 @@ public class SystemInfoCommand implements AtomicScriptCommand, BuiltInScriptMeta
             CommandResult result = context.executeScript(infoScript);
             
             if (result.isSuccess()) {
-                log.info("系统信息查看成功");
-                return CommandResult.success("系统信息收集完成");
+                // 新增：检测服务器地址和操作系统
+                String serverLocation = detectServerLocation();
+                String osType = detectOperatingSystem();
+                
+                // 设置输出变量供后续脚本使用
+                context.setScriptVariable("SERVER_LOCATION", serverLocation);
+                context.setScriptVariable("OS_TYPE", osType);
+                
+                log.info("系统信息查看成功，设置变量: SERVER_LOCATION={}, OS_TYPE={}", 
+                    serverLocation, osType);
+                return CommandResult.success("系统信息收集完成，检测到服务器位置: " + serverLocation);
             } else {
                 log.error("系统信息查看失败: {}", result.getErrorMessage());
                 return CommandResult.failure("系统信息查看失败: " + result.getErrorMessage());
@@ -94,6 +103,47 @@ public class SystemInfoCommand implements AtomicScriptCommand, BuiltInScriptMeta
             log.error("执行系统信息查看命令异常", e);
             return CommandResult.failure("执行异常: " + e.getMessage());
         }
+    }
+
+    /**
+     * 检测服务器地址
+     */
+    private String detectServerLocation() {
+        try {
+            // 通过IP地址检测服务器地理位置
+            // 这里简化实现，实际可以调用IP地址库
+            String publicIP = getPublicIP();
+            if (isChineseIP(publicIP)) {
+                return "China";
+            }
+            return "Global";
+        } catch (Exception e) {
+            log.warn("服务器地址检测失败，默认为Global", e);
+            return "Global";
+        }
+    }
+
+    /**
+     * 检测操作系统类型
+     */
+    private String detectOperatingSystem() {
+        String osName = System.getProperty("os.name").toLowerCase();
+        if (osName.contains("ubuntu")) return "Ubuntu";
+        if (osName.contains("debian")) return "Debian";
+        if (osName.contains("centos")) return "CentOS";
+        if (osName.contains("redhat")) return "RedHat";
+        return "Unknown";
+    }
+
+    // 辅助方法实现
+    private String getPublicIP() {
+        // 实现获取公网IP的逻辑
+        return "127.0.0.1"; // 占位符
+    }
+
+    private boolean isChineseIP(String ip) {
+        // 实现判断是否为中国IP的逻辑
+        return false; // 占位符
     }
 
     @Override

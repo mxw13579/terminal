@@ -16,7 +16,13 @@ public enum BuiltInScriptType {
      * 动态脚本：需要参数，参数收集后执行  
      * 例如：Docker安装、MySQL安装
      */
-    DYNAMIC("动态脚本", "需要参数配置的脚本");
+    DYNAMIC("动态脚本", "需要参数配置的脚本"),
+    
+    /**
+     * 交互脚本：需要用户实时交互确认
+     * 例如：用户确认、条件判断
+     */
+    INTERACTIVE("交互脚本", "需要用户实时交互的脚本");
     
     private final String displayName;
     private final String description;

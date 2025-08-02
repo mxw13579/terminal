@@ -23,6 +23,12 @@
             内置脚本(需变量)
           </button>
           <button 
+            :class="['tab-btn', { active: currentTab === 'builtin-interactive' }]"
+            @click="switchTab('builtin-interactive')"
+          >
+            内置脚本(交互)
+          </button>
+          <button 
             :class="['tab-btn', { active: currentTab === 'user' }]"
             @click="switchTab('user')"
           >
@@ -131,6 +137,31 @@ const currentTab = ref('all');
 // Tab切换功能
 const switchTab = (tab) => {
   currentTab.value = tab;
+  switch (tab) {
+    case 'all':
+      filteredScripts.value = scripts.value
+      break
+    case 'builtin-no-vars':
+      filteredScripts.value = scripts.value.filter(
+        script => script.scriptType === 'BUILT_IN_STATIC'
+      )
+      break
+    case 'builtin-with-vars':
+      filteredScripts.value = scripts.value.filter(
+        script => script.scriptType === 'BUILT_IN_DYNAMIC'
+      )
+      break
+    case 'builtin-interactive': // 新增交互脚本过滤
+      filteredScripts.value = scripts.value.filter(
+        script => script.scriptType === 'BUILT_IN_INTERACTIVE'
+      )
+      break
+    case 'user':
+      filteredScripts.value = scripts.value.filter(
+        script => script.scriptType === 'USER_SIMPLE' || script.scriptType === 'USER_TEMPLATE'
+      )
+      break
+  }
 };
 
 // 根据当前tab过滤脚本
