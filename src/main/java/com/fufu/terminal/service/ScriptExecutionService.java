@@ -117,8 +117,10 @@ public class ScriptExecutionService {
         try {
             log.info("开始异步执行聚合脚本: {}", aggregatedScript.getName());
             
-            // 解析脚本ID列表
-            List<Long> scriptIds = parseScriptIds(aggregatedScript.getScriptIds());
+            // 获取原子脚本ID列表
+            List<Long> scriptIds = aggregatedScript.getAtomicScriptRelations().stream()
+                .map(relation -> relation.getAtomicScript().getId())
+                .toList();
             
             // 逐个执行原子脚本
             for (int i = 0; i < scriptIds.size(); i++) {

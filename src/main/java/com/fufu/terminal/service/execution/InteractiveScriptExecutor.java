@@ -18,6 +18,7 @@ import com.fufu.terminal.repository.ScriptExecutionSessionRepository;
 import com.fufu.terminal.service.AtomicScriptService;
 import com.fufu.terminal.service.ScriptInteractionService;
 import com.fufu.terminal.service.validation.ScriptValidationService;
+import com.fufu.terminal.util.JsonUtilityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -57,6 +58,7 @@ public class InteractiveScriptExecutor {
     private final ScriptExecutionSessionRepository sessionRepository;
     private final ScriptInteractionService interactionService;
     private final ScriptValidationService validationService;
+    private final JsonUtilityService jsonUtilityService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private ThreadPoolExecutor executorService;
@@ -198,11 +200,12 @@ public class InteractiveScriptExecutor {
             processUserResponse(request, userResponse, context);
             
             // Update interaction record with response
-            interaction.setUserResponse(objectMapper.writeValueAsString(userResponse));
+            String responseJson = jsonUtilityService.toJsonString(userResponse, "{}");
+            interaction.setUserResponse(responseJson);
             interaction.setResponseTime(LocalDateTime.now());
             interactionService.updateInteraction(interaction);
             
-            log.info("User interaction completed for script: {}", script.getName());
+            log.info("User interaction completed for script: {} with response: {}", script.getName(), responseJson);
             
         } catch (TimeoutException e) {
             log.warn("User interaction timeout for script: {} (session: {})", script.getName(), session.getId());

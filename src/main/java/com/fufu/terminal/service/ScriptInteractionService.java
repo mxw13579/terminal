@@ -8,7 +8,9 @@ import com.fufu.terminal.entity.interaction.InteractionRequest;
 import com.fufu.terminal.entity.interaction.InteractionResponse;
 import com.fufu.terminal.repository.ScriptExecutionSessionRepository;
 import com.fufu.terminal.repository.ScriptInteractionRepository;
+import com.fufu.terminal.util.JsonUtilityService;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +20,7 @@ import java.util.Optional;
 /**
  * Service for managing script interactions.
  */
+@Slf4j
 @Service
 @AllArgsConstructor
 public class ScriptInteractionService {
@@ -28,6 +31,7 @@ public class ScriptInteractionService {
 
     private final ScriptInteractionRepository interactionRepository;
     private final ScriptExecutionSessionRepository sessionRepository;
+    private final JsonUtilityService jsonUtilityService;
 
     /**
      * Creates and persists a new interaction request.
@@ -61,11 +65,19 @@ public class ScriptInteractionService {
         Optional<ScriptInteraction> optionalInteraction = interactionRepository.findById(interactionId);
         if (optionalInteraction.isPresent()) {
             ScriptInteraction interaction = optionalInteraction.get();
-            interaction.setUserResponse(response.getResponseDataAsJson()); // Assuming response data is JSON
+            
+            // Use centralized JSON utility service for consistent serialization
+            String responseJson = jsonUtilityService.toJsonString(response.getResponse(), "{}");
+            interaction.setUserResponse(responseJson);
+            
             interaction.setStatus(STATUS_COMPLETED);
-            interaction.setRespondedAt(LocalDateTime.now());
+            interaction.setResponseTime(LocalDateTime.now());
+            
+            log.debug("Completed interaction {} with response: {}", interactionId, responseJson);
             return Optional.of(interactionRepository.save(interaction));
         }
+        
+        log.warn("Attempted to complete non-existent interaction: {}", interactionId);
         return Optional.empty();
     }
 

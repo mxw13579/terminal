@@ -19,10 +19,10 @@ public class SaTokenConfig implements WebMvcConfigurer {
     
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 注册 Sa-Token 拦截器，使用默认的异常处理
+        // 注册 Sa-Token 拦截器，只拦截管理端接口，用户端不需要登录
         registry.addInterceptor(new SaInterceptor(handle -> StpUtil.checkLogin()))
-                .addPathPatterns("/api/admin/**", "/api/user/**")  // 拦截管理端和用户端接口
-                .excludePathPatterns("/api/admin/login", "/api/user/login", "/health", "/actuator/**");  // 排除登录和健康检查接口
+                .addPathPatterns("/api/admin/**")  // 只拦截管理端接口
+                .excludePathPatterns("/api/admin/login", "/health", "/actuator/**");  // 排除登录和健康检查接口
     }
     
     @Override

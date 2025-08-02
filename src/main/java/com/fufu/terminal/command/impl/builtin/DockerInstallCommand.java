@@ -4,26 +4,37 @@ import com.fufu.terminal.command.AtomicScriptCommand;
 import com.fufu.terminal.command.CommandContext;
 import com.fufu.terminal.command.CommandResult;
 import com.fufu.terminal.command.model.enums.SystemType;
+import com.fufu.terminal.service.script.ScriptParameter;
+import com.fufu.terminal.service.script.strategy.BuiltInScriptMetadata;
+import com.fufu.terminal.service.script.strategy.BuiltInScriptType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * Docker 安装命令
- * 内置原子脚本，不需要变量传递
+ * 内置原子脚本，支持参数配置
  */
 @Slf4j
 @Component("docker-install")
-public class DockerInstallCommand implements AtomicScriptCommand {
+public class DockerInstallCommand implements AtomicScriptCommand, BuiltInScriptMetadata {
 
     @Override
     public CommandResult execute(CommandContext context) {
         log.info("开始执行 Docker 安装命令");
 
         try {
+            // 获取参数
+            String registryMirror = context.getVariable("registry_mirror", String.class);
+            Boolean installCompose = context.getVariable("install_compose", Boolean.class);
+            Boolean enableNonRootAccess = context.getVariable("enable_non_root_access", Boolean.class);
+
             SystemType systemType = context.getSystemType();
 
-            // 根据系统类型生成安装脚本
-            String installScript = generateInstallScript(systemType);
+            // 根据系统类型和参数生成安装脚本
+            String installScript = generateInstallScript(systemType, registryMirror, installCompose, enableNonRootAccess);
 
             // 执行脚本
             CommandResult result = context.executeScript(installScript);
@@ -42,21 +53,22 @@ public class DockerInstallCommand implements AtomicScriptCommand {
         }
     }
 
-    private String generateInstallScript(SystemType systemType) {
+    private String generateInstallScript(SystemType systemType, String registryMirror, Boolean installCompose, Boolean enableNonRootAccess) {
         switch (systemType) {
             case UBUNTU:
             case DEBIAN:
-                return generateDebianInstallScript();
+                return generateDebianInstallScript(registryMirror, installCompose, enableNonRootAccess);
             case CENTOS:
             case REDHAT:
-                return generateRHELInstallScript();
+                return generateRHELInstallScript(registryMirror, installCompose, enableNonRootAccess);
             default:
                 throw new UnsupportedOperationException("不支持的系统类型: " + systemType);
         }
     }
 
-    private String generateDebianInstallScript() {
-        return """
+    private String generateDebianInstallScript(String registryMirror, Boolean installCompose, Boolean enableNonRootAccess) {
+        StringBuilder script = new StringBuilder();
+        script.append("""
                 #!/bin/bash
                 set -e
                 
@@ -88,21 +100,62 @@ public class DockerInstallCommand implements AtomicScriptCommand {
                 # 启动 Docker 服务
                 systemctl start docker
                 systemctl enable docker
+                """);
+
+        // 配置镜像加速器
+        if (registryMirror != null && !registryMirror.equals("default")) {
+            script.append(String.format("""
+                
+                # 配置 Docker 镜像加速器
+                mkdir -p /etc/docker
+                cat > /etc/docker/daemon.json << EOF
+                {
+                  "registry-mirrors": ["%s"]
+                }
+                EOF
+                systemctl daemon-reload
+                systemctl restart docker
+                """, registryMirror));
+        }
+
+        // 添加用户到 docker 组
+        if (enableNonRootAccess == null || enableNonRootAccess) {
+            script.append("""
                 
                 # 将当前用户添加到 docker 组
                 if [ "$SUDO_USER" ]; then
                     usermod -aG docker $SUDO_USER
+                    echo "用户 $SUDO_USER 已添加到 docker 组"
                 fi
+                """);
+        }
+
+        // 安装 Docker Compose
+        if (installCompose == null || installCompose) {
+            script.append("""
+                
+                # 安装 Docker Compose
+                COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep tag_name | cut -d '"' -f 4)
+                curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+                echo "Docker Compose 版本: $(docker-compose --version)"
+                """);
+        }
+
+        script.append("""
                 
                 # 验证安装
                 docker --version
                 
                 echo "Docker 安装完成！"
-                """;
+                """);
+
+        return script.toString();
     }
 
-    private String generateRHELInstallScript() {
-        return """
+    private String generateRHELInstallScript(String registryMirror, Boolean installCompose, Boolean enableNonRootAccess) {
+        StringBuilder script = new StringBuilder();
+        script.append("""
                 #!/bin/bash
                 set -e
                 
@@ -123,17 +176,57 @@ public class DockerInstallCommand implements AtomicScriptCommand {
                 # 启动 Docker 服务
                 systemctl start docker
                 systemctl enable docker
+                """);
+
+        // 配置镜像加速器
+        if (registryMirror != null && !registryMirror.equals("default")) {
+            script.append(String.format("""
+                
+                # 配置 Docker 镜像加速器
+                mkdir -p /etc/docker
+                cat > /etc/docker/daemon.json << EOF
+                {
+                  "registry-mirrors": ["%s"]
+                }
+                EOF
+                systemctl daemon-reload
+                systemctl restart docker
+                """, registryMirror));
+        }
+
+        // 添加用户到 docker 组
+        if (enableNonRootAccess == null || enableNonRootAccess) {
+            script.append("""
                 
                 # 将当前用户添加到 docker 组
                 if [ "$SUDO_USER" ]; then
                     usermod -aG docker $SUDO_USER
+                    echo "用户 $SUDO_USER 已添加到 docker 组"
                 fi
+                """);
+        }
+
+        // 安装 Docker Compose
+        if (installCompose == null || installCompose) {
+            script.append("""
+                
+                # 安装 Docker Compose
+                COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep tag_name | cut -d '"' -f 4)
+                curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+                echo "Docker Compose 版本: $(docker-compose --version)"
+                """);
+        }
+
+        script.append("""
                 
                 # 验证安装
                 docker --version
                 
                 echo "Docker 安装完成！"
-                """;
+                """);
+
+        return script.toString();
     }
 
     @Override
@@ -143,6 +236,45 @@ public class DockerInstallCommand implements AtomicScriptCommand {
 
     @Override
     public String getDescription() {
-        return "安装 Docker 容器运行时环境";
+        return "安装 Docker 容器运行时环境，支持镜像加速器配置和 Docker Compose 安装";
+    }
+
+    // BuiltInScriptMetadata 接口实现
+    @Override
+    public String getScriptId() {
+        return "docker-install";
+    }
+
+    @Override
+    public BuiltInScriptType getType() {
+        return BuiltInScriptType.DYNAMIC;
+    }
+
+    @Override
+    public List<ScriptParameter> getParameters() {
+        return Arrays.asList(
+            createParameter("registry_mirror", ScriptParameter.ParameterType.STRING, 
+                "Docker 镜像加速器地址", false, "default"),
+            createParameter("install_compose", ScriptParameter.ParameterType.BOOLEAN, 
+                "是否安装 Docker Compose", false, true),
+            createParameter("enable_non_root_access", ScriptParameter.ParameterType.BOOLEAN, 
+                "是否允许非 root 用户访问 Docker", false, true)
+        );
+    }
+
+    private ScriptParameter createParameter(String name, ScriptParameter.ParameterType type, 
+                                          String description, boolean required, Object defaultValue) {
+        ScriptParameter param = new ScriptParameter();
+        param.setName(name);
+        param.setType(type);
+        param.setDescription(description);
+        param.setRequired(required);
+        param.setDefaultValue(defaultValue);
+        return param;
+    }
+
+    @Override
+    public String[] getTags() {
+        return new String[]{"容器", "Docker", "安装", "基础设施"};
     }
 }

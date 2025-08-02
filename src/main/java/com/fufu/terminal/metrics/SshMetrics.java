@@ -4,7 +4,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,7 +15,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author lizelin
  */
 @Component
-@RequiredArgsConstructor
 public class SshMetrics {
     
     private final MeterRegistry meterRegistry;
@@ -62,13 +60,13 @@ public class SshMetrics {
             .register(meterRegistry);
         
         // 初始化仪表
-        Gauge.builder("ssh.connections.active")
+        Gauge.builder("ssh.connections.active", this, SshMetrics::getActiveConnections)
             .description("Number of active SSH connections")
-            .register(meterRegistry, this, SshMetrics::getActiveConnections);
+            .register(meterRegistry);
             
-        Gauge.builder("ssh.connections.total")
+        Gauge.builder("ssh.connections.total", this, SshMetrics::getTotalConnections)
             .description("Total number of SSH connections created")
-            .register(meterRegistry, this, SshMetrics::getTotalConnections);
+            .register(meterRegistry);
     }
     
     public void recordConnectionAttempt() {
@@ -90,11 +88,20 @@ public class SshMetrics {
     }
     
     public void recordCommandExecution(String commandType) {
-        commandExecutions.increment("type", commandType);
+        Counter.builder("ssh.command.executions")
+            .tag("type", commandType)
+            .register(meterRegistry)
+            .increment();
+        commandExecutions.increment();
     }
     
     public void recordCommandFailure(String commandType, String errorType) {
-        commandFailures.increment("type", commandType, "error", errorType);
+        Counter.builder("ssh.command.failures")
+            .tag("type", commandType)
+            .tag("error", errorType)
+            .register(meterRegistry)
+            .increment();
+        commandFailures.increment();
     }
     
     public Timer.Sample startConnectionTimer() {

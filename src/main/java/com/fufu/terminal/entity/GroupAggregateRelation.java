@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.springframework.data.annotation.CreatedDate;
@@ -21,6 +22,7 @@ public class GroupAggregateRelation {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id", nullable = false)
+    @JsonBackReference
     private ScriptGroup scriptGroup;
 
     @ManyToOne(fetch = FetchType.LAZY)

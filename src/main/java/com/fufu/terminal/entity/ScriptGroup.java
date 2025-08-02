@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.fufu.terminal.entity.enums.ScriptGroupType;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -18,7 +19,7 @@ import java.util.List;
 @Data
 @Entity
 @Table(name = "script_groups", indexes = {
-    @Index(name = "idx_script_group_status_display", columnList = "status, displayOrder"),
+    @Index(name = "idx_script_group_status_display", columnList = "status, display_order"),
     @Index(name = "idx_script_group_type_status", columnList = "type, status"),
     @Index(name = "idx_script_group_created_by", columnList = "created_by")
 })
@@ -48,7 +49,8 @@ public class ScriptGroup {
     private Long createdBy;
 
     @OneToMany(mappedBy = "scriptGroup", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("displayOrder ASC")
+    @OrderBy("display_order ASC")
+    @JsonManagedReference
     private List<GroupAggregateRelation> aggregateRelations = new ArrayList<>();
 
     @Enumerated(EnumType.STRING)

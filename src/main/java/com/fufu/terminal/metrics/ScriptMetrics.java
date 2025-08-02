@@ -4,7 +4,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,7 +15,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author lizelin
  */
 @Component
-@RequiredArgsConstructor
 public class ScriptMetrics {
     
     private final MeterRegistry meterRegistry;
@@ -58,17 +56,17 @@ public class ScriptMetrics {
             .register(meterRegistry);
         
         // 初始化仪表
-        Gauge.builder("script.executions.active")
+        Gauge.builder("script.executions.active", this, ScriptMetrics::getActiveExecutions)
             .description("Number of active script executions")
-            .register(meterRegistry, this, ScriptMetrics::getActiveExecutions);
+            .register(meterRegistry);
             
-        Gauge.builder("script.executions.total")
+        Gauge.builder("script.executions.total", this, ScriptMetrics::getTotalExecutions)
             .description("Total number of script executions")
-            .register(meterRegistry, this, ScriptMetrics::getTotalExecutions);
+            .register(meterRegistry);
             
-        Gauge.builder("script.executions.success.rate")
+        Gauge.builder("script.executions.success.rate", this, ScriptMetrics::getSuccessRate)
             .description("Script execution success rate")
-            .register(meterRegistry, this, ScriptMetrics::getSuccessRate);
+            .register(meterRegistry);
     }
     
     public void recordExecutionAttempt() {
@@ -78,19 +76,32 @@ public class ScriptMetrics {
     }
     
     public void recordExecutionSuccess(String scriptType) {
-        executionSuccesses.increment("type", scriptType);
+        Counter.builder("script.executions.successes")
+            .tag("type", scriptType)
+            .register(meterRegistry)
+            .increment();
+        executionSuccesses.increment();
         successfulExecutions.incrementAndGet();
         activeExecutions.decrementAndGet();
     }
     
     public void recordExecutionFailure(String scriptType, String errorType) {
-        executionFailures.increment("type", scriptType, "error", errorType);
+        Counter.builder("script.executions.failures")
+            .tag("type", scriptType)
+            .tag("error", errorType)
+            .register(meterRegistry)
+            .increment();
+        executionFailures.increment();
         failedExecutions.incrementAndGet();
         activeExecutions.decrementAndGet();
     }
     
     public void recordInteractionRequest(String interactionType) {
-        interactionRequests.increment("type", interactionType);
+        Counter.builder("script.interaction.requests")
+            .tag("type", interactionType)
+            .register(meterRegistry)
+            .increment();
+        interactionRequests.increment();
     }
     
     public Timer.Sample startExecutionTimer() {

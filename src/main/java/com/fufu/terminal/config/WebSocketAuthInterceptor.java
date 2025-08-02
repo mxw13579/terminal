@@ -26,25 +26,60 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
         try {
             // 获取token参数
             String token = getTokenFromRequest(request);
+            
+            // 检查是否是用户端连接（通过URL参数或Header识别）
+            boolean isUserClient = isUserClient(request);
+            
             if (token == null) {
-                log.warn("WebSocket连接被拒绝：缺少认证token");
-                return false;
+                if (isUserClient) {
+                    // 用户端不需要认证，设置默认用户信息
+                    attributes.put("userId", "anonymous");
+                    attributes.put("userType", "user");
+                    log.info("用户端WebSocket连接（无需认证）");
+                    return true;
+                } else {
+                    log.warn("管理端WebSocket连接被拒绝：缺少认证token");
+                    return false;
+                }
             }
 
-            // 验证token
-            StpUtil.checkLogin(token);
+            // 验证token（管理端或带token的用户端）
+            Object loginId = StpUtil.getLoginIdByToken(token);
+            if (loginId == null) {
+                if (isUserClient) {
+                    // 用户端token无效时也允许连接
+                    attributes.put("userId", "anonymous");
+                    attributes.put("userType", "user");
+                    log.info("用户端WebSocket连接（token无效，使用匿名模式）");
+                    return true;
+                } else {
+                    log.warn("管理端WebSocket连接被拒绝：token无效");
+                    return false;
+                }
+            }
             
             // 将用户信息存储到WebSocket会话属性中
-            Object loginId = StpUtil.getLoginIdByToken(token);
             attributes.put("userId", loginId);
             attributes.put("token", token);
+            attributes.put("userType", isUserClient ? "user" : "admin");
             
-            log.info("WebSocket认证成功，用户ID: {}", loginId);
+            log.info("WebSocket认证成功，用户ID: {}, 类型: {}", loginId, isUserClient ? "用户端" : "管理端");
             return true;
             
         } catch (Exception e) {
-            log.warn("WebSocket认证失败: {}", e.getMessage());
-            return false;
+            // 检查是否是用户端连接
+            boolean isUserClient = isUserClient(request);
+            
+            if (isUserClient) {
+                // 用户端异常时也允许连接
+                attributes.put("userId", "anonymous");
+                attributes.put("userType", "user");
+                log.info("用户端WebSocket连接（认证异常，使用匿名模式）: {}", e.getMessage());
+                return true;
+            } else {
+                log.warn("管理端WebSocket认证失败: {}", e.getMessage());
+                return false;
+            }
         }
     }
 
@@ -85,5 +120,35 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
         }
         
         return null;
+    }
+    
+    /**
+     * 判断是否是用户端连接
+     * 通过URL参数或Header判断
+     */
+    private boolean isUserClient(ServerHttpRequest request) {
+        if (request instanceof ServletServerHttpRequest) {
+            ServletServerHttpRequest servletRequest = (ServletServerHttpRequest) request;
+            
+            // 1. 通过URL参数判断
+            String clientType = servletRequest.getServletRequest().getParameter("client-type");
+            if ("user".equals(clientType)) {
+                return true;
+            }
+            
+            // 2. 通过Header判断
+            String clientTypeHeader = servletRequest.getHeaders().getFirst("client-type");
+            if ("user".equals(clientTypeHeader)) {
+                return true;
+            }
+            
+            // 3. 通过URI路径判断（如果有特定的用户端WebSocket路径）
+            String path = request.getURI().getPath();
+            if (path != null && path.contains("/user/")) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 }

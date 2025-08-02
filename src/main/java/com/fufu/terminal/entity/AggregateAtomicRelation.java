@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -15,6 +16,7 @@ import java.time.LocalDateTime;
 @Data
 @Entity
 @Table(name = "aggregate_atomic_relations")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AggregateAtomicRelation {
 
     @Id
@@ -28,6 +30,17 @@ public class AggregateAtomicRelation {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "atomic_id", nullable = false)
     private AtomicScript atomicScript;
+    
+    // Transient field for atomicId access
+    @Transient
+    public Long getAtomicId() {
+        return atomicScript != null ? atomicScript.getId() : null;
+    }
+    
+    public void setAtomicId(Long atomicId) {
+        // This setter is for JPA query support
+        // The actual relationship is managed through atomicScript field
+    }
 
     @Column(nullable = false)
     private Integer executionOrder;

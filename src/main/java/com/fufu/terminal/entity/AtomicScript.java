@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fufu.terminal.entity.enums.InteractionMode;
 import com.fufu.terminal.entity.enums.ScriptType;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
@@ -19,11 +20,12 @@ import java.time.LocalDateTime;
 @Data
 @Entity
 @Table(name = "atomic_scripts", indexes = {
-    @Index(name = "idx_atomic_script_status_sort", columnList = "status, sortOrder"),
+    @Index(name = "idx_atomic_script_status_sort", columnList = "status, sort_order"),
     @Index(name = "idx_atomic_script_type_status", columnList = "script_type_enum, status"),
     @Index(name = "idx_atomic_script_created_by", columnList = "created_by")
 })
 @EntityListeners(AuditingEntityListener.class)
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AtomicScript {
 
     @Id

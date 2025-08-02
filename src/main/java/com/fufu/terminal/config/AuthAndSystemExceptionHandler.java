@@ -14,12 +14,12 @@ import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Global Exception Handler
- * Provides centralized error handling and recovery for the SSH Terminal Management System
+ * Auth and System Exception Handler
+ * Handles Sa-Token authentication exceptions, SSH exceptions, database exceptions and other system-level exceptions
  */
 @Slf4j
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class AuthAndSystemExceptionHandler {
     
     @ExceptionHandler(NotLoginException.class)
     public ResponseEntity<Map<String, Object>> handleNotLoginException(NotLoginException e) {
@@ -71,33 +71,5 @@ public class GlobalExceptionHandler {
         result.put("message", "操作超时，请检查网络连接或重试");
         result.put("type", "TIMEOUT_ERROR");
         return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT).body(result);
-    }
-    
-    /**
-     * Handle script execution runtime errors
-     */
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException e) {
-        log.error("Runtime error: {}", e.getMessage(), e);
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", false);
-        result.put("code", 500);
-        result.put("message", "系统执行错误: " + e.getMessage());
-        result.put("type", "RUNTIME_ERROR");
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
-    }
-    
-    /**
-     * Handle generic exceptions
-     */
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGenericException(Exception e) {
-        log.error("Unexpected error: {}", e.getMessage(), e);
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", false);
-        result.put("code", 500);
-        result.put("message", "系统内部错误，请联系管理员");
-        result.put("type", "SYSTEM_ERROR");
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
     }
 }

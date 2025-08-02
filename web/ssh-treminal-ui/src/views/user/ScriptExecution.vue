@@ -20,11 +20,40 @@
               @click="selectScript(script)"
             >
               <div class="script-info">
-                <h4>{{ script.name }}</h4>
+                <h4>{{ script.name }}
+                  <el-tag 
+                    :type="getScriptTypeColor(script.sourceType)" 
+                    size="small" 
+                    class="script-type-tag"
+                  >
+                    {{ getScriptTypeText(script.sourceType) }}
+                  </el-tag>
+                </h4>
                 <p>{{ script.description || '暂无描述' }}</p>
               </div>
+              <!-- 静态脚本：立即执行按钮 -->
               <el-button
-                v-if="selectedScript?.id === script.id"
+                v-if="selectedScript?.id === script.id && script.sourceType === 'BUILT_IN_STATIC'"
+                type="primary"
+                size="small"
+                @click.stop="executeStaticScript(script)"
+                :loading="isExecuting"
+              >
+                {{ isExecuting ? '执行中...' : '立即执行' }}
+              </el-button>
+              <!-- 动态脚本：配置执行按钮 -->
+              <el-button
+                v-else-if="selectedScript?.id === script.id && (script.sourceType === 'BUILT_IN_DYNAMIC' || script.sourceType === 'USER_DEFINED')"
+                type="primary"
+                size="small"
+                @click.stop="showParameterDialog(script)"
+                :loading="isExecuting"
+              >
+                {{ isExecuting ? '执行中...' : '配置执行' }}
+              </el-button>
+              <!-- 默认执行按钮（兼容性） -->
+              <el-button
+                v-else-if="selectedScript?.id === script.id && !script.sourceType"
                 type="primary"
                 size="small"
                 @click.stop="executeScript(script)"
@@ -276,6 +305,161 @@ const getExecutionStatusText = (status) => {
   return statusMap[status] || '未知'
 }
 
+// 新增：处理脚本类型的方法
+const getScriptTypeText = (sourceType) => {
+  const typeMap = {
+    'BUILT_IN_STATIC': '静态',
+    'BUILT_IN_DYNAMIC': '动态',
+    'USER_DEFINED': '自定义'
+  }
+  return typeMap[sourceType] || '未知'
+}
+
+const getScriptTypeColor = (sourceType) => {
+  const colorMap = {
+    'BUILT_IN_STATIC': 'success',
+    'BUILT_IN_DYNAMIC': 'warning', 
+    'USER_DEFINED': 'info'
+  }
+  return colorMap[sourceType] || 'info'
+}
+
+// 静态脚本立即执行
+const executeStaticScript = async (script) => {
+  if (isExecuting.value) return
+
+  try {
+    isExecuting.value = true
+    executionLogs.value = []
+
+    // 使用新的简化API
+    const response = await http.post(`/api/user/simplified-scripts/${script.id}/execute`, {
+      sshConfig: getSshConfig(), // 获取SSH配置
+      parameters: {}, // 静态脚本无参数
+      async: false,
+      userId: getCurrentUserId(),
+      sessionId: generateSessionId()
+    })
+    
+    // 显示执行结果
+    if (response.data.success) {
+      ElMessage.success('脚本执行成功')
+      if (response.data.displayOutput) {
+        executionLogs.value.push({
+          logType: 'SUCCESS',
+          message: response.data.displayOutput,
+          timestamp: new Date().toISOString()
+        })
+      }
+    } else {
+      ElMessage.error(response.data.errorMessage || '脚本执行失败')
+      executionLogs.value.push({
+        logType: 'ERROR',
+        message: response.data.errorMessage || '脚本执行失败',
+        timestamp: new Date().toISOString()
+      })
+    }
+    
+    isExecuting.value = false
+    
+  } catch (error) {
+    console.error('静态脚本执行失败:', error)
+    ElMessage.error('脚本执行失败')
+    isExecuting.value = false
+  }
+}
+
+// 显示参数配置对话框
+const showParameterDialog = async (script) => {
+  try {
+    // 获取脚本参数
+    const response = await http.get(`/api/user/simplified-scripts/${script.id}/parameters`)
+    const parameters = response.data
+    
+    if (parameters && parameters.length > 0) {
+      // 显示参数配置对话框（需要实现）
+      showParameterForm(script, parameters)
+    } else {
+      // 无参数，直接执行
+      executeScriptWithParameters(script, {})
+    }
+  } catch (error) {
+    console.error('获取脚本参数失败:', error)
+    ElMessage.error('获取脚本参数失败')
+  }
+}
+
+// 带参数执行脚本
+const executeScriptWithParameters = async (script, parameters) => {
+  if (isExecuting.value) return
+
+  try {
+    isExecuting.value = true
+    executionLogs.value = []
+
+    const response = await http.post(`/api/user/simplified-scripts/${script.id}/execute`, {
+      sshConfig: getSshConfig(),
+      parameters: parameters,
+      async: false,
+      userId: getCurrentUserId(),
+      sessionId: generateSessionId()
+    })
+    
+    if (response.data.success) {
+      ElMessage.success('脚本执行成功')
+      if (response.data.displayOutput) {
+        executionLogs.value.push({
+          logType: 'SUCCESS',
+          message: response.data.displayOutput,
+          timestamp: new Date().toISOString()
+        })
+      }
+    } else {
+      ElMessage.error(response.data.errorMessage || '脚本执行失败')
+      executionLogs.value.push({
+        logType: 'ERROR',
+        message: response.data.errorMessage || '脚本执行失败',
+        timestamp: new Date().toISOString()
+      })
+    }
+    
+    isExecuting.value = false
+    
+  } catch (error) {
+    console.error('脚本执行失败:', error)
+    ElMessage.error('脚本执行失败')
+    isExecuting.value = false
+  }
+}
+
+// 辅助方法
+const getSshConfig = () => {
+  // 这里应该获取当前的SSH连接配置
+  // 暂时返回一个默认配置
+  return {
+    host: 'localhost',
+    port: 22,
+    username: 'user',
+    password: 'password'
+  }
+}
+
+const getCurrentUserId = () => {
+  // 获取当前用户ID
+  return 'current-user-id'
+}
+
+const generateSessionId = () => {
+  return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9)
+}
+
+const showParameterForm = (script, parameters) => {
+  // 这里应该显示参数配置表单
+  // 暂时直接执行，后续需要实现参数表单组件
+  console.log('需要实现参数表单:', script, parameters)
+  executeScriptWithParameters(script, {})
+}
+
 const goBack = () => {
   router.back()
 }
@@ -371,6 +555,14 @@ onUnmounted(() => {
 .script-info h4 {
   margin: 0 0 5px 0;
   color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.script-type-tag {
+  font-size: 10px;
+  height: 18px;
 }
 
 .script-info p {

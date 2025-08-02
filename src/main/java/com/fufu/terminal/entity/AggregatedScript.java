@@ -1,5 +1,6 @@
 package com.fufu.terminal.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fufu.terminal.entity.enums.AggregateScriptType;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
@@ -20,10 +21,11 @@ import java.util.List;
 @Data
 @Entity
 @Table(name = "aggregated_scripts", indexes = {
-    @Index(name = "idx_aggregated_script_status_sort", columnList = "status, sortOrder"),
+    @Index(name = "idx_aggregated_script_status_sort", columnList = "status, sort_order"),
     @Index(name = "idx_aggregated_script_created_by", columnList = "created_by")
 })
 @EntityListeners(AuditingEntityListener.class)
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AggregatedScript {
 
     @Id

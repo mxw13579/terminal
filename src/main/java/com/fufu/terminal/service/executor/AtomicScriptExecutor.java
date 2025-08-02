@@ -90,7 +90,7 @@ public class AtomicScriptExecutor {
             throw new Exception("脚本内容不能为空");
         }
         
-        if (script.getExecutionTimeout() != null && script.getExecutionTimeout() <= 0) {
+        if (script.getEstimatedDuration() != null && script.getEstimatedDuration() <= 0) {
             throw new Exception("执行超时时间必须大于0");
         }
     }
@@ -100,7 +100,7 @@ public class AtomicScriptExecutor {
      */
     private void prepareExecutionEnvironment(AtomicScript script) throws Exception {
         // 这里可以进行环境检查、依赖验证等
-        log.debug("准备执行环境: scriptType={}, dependencies={}", script.getScriptType(), script.getDependencies());
+        log.debug("准备执行环境: scriptType={}, prerequisites={}", script.getScriptType(), script.getPrerequisites());
     }
     
     /**
@@ -111,9 +111,9 @@ public class AtomicScriptExecutor {
         String scriptContent = script.getScriptContent();
         
         if ("bash".equalsIgnoreCase(scriptType)) {
-            return executeBashScript(sessionId, scriptContent, script.getExecutionTimeout());
+            return executeBashScript(sessionId, scriptContent, script.getEstimatedDuration());
         } else if ("python".equalsIgnoreCase(scriptType)) {
-            return executePythonScript(sessionId, scriptContent, script.getExecutionTimeout());
+            return executePythonScript(sessionId, scriptContent, script.getEstimatedDuration());
         } else {
             throw new Exception("不支持的脚本类型: " + scriptType);
         }

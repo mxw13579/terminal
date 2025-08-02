@@ -3,8 +3,14 @@ package com.fufu.terminal.command.impl.builtin;
 import com.fufu.terminal.command.AtomicScriptCommand;
 import com.fufu.terminal.command.CommandContext;
 import com.fufu.terminal.command.CommandResult;
+import com.fufu.terminal.service.script.ScriptParameter;
+import com.fufu.terminal.service.script.strategy.BuiltInScriptMetadata;
+import com.fufu.terminal.service.script.strategy.BuiltInScriptType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 系统信息查看命令
@@ -12,7 +18,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component("system-info")
-public class SystemInfoCommand implements AtomicScriptCommand {
+public class SystemInfoCommand implements AtomicScriptCommand, BuiltInScriptMetadata {
 
     @Override
     public CommandResult execute(CommandContext context) {
@@ -98,5 +104,26 @@ public class SystemInfoCommand implements AtomicScriptCommand {
     @Override
     public String getDescription() {
         return "查看系统基本信息，包括CPU、内存、磁盘、网络等";
+    }
+
+    // BuiltInScriptMetadata 接口实现
+    @Override
+    public String getScriptId() {
+        return "system-info";
+    }
+
+    @Override
+    public BuiltInScriptType getType() {
+        return BuiltInScriptType.STATIC;
+    }
+
+    @Override
+    public List<ScriptParameter> getParameters() {
+        return Collections.emptyList(); // 静态脚本无参数
+    }
+
+    @Override
+    public String[] getTags() {
+        return new String[]{"系统", "监控", "诊断", "信息收集"};
     }
 }

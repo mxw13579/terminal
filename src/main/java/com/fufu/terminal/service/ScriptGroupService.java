@@ -69,4 +69,11 @@ public class ScriptGroupService {
     public void deleteGroup(Long id) {
         scriptGroupRepository.deleteById(id);
     }
+
+    @Transactional
+    public void updateSortOrder(Long id, Integer sortOrder) {
+        ScriptGroup group = getGroupById(id);
+        group.setDisplayOrder(sortOrder);
+        scriptGroupRepository.save(group);
+    }
 }

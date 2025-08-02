@@ -40,8 +40,8 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
     public ConfigurableScriptAdapter(AtomicScript atomicScript) {
         this.atomicScript = atomicScript;
         this.objectMapper = new ObjectMapper();
-        this.inputParameters = parseParameters(atomicScript.getInputParams());
-        this.outputParameters = parseParameters(atomicScript.getOutputParams());
+        this.inputParameters = parseParameters(atomicScript.getInputVariables());
+        this.outputParameters = parseParameters(atomicScript.getOutputVariables());
     }
     
     @Override
@@ -141,6 +141,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
         }
         
         try {
+            @SuppressWarnings("unchecked")
             Map<String, Object> paramsMap = objectMapper.readValue(parametersJson, new TypeReference<Map<String, Object>>() {});
             return paramsMap.entrySet().stream()
                 .map(entry -> {
@@ -148,6 +149,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
                     Object value = entry.getValue();
                     
                     if (value instanceof Map) {
+                        @SuppressWarnings("unchecked")
                         Map<String, Object> paramDef = (Map<String, Object>) value;
                         return new ScriptParameter(
                             name,
@@ -218,7 +220,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
      */
     private String executeScript(CommandContext context, String script) throws Exception {
         String scriptType = atomicScript.getScriptType().name();
-        Integer timeout = atomicScript.getExecutionTimeout();
+        Integer timeout = atomicScript.getEstimatedDuration();
         
         if (SCRIPT_TYPE_BASH.equalsIgnoreCase(scriptType)) {
             return executeBashScript(context, script, timeout);
@@ -268,6 +270,7 @@ public class ConfigurableScriptAdapter implements UnifiedAtomicScript {
         // 尝试解析JSON格式的输出
         if (output.trim().startsWith("{") && output.trim().endsWith("}")) {
             try {
+                @SuppressWarnings("unchecked")
                 Map<String, Object> jsonOutput = objectMapper.readValue(output, new TypeReference<Map<String, Object>>() {});
                 outputData.putAll(jsonOutput);
             } catch (Exception e) {

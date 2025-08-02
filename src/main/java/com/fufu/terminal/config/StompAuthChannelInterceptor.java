@@ -27,24 +27,60 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             try {
                 // 获取token
                 String token = getTokenFromHeaders(accessor);
+                
+                // 检查是否是用户端连接（通过特殊标识）
+                String clientType = accessor.getFirstNativeHeader("client-type");
+                boolean isUserClient = "user".equals(clientType);
+                
                 if (token == null) {
-                    log.warn("STOMP连接被拒绝：缺少认证token");
-                    return null;
+                    if (isUserClient) {
+                        // 用户端不需要认证，设置默认用户信息
+                        accessor.getSessionAttributes().put("userId", "anonymous");
+                        accessor.getSessionAttributes().put("userType", "user");
+                        log.info("用户端STOMP连接（无需认证）");
+                        return message;
+                    } else {
+                        log.warn("管理端STOMP连接被拒绝：缺少认证token");
+                        return null;
+                    }
                 }
 
-                // 验证token
-                StpUtil.checkLogin(token);
+                // 验证token（管理端或带token的用户端）
+                Object loginId = StpUtil.getLoginIdByToken(token);
+                if (loginId == null) {
+                    if (isUserClient) {
+                        // 用户端token无效时也允许连接
+                        accessor.getSessionAttributes().put("userId", "anonymous");
+                        accessor.getSessionAttributes().put("userType", "user");
+                        log.info("用户端STOMP连接（token无效，使用匿名模式）");
+                        return message;
+                    } else {
+                        log.warn("管理端STOMP连接被拒绝：token无效");
+                        return null;
+                    }
+                }
                 
                 // 将用户信息存储到会话属性中
-                Object loginId = StpUtil.getLoginIdByToken(token);
                 accessor.getSessionAttributes().put("userId", loginId);
                 accessor.getSessionAttributes().put("token", token);
+                accessor.getSessionAttributes().put("userType", isUserClient ? "user" : "admin");
                 
-                log.info("STOMP认证成功，用户ID: {}", loginId);
+                log.info("STOMP认证成功，用户ID: {}, 类型: {}", loginId, isUserClient ? "用户端" : "管理端");
                 
             } catch (Exception e) {
-                log.warn("STOMP认证失败: {}", e.getMessage());
-                return null;
+                String clientType = accessor.getFirstNativeHeader("client-type");
+                boolean isUserClient = "user".equals(clientType);
+                
+                if (isUserClient) {
+                    // 用户端异常时也允许连接
+                    accessor.getSessionAttributes().put("userId", "anonymous");
+                    accessor.getSessionAttributes().put("userType", "user");
+                    log.info("用户端STOMP连接（认证异常，使用匿名模式）: {}", e.getMessage());
+                    return message;
+                } else {
+                    log.warn("管理端STOMP认证失败: {}", e.getMessage());
+                    return null;
+                }
             }
         }
         
