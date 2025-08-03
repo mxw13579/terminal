@@ -8,7 +8,11 @@
       "Bash(.mvnw.cmd clean compile)",
       "Bash(cmd:*)",
       "Bash(grep:*)",
-      "WebFetch(domain:docs.anthropic.com)"
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(touch:*)",
+      "Bash(mkdir:*)",
+      "Bash(./mvnw.cmd compile:*)",
+      "Bash(./mvnw.cmd clean:*)"
     ],
     "deny": []
   }

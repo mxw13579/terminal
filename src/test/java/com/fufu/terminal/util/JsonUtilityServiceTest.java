@@ -48,7 +48,7 @@ class JsonUtilityServiceTest {
         Map<String, String> testObject = new HashMap<>();
         testObject.put("key", "value");
         String expectedJson = "{\"key\":\"value\"}";
-        
+
         when(objectMapper.writeValueAsString(testObject)).thenReturn(expectedJson);
 
         // When
@@ -115,7 +115,7 @@ class JsonUtilityServiceTest {
         String json = "{\"key\":\"value\"}";
         Map<String, String> expectedObject = new HashMap<>();
         expectedObject.put("key", "value");
-        
+
         when(objectMapper.readValue(json, Map.class)).thenReturn(expectedObject);
 
         // When
@@ -242,7 +242,7 @@ class JsonUtilityServiceTest {
         }
         largeJsonBuilder.append("}");
         String largeJson = largeJsonBuilder.toString();
-        
+
         Map<String, String> expectedResult = new HashMap<>();
         when(objectMapper.readValue(eq(largeJson), eq(Map.class))).thenReturn(expectedResult);
 
@@ -303,13 +303,13 @@ class JsonUtilityServiceTest {
         // Then
         CompletableFuture<Void> allFutures = CompletableFuture.allOf(
             futures.toArray(new CompletableFuture[0]));
-        
+
         allFutures.join(); // Wait for all to complete
-        
+
         for (CompletableFuture<String> future : futures) {
             assertEquals(expectedJson, future.get());
         }
-        
+
         executor.shutdown();
     }
 
@@ -333,13 +333,13 @@ class JsonUtilityServiceTest {
         // Then
         CompletableFuture<Void> allFutures = CompletableFuture.allOf(
             futures.toArray(new CompletableFuture[0]));
-        
+
         allFutures.join();
-        
+
         for (CompletableFuture<Map> future : futures) {
             assertEquals(expectedObject, future.get());
         }
-        
+
         executor.shutdown();
     }
 
@@ -404,7 +404,7 @@ class JsonUtilityServiceTest {
         // Given
         Object problematicObject = new Object();
         String fallback = "{\"error\":\"serialization_failed\"}";
-        
+
         // Test different exception types
         when(objectMapper.writeValueAsString(problematicObject))
             .thenThrow(new JsonProcessingException("Processing error") {})
@@ -439,7 +439,7 @@ class JsonUtilityServiceTest {
         for (int i = 0; i < 10000; i++) {
             largeObject.put("key" + i, "value" + i + "_".repeat(100)); // Large values
         }
-        
+
         String largeJson = "large_json_result";
         when(objectMapper.writeValueAsString(largeObject)).thenReturn(largeJson);
 
@@ -452,8 +452,7 @@ class JsonUtilityServiceTest {
         assertNotNull(result);
         assertEquals(largeJson, result);
         // Memory increase should not be excessive (less than 100MB for test)
-        assertTrue((afterMemory - beforeMemory) < 100 * 1024 * 1024, 
+        assertTrue((afterMemory - beforeMemory) < 100 * 1024 * 1024,
             "Memory usage should be reasonable for large objects");
     }
-}
 }
