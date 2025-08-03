@@ -12,14 +12,21 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
+ * Legacy WebSocket configuration for SSH terminal application.
+ * 
+ * This configuration is preserved for backward compatibility during the STOMP migration.
+ * It can be activated by setting the profile to 'legacy-websocket' or by removing the
+ * WebSocketStompConfig class.
+ * 
  * @author lizelin
+ * @deprecated Use WebSocketStompConfig for new STOMP-based implementation
  */
 @Configuration
 @EnableWebSocket
 @RequiredArgsConstructor
 @ConditionalOnWebApplication
-@Profile("!test")
-public class WebSocketConfig implements WebSocketConfigurer {
+@Profile({"legacy-websocket", "test"})  // Enable for legacy profile or tests
+public class LegacyWebSocketConfig implements WebSocketConfigurer {
     private final SshTerminalWebSocketHandler sshTerminalWebSocketHandler;
 
     @Override

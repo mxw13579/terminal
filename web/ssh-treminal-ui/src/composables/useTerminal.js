@@ -1,5 +1,7 @@
-import { ref, readonly ,watch } from 'vue';
+import { ref, readonly, watch } from 'vue';
 import { formatSpeed } from '../utils/formatters.js';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
 export function useTerminal(options = {}) {
@@ -30,134 +32,218 @@ export function useTerminal(options = {}) {
     const systemStats = ref(null);
     const dockerContainers = ref([]);
 
-    let ws = null;
+    let stompClient = null;
     let term = null;
     let sendNextChunk = null;
     let uploadStartTime = 0;
     let uploadBytesSent = 0;
 
-    // --- WebSocket Logic ---
+    // --- STOMP Connection Logic ---
     const connect = (details) => {
         host.value = details.host;
         port.value = details.port;
         user.value = details.user;
         isConnecting.value = true;
 
-        const queryParams = new URLSearchParams({
-            host: host.value, port: port.value || 22, user: user.value, password: details.password
+        // 创建STOMP客户端
+        stompClient = new Client({
+            webSocketFactory: () => new SockJS('http://localhost:8080/ws/terminal'),
+            connectHeaders: {},
+            debug: function (str) {
+                console.log('STOMP: ' + str);
+            },
+            reconnectDelay: 5000,
+            heartbeatIncoming: 4000,
+            heartbeatOutgoing: 4000,
         });
-        const wsUrl = `ws://localhost:8080/ws/terminal?${queryParams.toString()}`;
-        ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
+        stompClient.onConnect = (frame) => {
+            console.log('STOMP Connected: ' + frame);
             isConnecting.value = false;
             isConnected.value = true;
+
+            // 订阅消息队列
+            subscribeToQueues();
+
+            // 发送连接请求到后端
+            stompClient.publish({
+                destination: '/app/terminal/connect',
+                body: JSON.stringify({
+                    host: host.value,
+                    port: port.value || 22,
+                    user: user.value,
+                    password: details.password
+                })
+            });
         };
-        ws.onmessage = (event) => {
+
+        stompClient.onStompError = (frame) => {
+            console.error('STOMP Error: ' + frame.headers['message']);
+            console.error('Additional details: ' + frame.body);
+            isConnecting.value = false;
+            onShowModal("STOMP连接错误: " + frame.headers['message']);
+        };
+
+        stompClient.onDisconnect = () => {
+            console.log('STOMP Disconnected');
+            if (isConnected.value) {
+                onShowModal("连接已断开");
+            }
+            resetState();
+        };
+
+        stompClient.activate();
+    };
+
+    const subscribeToQueues = () => {
+        // 订阅终端输出
+        stompClient.subscribe('/user/queue/terminal/output', (message) => {
             try {
-                const msg = JSON.parse(event.data);
-                handleWsMessage(msg);
-            } catch (e) {
-                if (term && typeof event.data === 'string') term.write(event.data);
-            }
-        };
-        ws.onclose = (event) => {
-            // isConnected 为 false 表示是初始连接就失败了
-            if (!isConnected.value) {
-                onShowModal("连接失败，请检查主机、端口、用户名和密码。");
-            } else { // 否则，是连接成功后意外断开
-                if (term) {
-                    term.write('\r\n🔌 连接意外断开。\r\n');
+                const data = JSON.parse(message.body);
+                if (term && data.payload) {
+                    term.write(data.payload);
                 }
-                onShowModal("连接已意外断开。");
+            } catch (e) {
+                console.error('Error processing terminal output:', e);
             }
-            resetState(); // 在任何关闭情况下都重置状态
-        };
-        ws.onerror = () => { if (!isConnected.value) isConnecting.value = false; };
+        });
+
+        // 订阅终端错误
+        stompClient.subscribe('/user/queue/terminal/error', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                onShowModal("终端错误: " + data.payload);
+            } catch (e) {
+                console.error('Error processing terminal error:', e);
+            }
+        });
+
+        // 订阅SFTP响应
+        stompClient.subscribe('/user/queue/sftp/list', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpListResponse(data);
+            } catch (e) {
+                console.error('Error processing SFTP list response:', e);
+            }
+        });
+
+        stompClient.subscribe('/user/queue/sftp/upload', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpUploadResponse(data);
+            } catch (e) {
+                console.error('Error processing SFTP upload response:', e);
+            }
+        });
+
+        stompClient.subscribe('/user/queue/sftp/download', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpDownloadResponse(data);
+            } catch (e) {
+                console.error('Error processing SFTP download response:', e);
+            }
+        });
+
+        stompClient.subscribe('/user/queue/sftp/error', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpError(data);
+            } catch (e) {
+                console.error('Error processing SFTP error:', e);
+            }
+        });
+
+        // 订阅监控数据
+        stompClient.subscribe('/user/queue/monitor/data', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleMonitorUpdate(data);
+            } catch (e) {
+                console.error('Error processing monitor data:', e);
+            }
+        });
+
+        // 订阅全局错误
+        stompClient.subscribe('/user/queue/errors', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                onShowModal("错误: " + data.payload);
+            } catch (e) {
+                console.error('Error processing global error:', e);
+            }
+        });
     };
 
     const disconnect = () => {
-        if (ws) {
-            // 关键：在主动断开时，立即移除 onclose 监听器。
-            // 这可以防止 onclose 中的“意外断开”逻辑被错误地触发。
-            ws.onclose = null;
-            ws.close(1000, "User disconnected");
+        if (stompClient) {
+            stompClient.deactivate();
         }
         if (term) {
             term.write('\r\n🔌 连接已由用户关闭。\r\n');
         }
-        // 立即重置状态，确保UI即时响应，跳转回连接页面。
         resetState();
     };
 
-    // --- WebSocket Message Handling ---
-    const handleWsMessage = (msg) => {
-        switch (msg.type) {
-            case 'terminal_data':
-                if (term) term.write(msg.payload);
-                break;
-            case 'sftp_list_response':
-                sftpLoading.value = false;
-                sftpError.value = '';
-                currentSftpPath.value = msg.path;
-                sftpFiles.value = msg.files;
-                break;
-            case 'sftp_upload_chunk_success':
-                localUploadProgress.value = Math.round(((msg.chunkIndex + 1) / msg.totalChunks) * 100);
-                if (sendNextChunk) sendNextChunk();
-                break;
-            case 'sftp_remote_progress':
-                remoteUploadProgress.value = msg.progress;
-                sftpUploadSpeed.value = formatSpeed(msg.speed);
-                uploadStatusText.value = `正在上传到服务器... ${msg.progress}%`;
-                break;
-            case 'sftp_upload_final_success':
-                remoteUploadProgress.value = 100;
-                isSftpActionInProgress.value = false;
-                uploadStatusText.value = '上传完成！';
-                sftpUploadSpeed.value = '';
-                onShowModal(msg.message || "上传成功!");
-                fetchSftpList(msg.path);
-                break;
-            case 'sftp_download_response':
-                handleFileDownload(msg.filename, msg.content);
-                break;
-            case 'sftp_error':
-                sftpLoading.value = false;
-                isSftpActionInProgress.value = false;
-                sftpError.value = `SFTP Error: ${msg.message}`;
-                onShowModal(`SFTP Error: ${msg.message}`);
-                break;
-            case 'error':
-                isConnecting.value = false;
-                onShowModal(`连接时发生错误: ${msg.payload}`);
-                resetState();
-                break;
-            // 监控消息处理
-            case 'monitor_update':
-                isMonitoring.value = true;
-                isLoading.value = false;
-                systemStats.value = msg.payload;
-                dockerContainers.value = msg.payload.dockerContainers || [];
-                break;
+    // --- Message Handlers ---
+    const handleSftpListResponse = (data) => {
+        if (data.type === 'sftp_list_response') {
+            sftpLoading.value = false;
+            sftpError.value = '';
+            currentSftpPath.value = data.path;
+            sftpFiles.value = data.files;
         }
     };
 
-    // --- Internal Methods ---
-    const sendWsMessage = (message) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(message));
+    const handleSftpUploadResponse = (data) => {
+        if (data.type === 'sftp_upload_chunk_success') {
+            localUploadProgress.value = Math.round(((data.chunkIndex + 1) / data.totalChunks) * 100);
+            if (sendNextChunk) sendNextChunk();
+        } else if (data.type === 'sftp_remote_progress') {
+            remoteUploadProgress.value = data.progress;
+            sftpUploadSpeed.value = formatSpeed(data.speed);
+            uploadStatusText.value = `正在上传到服务器... ${data.progress}%`;
+        } else if (data.type === 'sftp_upload_final_success') {
+            remoteUploadProgress.value = 100;
+            isSftpActionInProgress.value = false;
+            uploadStatusText.value = '上传完成！';
+            sftpUploadSpeed.value = '';
+            onShowModal(data.message || "上传成功!");
+            fetchSftpList(data.path);
+        }
+    };
+
+    const handleSftpDownloadResponse = (data) => {
+        if (data.type === 'sftp_download_response') {
+            handleFileDownload(data.filename, data.content);
+        }
+    };
+
+    const handleSftpError = (data) => {
+        sftpLoading.value = false;
+        isSftpActionInProgress.value = false;
+        sftpError.value = `SFTP Error: ${data.message}`;
+        onShowModal(`SFTP Error: ${data.message}`);
+    };
+
+    const handleMonitorUpdate = (data) => {
+        if (data.type === 'monitor_update') {
+            isMonitoring.value = true;
+            isLoading.value = false;
+            systemStats.value = data.payload;
+            dockerContainers.value = data.payload.dockerContainers || [];
         }
     };
 
     const resetState = () => {
-        if (ws) {
-            ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
-            if(ws.readyState === WebSocket.OPEN) ws.close();
-            ws = null;
+        if (stompClient) {
+            stompClient.deactivate();
+            stompClient = null;
         }
         if (term) term.dispose();
-        // --- 将所有相关状态重置到其初始值 ---
+        
+        // 重置所有状态
         host.value = '';
         port.value = '';
         user.value = '';
@@ -189,26 +275,49 @@ export function useTerminal(options = {}) {
         dockerContainers.value = [];
     };
 
-    // --- Public API Methods (to be called from component) ---
+    // --- Public API Methods ---
     const setTerminalInstance = (instance) => { term = instance; };
-    const sendTerminalData = (data) => sendWsMessage({ type: 'data', payload: data });
-    const sendTerminalResize = (size) => sendWsMessage({ type: 'resize', ...size });
+    
+    const sendTerminalData = (data) => {
+        if (stompClient && stompClient.connected) {
+            stompClient.publish({
+                destination: '/app/terminal/input',
+                body: JSON.stringify({ data })
+            });
+        }
+    };
+    
+    const sendTerminalResize = (size) => {
+        if (stompClient && stompClient.connected) {
+            stompClient.publish({
+                destination: '/app/terminal/resize',
+                body: JSON.stringify(size)
+            });
+        }
+    };
+
     const toggleMonitorPanel = () => {
         monitorVisible.value = !monitorVisible.value;
     };
 
     // 监听 monitorVisible 变化来启动/停止监控
     watch(monitorVisible, (newValue) => {
-        if (newValue) { // 当面板打开时
-            if (!systemStats.value) {
-                isLoading.value = true;
+        if (stompClient && stompClient.connected) {
+            if (newValue) {
+                if (!systemStats.value) {
+                    isLoading.value = true;
+                }
+                stompClient.publish({
+                    destination: '/app/monitor/start',
+                    body: JSON.stringify({})
+                });
+            } else {
+                stompClient.publish({
+                    destination: '/app/monitor/stop',
+                    body: JSON.stringify({})
+                });
+                isMonitoring.value = false;
             }
-            // 发送消息，触发后端进入“高频模式”
-            sendWsMessage({ type: 'monitor_start' });
-        } else { // 当面板关闭时
-            // 发送消息，触发后端进入“低频模式”
-            sendWsMessage({ type: 'monitor_stop' });
-            isMonitoring.value = false;
         }
     });
 
@@ -220,19 +329,29 @@ export function useTerminal(options = {}) {
     };
 
     const fetchSftpList = (path = '.') => {
-        sftpLoading.value = true;
-        sftpError.value = '';
-        sendWsMessage({ type: 'sftp_list', path });
+        if (stompClient && stompClient.connected) {
+            sftpLoading.value = true;
+            sftpError.value = '';
+            stompClient.publish({
+                destination: '/app/sftp/list',
+                body: JSON.stringify({ path })
+            });
+        }
     };
 
     const downloadSftpFiles = (paths) => {
-        if (paths.length === 0) return;
+        if (paths.length === 0 || !stompClient || !stompClient.connected) return;
         isSftpActionInProgress.value = true;
         sftpError.value = '';
-        sendWsMessage({ type: 'sftp_download', paths: paths });
+        stompClient.publish({
+            destination: '/app/sftp/download',
+            body: JSON.stringify({ paths })
+        });
     };
 
     const uploadSftpFile = (file) => {
+        if (!stompClient || !stompClient.connected) return;
+        
         const chunkSize = 128 * 1024;
         const totalChunks = Math.ceil(file.size / chunkSize);
         let chunkIndex = 0;
@@ -261,10 +380,24 @@ export function useTerminal(options = {}) {
                 const elapsed = (Date.now() - uploadStartTime) / 1000;
                 if (elapsed > 0) uploadSpeed.value = formatSpeed(uploadBytesSent / elapsed);
                 uploadStatusText.value = `正在上传分片 ${chunkIndex + 1}/${totalChunks}`;
-                sendWsMessage({ type: 'sftp_upload_chunk', path: currentSftpPath.value, filename: file.name, chunkIndex, totalChunks, content: base64Content });
+                
+                stompClient.publish({
+                    destination: '/app/sftp/upload',
+                    body: JSON.stringify({
+                        path: currentSftpPath.value,
+                        filename: file.name,
+                        chunkIndex,
+                        totalChunks,
+                        content: base64Content
+                    })
+                });
                 chunkIndex++;
             };
-            reader.onerror = () => { onShowModal("读取文件失败！"); isSftpActionInProgress.value = false; sendNextChunk = null; };
+            reader.onerror = () => { 
+                onShowModal("读取文件失败！"); 
+                isSftpActionInProgress.value = false; 
+                sendNextChunk = null; 
+            };
             reader.readAsDataURL(file.slice(offset, offset + chunkSize));
         };
         sendNextChunk();
@@ -325,6 +458,5 @@ export function useTerminal(options = {}) {
         downloadSftpFiles,
         uploadSftpFile,
         toggleMonitorPanel,
-
     };
 }

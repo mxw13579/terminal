@@ -8,6 +8,7 @@ public class TerminalApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(TerminalApplication.class, args);
+        System.out.println("Terminal Application Started");
     }
 
 }
