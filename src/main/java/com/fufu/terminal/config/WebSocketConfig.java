@@ -2,8 +2,10 @@ package com.fufu.terminal.config;
 
 import com.fufu.terminal.handler.SshTerminalWebSocketHandler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
@@ -15,6 +17,8 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 @Configuration
 @EnableWebSocket
 @RequiredArgsConstructor
+@ConditionalOnWebApplication
+@Profile("!test")
 public class WebSocketConfig implements WebSocketConfigurer {
     private final SshTerminalWebSocketHandler sshTerminalWebSocketHandler;
 
