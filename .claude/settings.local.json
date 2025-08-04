@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.spring.io)",
+      "WebFetch(domain:spring.io)",
+      "Bash(mv:*)",
+      "Bash(npm install)",
+      "Bash(javac:*)",
+      "Bash(./mvnw:*)",
+      "Bash(rm:*)",
+      "Bash(find:*)"
+    ],
+    "deny": []
+  }
+}

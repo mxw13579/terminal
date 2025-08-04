@@ -45,10 +45,15 @@ export function useTerminal(options = {}) {
         user.value = details.user;
         isConnecting.value = true;
 
-        // 创建STOMP客户端
+        // 创建STOMP客户端，SSH参数通过连接头传递
         stompClient = new Client({
-            webSocketFactory: () => new SockJS('http://localhost:8080/ws/terminal'),
-            connectHeaders: {},
+            webSocketFactory: () => new SockJS('/ws/terminal'),
+            connectHeaders: {
+                'host': details.host,
+                'port': details.port || '22',
+                'user': details.user,
+                'password': details.password
+            },
             debug: function (str) {
                 console.log('STOMP: ' + str);
             },
@@ -64,17 +69,10 @@ export function useTerminal(options = {}) {
 
             // 订阅消息队列
             subscribeToQueues();
-
-            // 发送连接请求到后端
-            stompClient.publish({
-                destination: '/app/terminal/connect',
-                body: JSON.stringify({
-                    host: host.value,
-                    port: port.value || 22,
-                    user: user.value,
-                    password: details.password
-                })
-            });
+            
+            // SSH连接由StompAuthenticationInterceptor在CONNECT时建立
+            // 启动终端输出转发
+            startTerminalOutputForwarding();
         };
 
         stompClient.onStompError = (frame) => {
@@ -93,6 +91,16 @@ export function useTerminal(options = {}) {
         };
 
         stompClient.activate();
+    };
+
+    const startTerminalOutputForwarding = () => {
+        // 请求启动终端输出转发
+        if (stompClient && stompClient.connected) {
+            stompClient.publish({
+                destination: '/app/terminal/start-forwarding',
+                body: JSON.stringify({})
+            });
+        }
     };
 
     const subscribeToQueues = () => {
@@ -281,8 +289,8 @@ export function useTerminal(options = {}) {
     const sendTerminalData = (data) => {
         if (stompClient && stompClient.connected) {
             stompClient.publish({
-                destination: '/app/terminal/input',
-                body: JSON.stringify({ data })
+                destination: '/app/terminal/data',
+                body: JSON.stringify({ data: data })
             });
         }
     };
@@ -291,7 +299,7 @@ export function useTerminal(options = {}) {
         if (stompClient && stompClient.connected) {
             stompClient.publish({
                 destination: '/app/terminal/resize',
-                body: JSON.stringify(size)
+                body: JSON.stringify({ cols: size.cols, rows: size.rows })
             });
         }
     };
@@ -334,7 +342,7 @@ export function useTerminal(options = {}) {
             sftpError.value = '';
             stompClient.publish({
                 destination: '/app/sftp/list',
-                body: JSON.stringify({ path })
+                body: JSON.stringify({ path: path })
             });
         }
     };
@@ -345,7 +353,7 @@ export function useTerminal(options = {}) {
         sftpError.value = '';
         stompClient.publish({
             destination: '/app/sftp/download',
-            body: JSON.stringify({ paths })
+            body: JSON.stringify({ paths: paths })
         });
     };
 

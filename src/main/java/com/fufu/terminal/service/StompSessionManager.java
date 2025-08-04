@@ -164,7 +164,7 @@ public class StompSessionManager {
      * Get SSH connection for a session.
      */
     public SshConnection getConnection(String sessionId) {
-        return connectionManager.getConnection(sessionId);
+        return authInterceptor.getConnection(sessionId);
     }
 
     /**

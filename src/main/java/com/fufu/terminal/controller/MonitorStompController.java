@@ -1,8 +1,8 @@
 package com.fufu.terminal.controller;
 
+import com.fufu.terminal.dto.MonitorStartDto;
+import com.fufu.terminal.dto.MonitorStopDto;
 import com.fufu.terminal.model.SshConnection;
-import com.fufu.terminal.model.stomp.MonitorStartMessage;
-import com.fufu.terminal.model.stomp.MonitorStopMessage;
 import com.fufu.terminal.service.StompMonitoringService;
 import com.fufu.terminal.service.StompSessionManager;
 import lombok.RequiredArgsConstructor;
@@ -29,11 +29,10 @@ public class MonitorStompController {
 
     /**
      * Handle monitoring start requests.
-     * This replaces the "monitor_start" message handler from the original WebSocket implementation.
      */
     @MessageMapping("/monitor/start")
     public void handleMonitorStart(
-            @Valid MonitorStartMessage message,
+            @Valid MonitorStartDto message,
             SimpMessageHeaderAccessor headerAccessor) {
         
         String sessionId = headerAccessor.getSessionId();
@@ -48,16 +47,8 @@ public class MonitorStompController {
                 return;
             }
 
-            // Create a mock WebSocket session wrapper for backward compatibility
-            StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
-                sessionId, null); // We'll handle messaging differently for monitoring
-            
             // Use the STOMP monitoring service
             stompMonitoringService.startMonitoring(sessionId, connection);
-            
-            // Send confirmation message
-            sessionManager.sendSuccessMessage(sessionId, "monitor_started", 
-                "System monitoring started successfully");
             
             log.info("Monitoring started successfully for session: {}", sessionId);
 
@@ -69,11 +60,10 @@ public class MonitorStompController {
 
     /**
      * Handle monitoring stop requests.
-     * This replaces the "monitor_stop" message handler from the original WebSocket implementation.
      */
     @MessageMapping("/monitor/stop")
     public void handleMonitorStop(
-            @Valid MonitorStopMessage message,
+            @Valid MonitorStopDto message,
             SimpMessageHeaderAccessor headerAccessor) {
         
         String sessionId = headerAccessor.getSessionId();
@@ -89,10 +79,6 @@ public class MonitorStompController {
 
             // Use the STOMP monitoring service
             stompMonitoringService.stopMonitoring(sessionId, connection);
-            
-            // Send confirmation message
-            sessionManager.sendSuccessMessage(sessionId, "monitor_stopped", 
-                "System monitoring stopped successfully");
             
             log.info("Monitoring stopped successfully for session: {}", sessionId);
 

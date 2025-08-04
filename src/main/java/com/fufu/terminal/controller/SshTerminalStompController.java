@@ -1,8 +1,8 @@
 package com.fufu.terminal.controller;
 
+import com.fufu.terminal.dto.TerminalDataDto;
+import com.fufu.terminal.dto.TerminalResizeDto;
 import com.fufu.terminal.model.SshConnection;
-import com.fufu.terminal.model.stomp.TerminalDataMessage;
-import com.fufu.terminal.model.stomp.TerminalResizeMessage;
 import com.fufu.terminal.service.StompSessionManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,11 +29,10 @@ public class SshTerminalStompController {
 
     /**
      * Handle terminal data input from the client.
-     * This replaces the "data" message handler from the original WebSocket implementation.
      */
     @MessageMapping("/terminal/data")
     public void handleTerminalData(
-            @Valid TerminalDataMessage message,
+            @Valid TerminalDataDto message,
             SimpMessageHeaderAccessor headerAccessor) {
         
         String sessionId = headerAccessor.getSessionId();
@@ -50,10 +49,10 @@ public class SshTerminalStompController {
             // Send the data to the SSH terminal
             OutputStream outputStream = connection.getOutputStream();
             if (outputStream != null) {
-                outputStream.write(message.getPayload().getBytes());
+                outputStream.write(message.getData().getBytes());
                 outputStream.flush();
                 log.debug("Sent {} bytes to terminal for session: {}", 
-                         message.getPayload().length(), sessionId);
+                         message.getData().length(), sessionId);
             } else {
                 log.error("Output stream is null for session: {}", sessionId);
                 sessionManager.sendErrorMessage(sessionId, "Terminal output stream unavailable");
@@ -70,15 +69,15 @@ public class SshTerminalStompController {
 
     /**
      * Handle terminal resize operations.
-     * This replaces the "resize" message handler from the original WebSocket implementation.
      */
     @MessageMapping("/terminal/resize")
     public void handleTerminalResize(
-            @Valid TerminalResizeMessage message,
+            @Valid TerminalResizeDto message,
             SimpMessageHeaderAccessor headerAccessor) {
         
         String sessionId = headerAccessor.getSessionId();
-        log.debug("Handling terminal resize for session: {} ({}x{})", sessionId, message.getCols(), message.getRows());
+        log.debug("Handling terminal resize for session: {}: {}x{}", 
+                 sessionId, message.getCols(), message.getRows());
         
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
@@ -88,16 +87,15 @@ public class SshTerminalStompController {
                 return;
             }
 
-            // Update the PTY size
+            // Resize the terminal PTY
             if (connection.getChannelShell() != null) {
                 connection.getChannelShell().setPtySize(
                     message.getCols(), 
                     message.getRows(), 
-                    message.getCols() * 8,  // pixel width (approximate)
-                    message.getRows() * 8   // pixel height (approximate)
+                    message.getCols() * 8, 
+                    message.getRows() * 8
                 );
-                
-                log.debug("Updated terminal size for session: {} to {}x{}", 
+                log.debug("Terminal resized for session {}: {}x{}", 
                          sessionId, message.getCols(), message.getRows());
             } else {
                 log.error("Channel shell is null for session: {}", sessionId);
@@ -111,56 +109,25 @@ public class SshTerminalStompController {
     }
 
     /**
-     * Handle terminal connection establishment.
-     * This is called automatically when a STOMP session connects and will start output forwarding.
+     * Start terminal output forwarding (called after SSH connection is established)
      */
-    @MessageMapping("/terminal/connect")
-    public void handleTerminalConnect(SimpMessageHeaderAccessor headerAccessor) {
+    @MessageMapping("/terminal/start-forwarding")
+    public void startOutputForwarding(SimpMessageHeaderAccessor headerAccessor) {
         String sessionId = headerAccessor.getSessionId();
-        log.info("Starting terminal session for: {}", sessionId);
+        log.debug("Starting output forwarding for session: {}", sessionId);
         
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
-            if (connection == null) {
-                log.error("No SSH connection found for session: {}", sessionId);
+            if (connection != null) {
+                sessionManager.startOutputForwarding(sessionId, connection);
+                log.info("Output forwarding started for session: {}", sessionId);
+            } else {
+                log.warn("No SSH connection found for session: {}", sessionId);
                 sessionManager.sendErrorMessage(sessionId, "SSH connection not established");
-                return;
             }
-
-            // Start the terminal output forwarding
-            sessionManager.startTerminalOutputForwarder(sessionId);
-            
-            // Send confirmation message
-            sessionManager.sendSuccessMessage(sessionId, "terminal_connected", 
-                "Terminal session established successfully");
-            
-            log.info("Terminal session started successfully for: {}", sessionId);
-
         } catch (Exception e) {
-            log.error("Error starting terminal session for {}: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "Failed to start terminal session: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Handle terminal disconnection cleanup.
-     */
-    @MessageMapping("/terminal/disconnect")
-    public void handleTerminalDisconnect(SimpMessageHeaderAccessor headerAccessor) {
-        String sessionId = headerAccessor.getSessionId();
-        log.info("Disconnecting terminal session: {}", sessionId);
-        
-        try {
-            // Stop output forwarding
-            sessionManager.stopTerminalOutputForwarder(sessionId);
-            
-            // Cleanup session resources
-            sessionManager.cleanupSession(sessionId);
-            
-            log.info("Terminal session disconnected: {}", sessionId);
-
-        } catch (Exception e) {
-            log.error("Error disconnecting terminal session {}: {}", sessionId, e.getMessage(), e);
+            log.error("Error starting output forwarding for session {}: {}", sessionId, e.getMessage(), e);
+            sessionManager.sendErrorMessage(sessionId, "Failed to start output forwarding: " + e.getMessage());
         }
     }
 }

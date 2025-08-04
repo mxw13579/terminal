@@ -34,7 +34,7 @@ public class LegacyWebSocketConfig implements WebSocketConfigurer {
         // 直接使用注入的handler实例，它已经包含了所有必要的依赖
         registry.addHandler(sshTerminalWebSocketHandler, "/ws/terminal")
                 // 允许所有来源的连接，方便本地开发，生产环境需要配置具体的来源
-                .setAllowedOrigins("*");
+                .setAllowedOriginPatterns("*");
     }
 
     /**

@@ -1,6 +1,6 @@
 package com.fufu.terminal.controller;
 
-import com.fufu.terminal.model.stomp.ErrorMessage;
+import com.fufu.terminal.dto.ErrorDto;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.SftpException;
@@ -29,9 +29,9 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(Exception.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleGenericException(Exception e) {
+    public ErrorDto handleGenericException(Exception e) {
         log.error("STOMP message processing error", e);
-        return new ErrorMessage(
+        return new ErrorDto(
             "PROCESSING_ERROR",
             "An error occurred while processing your request: " + e.getMessage(),
             getStackTraceAsString(e)
@@ -43,9 +43,9 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(JSchException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleSshException(JSchException e) {
+    public ErrorDto handleSshException(JSchException e) {
         log.error("SSH connection error", e);
-        return new ErrorMessage(
+        return new ErrorDto(
             "SSH_ERROR",
             "SSH connection failed: " + e.getMessage()
         );
@@ -56,7 +56,7 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(SftpException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleSftpException(SftpException e) {
+    public ErrorDto handleSftpException(SftpException e) {
         log.error("SFTP operation error", e);
         String errorMessage = switch (e.id) {
             case ChannelSftp.SSH_FX_NO_SUCH_FILE -> "File or directory not found";
@@ -68,7 +68,7 @@ public class StompGlobalExceptionHandler {
             default -> "SFTP operation failed: " + e.getMessage();
         };
 
-        return new ErrorMessage("SFTP_ERROR", errorMessage);
+        return new ErrorDto("SFTP_ERROR", errorMessage);
     }
 
     /**
@@ -76,9 +76,9 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(IOException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleIOException(IOException e) {
+    public ErrorDto handleIOException(IOException e) {
         log.error("I/O error during STOMP message processing", e);
-        return new ErrorMessage(
+        return new ErrorDto(
             "IO_ERROR",
             "I/O operation failed: " + e.getMessage()
         );
@@ -89,7 +89,7 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(ConstraintViolationException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleValidationException(ConstraintViolationException e) {
+    public ErrorDto handleValidationException(ConstraintViolationException e) {
         log.warn("Validation error in STOMP message", e);
         StringBuilder errorMsg = new StringBuilder("Validation failed: ");
         e.getConstraintViolations().forEach(violation ->
@@ -98,7 +98,7 @@ public class StompGlobalExceptionHandler {
                    .append(violation.getMessage())
                    .append("; "));
 
-        return new ErrorMessage("VALIDATION_ERROR", errorMsg.toString());
+        return new ErrorDto("VALIDATION_ERROR", errorMsg.toString());
     }
 
     /**
@@ -106,7 +106,7 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(BindException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleBindException(BindException e) {
+    public ErrorDto handleBindException(BindException e) {
         log.warn("Message binding error", e);
         StringBuilder errorMsg = new StringBuilder("Message format error: ");
         e.getBindingResult().getFieldErrors().forEach(error ->
@@ -115,7 +115,7 @@ public class StompGlobalExceptionHandler {
                    .append(error.getDefaultMessage())
                    .append("; "));
 
-        return new ErrorMessage("BINDING_ERROR", errorMsg.toString());
+        return new ErrorDto("BINDING_ERROR", errorMsg.toString());
     }
 
     /**
@@ -123,9 +123,9 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(IllegalArgumentException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleIllegalArgumentException(IllegalArgumentException e) {
+    public ErrorDto handleIllegalArgumentException(IllegalArgumentException e) {
         log.warn("Illegal argument in STOMP message", e);
-        return new ErrorMessage(
+        return new ErrorDto(
             "INVALID_ARGUMENT",
             "Invalid request parameter: " + e.getMessage()
         );
@@ -136,9 +136,9 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(SecurityException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleSecurityException(SecurityException e) {
+    public ErrorDto handleSecurityException(SecurityException e) {
         log.error("Security error in STOMP message processing", e);
-        return new ErrorMessage(
+        return new ErrorDto(
             "SECURITY_ERROR",
             "Access denied: " + e.getMessage()
         );
@@ -149,10 +149,10 @@ public class StompGlobalExceptionHandler {
      */
     @MessageExceptionHandler(InterruptedException.class)
     @SendToUser("/queue/error")
-    public ErrorMessage handleInterruptedException(InterruptedException e) {
+    public ErrorDto handleInterruptedException(InterruptedException e) {
         log.info("Operation was interrupted", e);
         Thread.currentThread().interrupt(); // Restore interrupt status
-        return new ErrorMessage(
+        return new ErrorDto(
             "OPERATION_CANCELLED",
             "Operation was cancelled: " + e.getMessage()
         );

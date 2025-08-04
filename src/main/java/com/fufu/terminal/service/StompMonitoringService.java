@@ -1,7 +1,7 @@
 package com.fufu.terminal.service;
 
 import com.fufu.terminal.model.SshConnection;
-import com.fufu.terminal.model.stomp.MonitorUpdateMessage;
+import com.fufu.terminal.dto.MonitorUpdateDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -83,7 +83,7 @@ public class StompMonitoringService {
         
         try {
             // Convert monitoring data to STOMP message
-            MonitorUpdateMessage updateMessage = new MonitorUpdateMessage(monitoringData);
+            MonitorUpdateDto updateMessage = new MonitorUpdateDto(monitoringData);
             
             // Send to user-specific monitoring queue
             messagingTemplate.convertAndSendToUser(
