@@ -84,14 +84,18 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
             Session jschSession = jsch.getSession(user, host, port);
             jschSession.setPassword(password);
             jschSession.setConfig("StrictHostKeyChecking", "no");
+            jschSession.setConfig("PreferredAuthentications", "password");
+            jschSession.setServerAliveInterval(30000); // Keep connection alive
+            jschSession.setServerAliveCountMax(3);
             jschSession.connect(30000);
 
             // Create shell channel
             ChannelShell channel = (ChannelShell) jschSession.openChannel("shell");
-            channel.setPtyType("xterm");
+            channel.setPtyType("xterm-256color");
+            channel.setPtySize(80, 24, 640, 480); // Set initial size
             InputStream inputStream = channel.getInputStream();
             OutputStream outputStream = channel.getOutputStream();
-            channel.connect(3000);
+            channel.connect(10000);
 
             // Store SSH connection
             SshConnection sshConnection = new SshConnection(jsch, jschSession, channel, inputStream, outputStream);
@@ -107,7 +111,9 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
             log.error("Failed to establish SSH connection for session {}: {}", sessionId, e.getMessage(), e);
             // Remove any partially created connection
             handleDisconnect(sessionId);
-            throw new RuntimeException("SSH connection failed: " + e.getMessage(), e);
+            // Don't throw exception here as it prevents STOMP connection
+            // Instead, we'll send an error message after connection is established
+            log.warn("SSH connection failed for session {}, STOMP connection will proceed but SSH functionality will be unavailable", sessionId);
         }
     }
 

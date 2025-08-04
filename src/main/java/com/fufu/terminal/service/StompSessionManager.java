@@ -52,6 +52,21 @@ public class StompSessionManager {
         SshConnection connection = authInterceptor.getConnection(sessionId);
         if (connection == null) {
             log.warn("Cannot start output forwarder - no SSH connection found for session: {}", sessionId);
+            sendErrorMessage(sessionId, "SSH connection was not established. Please check your connection parameters and try again.");
+            return;
+        }
+
+        // Check if SSH session is still connected
+        if (!connection.getJschSession().isConnected()) {
+            log.warn("SSH session is not connected for session: {}", sessionId);
+            sendErrorMessage(sessionId, "SSH session disconnected. Please reconnect.");
+            return;
+        }
+
+        // Check if channel is still open
+        if (!connection.getChannelShell().isConnected()) {
+            log.warn("SSH channel is not connected for session: {}", sessionId);
+            sendErrorMessage(sessionId, "SSH channel disconnected. Please reconnect.");
             return;
         }
 
@@ -68,24 +83,34 @@ public class StompSessionManager {
                 byte[] buffer = new byte[1024];
                 int bytesRead;
 
+                log.info("Terminal output forwarder thread started for session: {}", sessionId);
+
                 while (activeForwarders.getOrDefault(sessionId, false) &&
                         (bytesRead = inputStream.read(buffer)) != -1) {
 
                     String payload = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
 
+                    log.debug("Received {} bytes from terminal for session {}: {}",
+                             bytesRead, sessionId, payload.length() > 50 ? payload.substring(0, 50) + "..." : payload);
+
                     // Create terminal data message in the same format as original
-                    Map<String, String> response = Map.of(
+                    Map<String, Object> response = Map.of(
                             "type", "terminal_data",
                             "payload", payload
                     );
 
-                    // Send to user-specific queue
-                    messagingTemplate.convertAndSendToUser(
-                            sessionId,
-                            "/queue/terminal/data",
+                    // Send to user-specific queue (Spring converts /user/queue/terminal/output to /queue/terminal/output-user{sessionId})
+                    messagingTemplate.convertAndSend(
+                            "/queue/terminal/output-user" + sessionId,
                             response
                     );
+
+
+                    log.debug("Sent terminal data to session {}", sessionId);
                 }
+
+                log.info("Terminal output forwarder ended for session: {} (active: {})",
+                        sessionId, activeForwarders.getOrDefault(sessionId, false));
             } catch (IOException e) {
                 if (activeForwarders.getOrDefault(sessionId, false)) {
                     log.error("Error reading from terminal or sending to session {}: ", sessionId, e);
@@ -132,7 +157,7 @@ public class StompSessionManager {
 
             messagingTemplate.convertAndSendToUser(
                     sessionId,
-                    "/queue/error",
+                    "/queue/errors",
                     errorResponse
             );
         } catch (Exception e) {
@@ -186,5 +211,38 @@ public class StompSessionManager {
      */
     public int getActiveForwarderCount() {
         return activeForwarders.size();
+    }
+
+    /**
+     * Send a direct test message to verify STOMP messaging works
+     */
+    public void sendDirectTestMessage(String sessionId) {
+        try {
+            Map<String, String> testMessage = Map.of(
+                    "type", "terminal_data",
+                    "payload", "\r\n=== STOMP Test Message - Direct Messaging Works! ===\r\n"
+            );
+
+            // Try different destination formats to see which one works
+            log.info("Sending direct test message to session: {}", sessionId);
+
+            // Method 1: Standard user destination
+            messagingTemplate.convertAndSendToUser(
+                    sessionId,
+                    "/queue/terminal/output",
+                    testMessage
+            );
+
+            // Method 2: Direct to specific queue (for debugging)
+            messagingTemplate.convertAndSend(
+                    "/queue/terminal/output-user" + sessionId,
+                    testMessage
+            );
+
+            log.info("Direct test message sent to session: {}", sessionId);
+
+        } catch (Exception e) {
+            log.error("Failed to send direct test message to session {}: {}", sessionId, e.getMessage(), e);
+        }
     }
 }

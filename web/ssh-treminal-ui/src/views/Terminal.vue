@@ -1,22 +1,24 @@
 <template>
   <div class="app-container">
-    <transition name="fade" mode="out-in">
+    <NavigationHeader />
+    <div class="terminal-content">
+      <transition name="fade" mode="out-in">
       <!-- 连接视图 -->
       <ConnectionForm
-          v-if="!isConnected"
+          v-if="!connectionState.isConnected"
           key="connection-view"
-          :is-connecting="isConnecting"
-          @connect="connect"
+          :is-connecting="connectionState.connecting"
+          @connect="handleConnect"
       />
 
       <!-- 工作区视图 -->
       <SshConsole
           v-else
           key="workspace-view"
-          :connection-info="{ user, host, port }"
+          :connection-info="connectionState.connectionInfo"
           :sftp-visible="sftpVisible"
           :monitor-visible="monitorVisible"
-          @disconnect="disconnect"
+          @disconnect="handleDisconnect"
           @toggle-sftp="toggleSftpPanel"
           @toggle-monitor="toggleMonitorPanel"
           @terminal-data="sendTerminalData"
@@ -28,7 +30,7 @@
         <template #monitor-aside>
           <MonitorPanel
               :is-visible="monitorVisible"
-              :is-loading="isConnecting || (monitorVisible && !systemStats)"
+              :is-loading="connectionState.connecting || (monitorVisible && !systemStats)"
               :stats="systemStats"
               :docker-containers="dockerContainers"
           />
@@ -54,42 +56,68 @@
         </template>
       </SshConsole>
     </transition>
+    </div>
   </div>
   <Modal v-if="modal.visible" :title="modal.title" :message="modal.message" @close="modal.visible = false" />
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { useTerminal } from '@/composables/useTerminal.js';
-import ConnectionForm from '@/components/ConnectionForm.vue';
-import SshConsole from '@/components/SshConsole.vue';
-import SftpPanel from '@/components/SftpPanel.vue';
-import Modal from '@/components/Modal.vue';
-import MonitorPanel from "@/components/MonitorPanel.vue";
+import { ref, onMounted } from 'vue'
+import useConnectionManager from '@/composables/useConnectionManager.js'
+import { useTerminal } from '@/composables/useTerminal.js'
+import NavigationHeader from '@/components/NavigationHeader.vue'
+import ConnectionForm from '@/components/ConnectionForm.vue'
+import SshConsole from '@/components/SshConsole.vue'
+import SftpPanel from '@/components/SftpPanel.vue'
+import Modal from '@/components/Modal.vue'
+import MonitorPanel from "@/components/MonitorPanel.vue"
+
+// 使用统一连接管理器
+const { connectionState, connect, disconnect } = useConnectionManager()
 
 // Modal state remains in the component as it's a pure UI concern
-const modal = ref({ visible: false, title: '', message: '' });
+const modal = ref({ visible: false, title: '', message: '' })
 function showModal(message, title = '提示') {
-  modal.value = { visible: true, title, message };
+  modal.value = { visible: true, title, message }
 }
 
-// All business logic and state is now handled by the composable!
+// 如果已经有连接，直接使用；否则显示连接表单
+const handleConnect = async (connectionInfo) => {
+  try {
+    await connect(connectionInfo)
+  } catch (error) {
+    showModal(`连接失败: ${error.message}`, '连接错误')
+  }
+}
+
+const handleDisconnect = async () => {
+  try {
+    await disconnect()
+  } catch (error) {
+    console.warn('断开连接时出错:', error)
+  }
+}
+
+// Terminal functionality using the existing useTerminal composable
+// But we need to adapt it to work with the unified connection manager
 const {
-  host, port, user, isConnected, isConnecting,
   sftpVisible, sftpLoading, sftpError, currentSftpPath, sftpFiles,
   isSftpActionInProgress, localUploadProgress, remoteUploadProgress,
   uploadStatusText, uploadSpeed, sftpUploadSpeed,
   monitorVisible, isMonitoring, systemStats, dockerContainers,
-  connect, disconnect, setTerminalInstance,
-  sendTerminalData, sendTerminalResize, toggleSftpPanel,
-  toggleMonitorPanel,
+  setTerminalInstance, sendTerminalData, sendTerminalResize, 
+  toggleSftpPanel, toggleMonitorPanel,
   fetchSftpList, downloadSftpFiles, uploadSftpFile
 } = useTerminal({
-  onShowModal: showModal, // Pass the modal function to the composable
-});
+  onShowModal: showModal
+})
 
-// Import utility functions directly in SftpPanel or where needed.
-// Or you can re-export them from the composable if you prefer.
+// 检查现有连接状态
+onMounted(() => {
+  if (connectionState.isConnected) {
+    console.log('已存在连接，直接进入终端界面')
+  }
+})
 </script>
 
 <style>
@@ -122,6 +150,12 @@ body, html, #app {
   background-image: radial-gradient(circle at 1% 1%, var(--accent-color-1), transparent 30%),
   radial-gradient(circle at 99% 99%, var(--accent-color-2), transparent 40%);
   display: flex; flex-direction: column;
+}
+.terminal-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.4s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }

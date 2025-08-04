@@ -19,7 +19,7 @@ import jakarta.validation.Valid;
 /**
  * STOMP controller for SFTP operations.
  * Handles file listing, upload, and download operations.
- * 
+ *
  * @author lizelin
  */
 @Slf4j
@@ -38,10 +38,10 @@ public class SftpStompController {
     public void handleSftpList(
             @Valid SftpListDto request,
             SimpMessageHeaderAccessor headerAccessor) {
-        
+
         String sessionId = headerAccessor.getSessionId();
         log.debug("Handling SFTP list request for session: {} path: {}", sessionId, request.getPath());
-        
+
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
             if (connection == null) {
@@ -54,9 +54,9 @@ public class SftpStompController {
             StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
                 sessionId, messagingTemplate
             );
-            
+
             sftpService.handleSftpList(sessionAdapter, connection, request.getPath());
-            
+
         } catch (Exception e) {
             log.error("Error handling SFTP list for session {}: {}", sessionId, e.getMessage(), e);
             sessionManager.sendErrorMessage(sessionId, "SFTP list error: " + e.getMessage());
@@ -70,10 +70,10 @@ public class SftpStompController {
     public void handleSftpDownload(
             @Valid SftpDownloadDto request,
             SimpMessageHeaderAccessor headerAccessor) {
-        
+
         String sessionId = headerAccessor.getSessionId();
         log.debug("Handling SFTP download request for session: {} paths: {}", sessionId, request.getPaths());
-        
+
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
             if (connection == null) {
@@ -85,9 +85,9 @@ public class SftpStompController {
             StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
                 sessionId, messagingTemplate
             );
-            
+
             sftpService.handleSftpDownload(sessionAdapter, connection, request.getPaths());
-            
+
         } catch (Exception e) {
             log.error("Error handling SFTP download for session {}: {}", sessionId, e.getMessage(), e);
             sessionManager.sendErrorMessage(sessionId, "SFTP download error: " + e.getMessage());
@@ -101,11 +101,11 @@ public class SftpStompController {
     public void handleSftpUpload(
             @Valid SftpUploadDto request,
             SimpMessageHeaderAccessor headerAccessor) {
-        
+
         String sessionId = headerAccessor.getSessionId();
-        log.debug("Handling SFTP upload chunk for session: {} file: {} chunk: {}/{}", 
+        log.debug("Handling SFTP upload chunk for session: {} file: {} chunk: {}/{}",
                  sessionId, request.getFilename(), request.getChunkIndex() + 1, request.getTotalChunks());
-        
+
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
             if (connection == null) {
@@ -117,17 +117,17 @@ public class SftpStompController {
             StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
                 sessionId, messagingTemplate
             );
-            
+
             sftpService.handleSftpUploadChunk(
-                sessionAdapter, 
-                connection, 
+                sessionAdapter,
+                connection,
                 request.getPath(),
-                request.getFilename(), 
-                request.getChunkIndex(), 
-                request.getTotalChunks(), 
+                request.getFilename(),
+                request.getChunkIndex(),
+                request.getTotalChunks(),
                 request.getContent()
             );
-            
+
         } catch (Exception e) {
             log.error("Error handling SFTP upload chunk for session {}: {}", sessionId, e.getMessage(), e);
             sessionManager.sendErrorMessage(sessionId, "SFTP upload error: " + e.getMessage());

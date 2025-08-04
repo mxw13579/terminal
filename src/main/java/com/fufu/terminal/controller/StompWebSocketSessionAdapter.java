@@ -61,10 +61,11 @@ public class StompWebSocketSessionAdapter implements WebSocketSession {
                 // Route to appropriate STOMP destination based on message type
                 String destination = determineDestination(messageType);
 
-                messagingTemplate.convertAndSendToUser(sessionId, destination, messageMap);
+                // 直接发送到具体队列，与终端输出使用相同的模式
+                messagingTemplate.convertAndSend(destination + "-user" + sessionId, messageMap);
 
                 log.debug("Sent STOMP message to session {} destination {}: {}",
-                         sessionId, destination, messageType);
+                         sessionId, destination + "-user" + sessionId, messageType);
 
             } catch (Exception e) {
                 log.error("Error sending STOMP message for session {}: {}", sessionId, e.getMessage(), e);
@@ -85,12 +86,13 @@ public class StompWebSocketSessionAdapter implements WebSocketSession {
         }
 
         return switch (messageType) {
-            case "sftp_list_response" -> "/queue/sftp/list/response";
-            case "sftp_download_response" -> "/queue/sftp/download/response";
-            case "sftp_upload_chunk_success" -> "/queue/sftp/upload/progress";
-            case "sftp_upload_final_success" -> "/queue/sftp/upload/complete";
+            case "sftp_list_response" -> "/queue/sftp/list";
+            case "sftp_download_response" -> "/queue/sftp/download";
+            case "sftp_upload_chunk_success" -> "/queue/sftp/upload";
+            case "sftp_remote_progress" -> "/queue/sftp/upload";
+            case "sftp_upload_final_success" -> "/queue/sftp/upload";
             case "sftp_error" -> "/queue/sftp/error";
-            case "error" -> "/queue/error";
+            case "error" -> "/queue/errors";
             default -> "/queue/response";
         };
     }

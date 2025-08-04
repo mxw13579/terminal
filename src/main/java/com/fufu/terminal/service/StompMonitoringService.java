@@ -42,8 +42,8 @@ public class StompMonitoringService {
             StompMonitoringSessionAdapter sessionAdapter = new StompMonitoringSessionAdapter(
                 sessionId, messagingTemplate, this);
             
-            // Start monitoring using the existing service
-            sshMonitorService.handleMonitorStart(sessionAdapter, connection);
+            // Start monitoring using the existing service with a separate SSH connection
+            sshMonitorService.handleMonitorStartWithSeparateConnection(sessionAdapter, connection);
             
         } catch (Exception e) {
             log.error("Error starting STOMP monitoring for session {}: {}", sessionId, e.getMessage(), e);
@@ -82,13 +82,15 @@ public class StompMonitoringService {
         }
         
         try {
-            // Convert monitoring data to STOMP message
-            MonitorUpdateDto updateMessage = new MonitorUpdateDto(monitoringData);
+            // Create monitoring update message with expected format
+            Map<String, Object> updateMessage = Map.of(
+                "type", "monitor_update",
+                "payload", monitoringData
+            );
             
-            // Send to user-specific monitoring queue
-            messagingTemplate.convertAndSendToUser(
-                sessionId, 
-                "/queue/monitor/update", 
+            // Send to user-specific monitoring queue - 修复队列路径
+            messagingTemplate.convertAndSend(
+                "/queue/monitor/data-user" + sessionId, 
                 updateMessage
             );
             

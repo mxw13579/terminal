@@ -1,6 +1,5 @@
 package com.fufu.terminal;
 
-import com.fufu.terminal.config.WebSocketConfig;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.service.SshCommandService;
 import com.jcraft.jsch.ChannelShell;

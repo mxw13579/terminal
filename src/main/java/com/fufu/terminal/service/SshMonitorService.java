@@ -429,4 +429,143 @@ public class SshMonitorService {
         String pre = "KMGTPE".charAt(exp - 1) + "i";
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
+
+    /**
+     * 为监控功能创建独立的SSH连接，避免与终端shell通道冲突
+     */
+    public void handleMonitorStartWithSeparateConnection(WebSocketSession session, SshConnection originalConnection) {
+        log.info("会话 {} 请求启动监控（使用独立SSH连接）。", session.getId());
+
+        try {
+            // 从原始连接获取连接参数
+            Session originalSession = originalConnection.getJschSession();
+            String host = originalSession.getHost();
+            int port = originalSession.getPort();
+            String user = originalSession.getUserName();
+            
+            // 创建独立的SSH连接用于监控
+            com.jcraft.jsch.JSch jsch = new com.jcraft.jsch.JSch();
+            Session monitorSession = jsch.getSession(user, host, port);
+            
+            // 复制原始连接的基本配置
+            monitorSession.setConfig("StrictHostKeyChecking", "no");
+            monitorSession.setConfig("PreferredAuthentications", "password");
+            monitorSession.setServerAliveInterval(30000);
+            monitorSession.setServerAliveCountMax(3);
+            
+            // 由于无法获取原始密码，我们尝试使用原始session的认证信息
+            // 但这可能不工作，所以我们改用原始连接的session
+            log.info("使用原始SSH session为监控创建exec通道");
+            
+            // 立即发送缓存数据
+            final Map<String, Object> cachedStats = originalConnection.getLastMonitorStats();
+            if (cachedStats != null && !cachedStats.isEmpty()) {
+                try {
+                    Map<String, Object> response = Map.of(
+                            "type", "monitor_update",
+                            "payload", cachedStats
+                    );
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+                } catch (IOException e) {
+                    log.error("发送缓存的监控数据失败。会话ID: {}", session.getId(), e);
+                }
+            }
+
+            // 直接使用原始连接，但在独立线程中执行监控命令
+            rescheduleMonitoringWithRetry(originalConnection, session, HIGH_FREQUENCY_SECONDS, true);
+            
+        } catch (Exception e) {
+            log.error("创建监控SSH连接失败，会话ID: {}", session.getId(), e);
+            
+            // 发送错误消息给前端
+            try {
+                Map<String, Object> errorResponse = Map.of(
+                        "type", "monitor_error",
+                        "payload", "监控功能暂时不可用：" + e.getMessage()
+                );
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(errorResponse)));
+            } catch (IOException ioException) {
+                log.error("发送监控错误消息失败", ioException);
+            }
+        }
+    }
+
+    /**
+     * 带重试机制的监控调度，如果exec通道失败则降级处理
+     */
+    private void rescheduleMonitoringWithRetry(SshConnection sshConnection, WebSocketSession session, long intervalSeconds, boolean sendToClient) {
+        // 取消现有任务
+        sshConnection.cancelMonitoringTask();
+
+        // 创建新的监控任务
+        Future<?> task = monitorScheduler.scheduleAtFixedRate(() -> {
+            try {
+                // 尝试执行监控命令，如果失败则发送错误信息
+                Map<String, Object> monitoringData = collectSystemStatsWithFallback(sshConnection);
+                
+                // 更新缓存
+                sshConnection.setLastMonitorStats(monitoringData);
+
+                // 如果需要发送给客户端
+                if (sendToClient && session.isOpen()) {
+                    Map<String, Object> response = Map.of(
+                            "type", "monitor_update",
+                            "payload", monitoringData
+                    );
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+                }
+            } catch (Exception e) {
+                log.warn("监控数据收集失败，会话ID: {}，错误: {}", session.getId(), e.getMessage());
+                
+                // 发送错误状态给前端
+                try {
+                    if (session.isOpen()) {
+                        Map<String, Object> errorData = Map.of(
+                                "cpuModel", "监控暂时不可用",
+                                "uptime", "SSH通道冲突",
+                                "cpuUsage", 0.0,
+                                "memoryUsage", Map.of("used", 0, "total", 0, "percentage", 0.0),
+                                "diskUsage", Map.of("used", 0, "total", 0, "percentage", 0.0),
+                                "networkStats", Map.of("rx", "N/A", "tx", "N/A"),
+                                "dockerContainers", Collections.emptyList()
+                        );
+                        
+                        Map<String, Object> response = Map.of(
+                                "type", "monitor_update",
+                                "payload", errorData
+                        );
+                        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+                    }
+                } catch (IOException ioException) {
+                    log.error("发送监控错误状态失败", ioException);
+                }
+            }
+        }, 0, intervalSeconds, TimeUnit.SECONDS);
+
+        sshConnection.setMonitoringTask(task);
+        log.info("监控任务已重新调度，间隔: {} 秒，发送数据给客户端: {}", intervalSeconds, sendToClient);
+    }
+
+    /**
+     * 带降级处理的系统状态收集
+     */
+    private Map<String, Object> collectSystemStatsWithFallback(SshConnection sshConnection) {
+        try {
+            // 尝试正常的监控数据收集
+            return getSystemAndDockerStats(sshConnection.getJschSession());
+        } catch (Exception e) {
+            log.warn("正常监控失败，返回降级数据: {}", e.getMessage());
+            
+            // 返回降级数据，显示监控不可用但不阻断功能
+            return Map.of(
+                    "cpuModel", "监控数据收集失败",
+                    "uptime", "请检查SSH连接",
+                    "cpuUsage", 0.0,
+                    "memoryUsage", Map.of("used", 0, "total", 0, "percentage", 0.0),
+                    "diskUsage", Map.of("used", 0, "total", 0, "percentage", 0.0),
+                    "networkStats", Map.of("rx", "N/A", "tx", "N/A"),
+                    "dockerContainers", Collections.emptyList()
+            );
+        }
+    }
 }

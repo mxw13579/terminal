@@ -9,8 +9,10 @@
       "Bash(./mvnw:*)",
       "Bash(rm:*)",
       "Bash(find:*)",
-      "Bash(java:*)"
+      "Bash(java:*)",
+      "Bash(.mvnw.cmd compile -q)"
     ],
     "deny": []
-  }
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
 }

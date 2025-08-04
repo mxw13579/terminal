@@ -64,6 +64,8 @@ export function useTerminal(options = {}) {
 
         stompClient.onConnect = (frame) => {
             console.log('STOMP Connected: ' + frame);
+            console.log('STOMP Frame details:', frame);
+            console.log('Session ID:', stompClient.webSocket.url);
             isConnecting.value = false;
             isConnected.value = true;
 
@@ -104,20 +106,29 @@ export function useTerminal(options = {}) {
     };
 
     const subscribeToQueues = () => {
+        console.log('Starting to subscribe to queues...');
+        
         // 订阅终端输出
-        stompClient.subscribe('/user/queue/terminal/output', (message) => {
+        const terminalSub = stompClient.subscribe('/user/queue/terminal/output', (message) => {
+            console.log('Received terminal output message:', message);
             try {
                 const data = JSON.parse(message.body);
+                console.log('Parsed terminal data:', data);
+                console.log('Terminal instance:', term);
                 if (term && data.payload) {
+                    console.log('Writing to terminal:', data.payload.substring(0, 50));
                     term.write(data.payload);
+                } else {
+                    console.warn('Cannot write to terminal:', { term: !!term, payload: !!data.payload });
                 }
             } catch (e) {
-                console.error('Error processing terminal output:', e);
+                console.error('Error processing terminal output:', e, 'Message body:', message.body);
             }
         });
+        console.log('Subscribed to terminal output:', terminalSub);
 
         // 订阅终端错误
-        stompClient.subscribe('/user/queue/terminal/error', (message) => {
+        const errorSub = stompClient.subscribe('/user/queue/terminal/error', (message) => {
             try {
                 const data = JSON.parse(message.body);
                 onShowModal("终端错误: " + data.payload);
