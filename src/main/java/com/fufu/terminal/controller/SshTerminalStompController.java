@@ -119,7 +119,7 @@ public class SshTerminalStompController {
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
             if (connection != null) {
-                sessionManager.startOutputForwarding(sessionId, connection);
+                sessionManager.startTerminalOutputForwarder(sessionId);
                 log.info("Output forwarding started for session: {}", sessionId);
             } else {
                 log.warn("No SSH connection found for session: {}", sessionId);

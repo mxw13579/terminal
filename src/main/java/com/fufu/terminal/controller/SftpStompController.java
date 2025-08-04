@@ -6,7 +6,7 @@ import com.fufu.terminal.dto.SftpUploadDto;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SftpService;
 import com.fufu.terminal.service.StompSessionManager;
-import com.fufu.terminal.adapter.StompWebSocketSessionAdapter;
+import com.fufu.terminal.controller.StompWebSocketSessionAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -52,7 +52,7 @@ public class SftpStompController {
 
             // Use adapter to call existing SFTP service
             StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
-                sessionId, messagingTemplate, "sftp"
+                sessionId, messagingTemplate
             );
             
             sftpService.handleSftpList(sessionAdapter, connection, request.getPath());
@@ -83,7 +83,7 @@ public class SftpStompController {
             }
 
             StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
-                sessionId, messagingTemplate, "sftp"
+                sessionId, messagingTemplate
             );
             
             sftpService.handleSftpDownload(sessionAdapter, connection, request.getPaths());
@@ -115,7 +115,7 @@ public class SftpStompController {
             }
 
             StompWebSocketSessionAdapter sessionAdapter = new StompWebSocketSessionAdapter(
-                sessionId, messagingTemplate, "sftp"
+                sessionId, messagingTemplate
             );
             
             sftpService.handleSftpUploadChunk(

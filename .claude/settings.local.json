@@ -8,7 +8,8 @@
       "Bash(javac:*)",
       "Bash(./mvnw:*)",
       "Bash(rm:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(java:*)"
     ],
     "deny": []
   }
