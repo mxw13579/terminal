@@ -2,8 +2,8 @@ package com.fufu.terminal.sillytavern;
 
 import com.fufu.terminal.dto.sillytavern.*;
 import com.fufu.terminal.model.SshConnection;
-import com.fufu.terminal.service.sillytavern.SillyTavernService;
-import com.fufu.terminal.service.sillytavern.SystemDetectionService;
+import com.fufu.terminal.service.sillytavern.*;
+import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,8 +12,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,514 +24,559 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Error handling and edge case tests for SillyTavern management.
- * Tests system behavior under failure conditions and unusual scenarios.
+ * SillyTavern错误处理和边界条件测试
+ * 测试4个核心功能在各种异常情况下的行为
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("SillyTavern Error Handling and Edge Cases Tests")
+@DisplayName("SillyTavern错误处理和边界条件测试")
 class SillyTavernErrorHandlingTest {
 
     @Mock
     private SillyTavernService sillyTavernService;
     
     @Mock
-    private SystemDetectionService systemDetectionService;
+    private ConfigurationService configurationService;
     
+    @Mock
+    private RealTimeLogService realTimeLogService;
+    
+    @Mock
+    private DataManagementService dataManagementService;
+    
+    @Mock
+    private DockerVersionService dockerVersionService;
+
     @Mock
     private SshConnection sshConnection;
-    
+
     @Mock
     private Session jschSession;
-    
+
     @BeforeEach
     void setUp() {
         when(sshConnection.getJschSession()).thenReturn(jschSession);
     }
 
+    // ===== SSH连接错误处理测试 =====
+
     @Test
-    @DisplayName("Should handle SSH connection failures gracefully")
+    @DisplayName("应该处理SSH连接断开的情况")
     void testSshConnectionFailures() {
         // Test case 1: SSH session is null
         when(sshConnection.getJschSession()).thenReturn(null);
-        
+
         assertThrows(Exception.class, () -> {
             sillyTavernService.getContainerStatus(sshConnection);
         });
-        
+
         // Test case 2: SSH session is disconnected
         when(sshConnection.getJschSession()).thenReturn(jschSession);
         when(jschSession.isConnected()).thenReturn(false);
-        
+
         // Should handle disconnected session gracefully
         when(sillyTavernService.getContainerStatus(sshConnection))
-                .thenThrow(new RuntimeException("SSH connection lost"));
-        
+                .thenThrow(new RuntimeException("SSH连接已断开"));
+
         Exception exception = assertThrows(RuntimeException.class, () -> {
             sillyTavernService.getContainerStatus(sshConnection);
         });
-        
-        assertTrue(exception.getMessage().contains("SSH connection lost"));
+
+        assertTrue(exception.getMessage().contains("SSH连接已断开"));
     }
 
     @Test
-    @DisplayName("Should handle Docker daemon not running scenario")
+    @DisplayName("应该处理SSH认证失败")
+    void testSshAuthenticationFailure() throws Exception {
+        // Given
+        when(jschSession.isConnected()).thenReturn(true);
+        doThrow(new JSchException("Auth fail")).when(jschSession).connect();
+
+        // When & Then
+        assertThrows(JSchException.class, () -> {
+            jschSession.connect();
+        });
+    }
+
+    // ===== Docker守护进程错误处理测试 =====
+
+    @Test
+    @DisplayName("应该处理Docker守护进程未运行的情况")
     void testDockerDaemonNotRunning() {
         // Given
-        SystemInfoDto systemWithoutDocker = SystemInfoDto.builder()
-                .meetsRequirements(false)
-                .dockerInstalled(true)  // Docker is installed but daemon not running
-                .dockerRunning(false)
-                .sufficientDiskSpace(true)
-                .hasRootAccess(true)
-                .requirementChecks(java.util.List.of("Docker daemon is not running"))
-                .build();
-        
+        SystemInfoDto systemWithoutDocker = new SystemInfoDto();
+        systemWithoutDocker.setMeetsRequirements(false);
+        systemWithoutDocker.setDockerInstalled(true);  // Docker已安装但守护进程未运行
+        systemWithoutDocker.setDockerRunning(false);
+        systemWithoutDocker.setSufficientDiskSpace(true);
+        systemWithoutDocker.setHasRootAccess(true);
+        systemWithoutDocker.setRequirementChecks(List.of("Docker守护进程未运行"));
+
         when(sillyTavernService.validateSystemRequirements(sshConnection))
                 .thenReturn(systemWithoutDocker);
-        
+
         // When
         SystemInfoDto result = sillyTavernService.validateSystemRequirements(sshConnection);
-        
+
         // Then
         assertFalse(result.getMeetsRequirements());
         assertTrue(result.getDockerInstalled());
         assertFalse(result.getDockerRunning());
-        assertTrue(result.getRequirementChecks().contains("Docker daemon is not running"));
+        assertTrue(result.getRequirementChecks().contains("Docker守护进程未运行"));
     }
 
     @Test
-    @DisplayName("Should handle insufficient permissions scenario")
+    @DisplayName("应该处理权限不足的情况")
     void testInsufficientPermissions() {
         // Given
-        SystemInfoDto systemWithoutRoot = SystemInfoDto.builder()
-                .meetsRequirements(false)
-                .dockerInstalled(true)
-                .dockerRunning(true)
-                .sufficientDiskSpace(true)
-                .hasRootAccess(false)
-                .requirementChecks(java.util.List.of("Root/sudo access required for Docker operations"))
-                .build();
-        
+        SystemInfoDto systemWithoutRoot = new SystemInfoDto();
+        systemWithoutRoot.setMeetsRequirements(false);
+        systemWithoutRoot.setDockerInstalled(true);
+        systemWithoutRoot.setDockerRunning(true);
+        systemWithoutRoot.setSufficientDiskSpace(true);
+        systemWithoutRoot.setHasRootAccess(false);
+        systemWithoutRoot.setRequirementChecks(List.of("需要Root/sudo权限来执行Docker操作"));
+
         when(sillyTavernService.validateSystemRequirements(sshConnection))
                 .thenReturn(systemWithoutRoot);
-        
+
         // When
         SystemInfoDto result = sillyTavernService.validateSystemRequirements(sshConnection);
-        
+
         // Then
         assertFalse(result.getMeetsRequirements());
         assertFalse(result.getHasRootAccess());
-        assertTrue(result.getRequirementChecks().contains("Root/sudo access required"));
+        assertTrue(result.getRequirementChecks().contains("需要Root/sudo权限来执行Docker操作"));
     }
 
     @Test
-    @DisplayName("Should handle insufficient disk space scenario")
+    @DisplayName("应该处理磁盘空间不足的情况")
     void testInsufficientDiskSpace() {
         // Given
-        SystemInfoDto systemWithLowDisk = SystemInfoDto.builder()
-                .meetsRequirements(false)
-                .dockerInstalled(true)
-                .dockerRunning(true)
-                .sufficientDiskSpace(false)
-                .hasRootAccess(true)
-                .availableDiskSpaceMB(100L)  // Only 100MB available
-                .requirementChecks(java.util.List.of("Insufficient disk space: 100MB available, 500MB required"))
-                .build();
-        
+        SystemInfoDto systemWithLowDisk = new SystemInfoDto();
+        systemWithLowDisk.setMeetsRequirements(false);
+        systemWithLowDisk.setDockerInstalled(true);
+        systemWithLowDisk.setDockerRunning(true);
+        systemWithLowDisk.setSufficientDiskSpace(false);
+        systemWithLowDisk.setHasRootAccess(true);
+        systemWithLowDisk.setAvailableDiskSpaceMB(100L);  // 只有100MB可用
+        systemWithLowDisk.setRequirementChecks(List.of("磁盘空间不足：可用100MB，需要500MB"));
+
         when(sillyTavernService.validateSystemRequirements(sshConnection))
                 .thenReturn(systemWithLowDisk);
-        
+
         // When
         SystemInfoDto result = sillyTavernService.validateSystemRequirements(sshConnection);
-        
+
         // Then
         assertFalse(result.getMeetsRequirements());
         assertFalse(result.getSufficientDiskSpace());
         assertEquals(100L, result.getAvailableDiskSpaceMB());
         assertTrue(result.getRequirementChecks().stream()
-                .anyMatch(check -> check.contains("Insufficient disk space")));
+                .anyMatch(check -> check.contains("磁盘空间不足")));
+    }
+
+    // ===== 配置管理错误处理测试 =====
+
+    @Test
+    @DisplayName("应该处理配置文件损坏的情况")
+    void testCorruptedConfigurationFile() throws Exception {
+        // Given
+        String containerName = "sillytavern";
+
+        when(configurationService.readConfiguration(sshConnection, containerName))
+                .thenThrow(new RuntimeException("配置文件格式错误：YAML解析失败"));
+
+        // When & Then
+        Exception exception = assertThrows(RuntimeException.class, () -> {
+            configurationService.readConfiguration(sshConnection, containerName);
+        });
+
+        assertTrue(exception.getMessage().contains("配置文件格式错误"));
     }
 
     @Test
-    @DisplayName("Should handle port conflicts during deployment")
-    void testPortConflictDuringDeployment() throws Exception {
+    @DisplayName("应该处理并发配置更新冲突")
+    void testConcurrentConfigurationUpdateConflict() throws Exception {
         // Given
-        DeploymentRequestDto request = DeploymentRequestDto.builder()
-                .containerName("sillytavern")
-                .dockerImage("ghcr.io/sillytavern/sillytavern:latest")
-                .port(8080)  // Conflicting port
-                .dataPath("/opt/sillytavern")
-                .build();
-        
-        java.util.List<DeploymentProgressDto> progressUpdates = new java.util.ArrayList<>();
-        Consumer<DeploymentProgressDto> progressCallback = progressUpdates::add;
-        
-        when(sillyTavernService.deployContainer(sshConnection, request, progressCallback))
+        String containerName = "sillytavern";
+        ConfigurationDto config1 = new ConfigurationDto();
+        config1.setUsername("admin1");
+        config1.setPassword("password1");
+
+        ConfigurationDto config2 = new ConfigurationDto();
+        config2.setUsername("admin2");
+        config2.setPassword("password2");
+
+        // 第一次更新成功
+        when(configurationService.updateConfigurationWithRestart(sshConnection, containerName, config1))
+                .thenReturn(true);
+
+        // 第二次更新因锁冲突而失败
+        when(configurationService.updateConfigurationWithRestart(sshConnection, containerName, config2))
+                .thenThrow(new RuntimeException("配置更新失败：其他操作正在进行中，请稍后重试"));
+
+        // When & Then
+        boolean result1 = configurationService.updateConfigurationWithRestart(sshConnection, containerName, config1);
+        assertTrue(result1);
+
+        Exception exception = assertThrows(RuntimeException.class, () -> {
+            configurationService.updateConfigurationWithRestart(sshConnection, containerName, config2);
+        });
+
+        assertTrue(exception.getMessage().contains("其他操作正在进行中"));
+    }
+
+    @Test
+    @DisplayName("应该处理容器重启失败的情况")
+    void testContainerRestartFailure() throws Exception {
+        // Given
+        String containerName = "sillytavern";
+        ConfigurationDto config = new ConfigurationDto();
+        config.setUsername("newadmin");
+        config.setPassword("newpassword");
+
+        when(configurationService.updateConfigurationWithRestart(sshConnection, containerName, config))
+                .thenThrow(new RuntimeException("容器重启失败：容器处于错误状态"));
+
+        // When & Then
+        Exception exception = assertThrows(RuntimeException.class, () -> {
+            configurationService.updateConfigurationWithRestart(sshConnection, containerName, config);
+        });
+
+        assertTrue(exception.getMessage().contains("容器重启失败"));
+    }
+
+    // ===== 实时日志错误处理测试 =====
+
+    @Test
+    @DisplayName("应该处理日志文件过大的情况")
+    void testLogFileTooLarge() throws Exception {
+        // Given
+        String containerName = "sillytavern";
+        int maxLines = 50000; // 请求过多行数
+
+        when(realTimeLogService.getHistoryLogs(sshConnection, containerName, maxLines, "all"))
+                .thenThrow(new RuntimeException("日志文件过大（>100MB）。请减少天数或尾行数。"));
+
+        // When & Then
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            realTimeLogService.getHistoryLogs(sshConnection, containerName, maxLines, "all");
+        });
+
+        assertTrue(exception.getMessage().contains("日志文件过大"));
+        assertTrue(exception.getMessage().contains("请减少"));
+    }
+
+    @Test
+    @DisplayName("应该处理日志流中断的情况")
+    void testLogStreamInterruption() {
+        // Given
+        String sessionId = "test-session";
+        String containerName = "sillytavern";
+
+        doThrow(new RuntimeException("日志流意外中断：容器已停止"))
+                .when(realTimeLogService).startLogStream(sessionId, containerName, 1000);
+
+        // When & Then
+        Exception exception = assertThrows(RuntimeException.class, () -> {
+            realTimeLogService.startLogStream(sessionId, containerName, 1000);
+        });
+
+        assertTrue(exception.getMessage().contains("日志流意外中断"));
+    }
+
+    @Test
+    @DisplayName("应该处理内存不足的情况")
+    void testLogStreamMemoryExhaustion() throws Exception {
+        // Given
+        String containerName = "sillytavern";
+
+        when(realTimeLogService.getHistoryLogs(sshConnection, containerName, 10000, "all"))
+                .thenThrow(new OutOfMemoryError("Java heap space"));
+
+        // When & Then
+        assertThrows(OutOfMemoryError.class, () -> {
+            realTimeLogService.getHistoryLogs(sshConnection, containerName, 10000, "all");
+        });
+    }
+
+    // ===== 数据管理错误处理测试 =====
+
+    @Test
+    @DisplayName("应该处理数据导出超时的情况")
+    void testDataExportTimeout() {
+        // Given
+        String containerName = "sillytavern";
+        Consumer<String> progressCallback = progress -> System.out.println("Export progress: " + progress);
+
+        CompletableFuture<DataExportDto> timeoutFuture = new CompletableFuture<>();
+        timeoutFuture.completeExceptionally(new TimeoutException("数据导出超时：操作超过30分钟"));
+
+        when(dataManagementService.exportData(sshConnection, containerName, progressCallback))
+                .thenReturn(timeoutFuture);
+
+        // When & Then
+        CompletableFuture<DataExportDto> future = dataManagementService.exportData(sshConnection, containerName, progressCallback);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getCause() instanceof TimeoutException);
+        assertTrue(exception.getCause().getMessage().contains("数据导出超时"));
+    }
+
+    @Test
+    @DisplayName("应该处理ZIP文件损坏的情况")
+    void testCorruptedZipFile() {
+        // Given
+        String uploadedFileName = "corrupted.zip";
+        String containerName = "sillytavern";
+        Consumer<String> progressCallback = progress -> System.out.println("Import progress: " + progress);
+
+        when(dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new RuntimeException("ZIP文件损坏：无法解压缩")));
+
+        // When & Then
+        CompletableFuture<Void> future = dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getCause().getMessage().contains("ZIP文件损坏"));
+    }
+
+    @Test
+    @DisplayName("应该处理磁盘空间不足导致的导出失败")
+    void testDataExportDiskSpaceFailure() {
+        // Given
+        String containerName = "sillytavern";
+        Consumer<String> progressCallback = progress -> System.out.println("Export progress: " + progress);
+
+        when(dataManagementService.exportData(sshConnection, containerName, progressCallback))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new RuntimeException("数据导出失败：磁盘空间不足")));
+
+        // When & Then
+        CompletableFuture<DataExportDto> future = dataManagementService.exportData(sshConnection, containerName, progressCallback);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getCause().getMessage().contains("磁盘空间不足"));
+    }
+
+    @Test
+    @DisplayName("应该处理数据导入回滚失败")
+    void testDataImportRollbackFailure() {
+        // Given
+        String uploadedFileName = "invalid_data.zip";
+        String containerName = "sillytavern";
+        Consumer<String> progressCallback = progress -> System.out.println("Import progress: " + progress);
+
+        when(dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new RuntimeException("数据导入失败且回滚失败：备份文件也已损坏")));
+
+        // When & Then
+        CompletableFuture<Void> future = dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getCause().getMessage().contains("回滚失败"));
+    }
+
+    // ===== 版本管理错误处理测试 =====
+
+    @Test
+    @DisplayName("应该处理GitHub API访问失败")
+    void testGitHubApiFailure() {
+        // Given
+        String containerName = "sillytavern";
+
+        VersionInfoDto errorVersionInfo = new VersionInfoDto();
+        errorVersionInfo.setContainerName(containerName);
+        errorVersionInfo.setError("无法访问GitHub API：网络连接超时");
+
+        when(dockerVersionService.getVersionInfo(sshConnection, containerName))
+                .thenReturn(errorVersionInfo);
+
+        // When
+        VersionInfoDto result = dockerVersionService.getVersionInfo(sshConnection, containerName);
+
+        // Then
+        assertEquals(containerName, result.getContainerName());
+        assertNotNull(result.getError());
+        assertTrue(result.getError().contains("无法访问GitHub API"));
+    }
+
+    @Test
+    @DisplayName("应该处理版本升级过程中的网络中断")
+    void testVersionUpgradeNetworkFailure() {
+        // Given
+        String containerName = "sillytavern";
+        String targetVersion = "1.12.2";
+        Consumer<String> progressCallback = progress -> System.out.println("Upgrade progress: " + progress);
+
+        when(dockerVersionService.upgradeToVersion(sshConnection, containerName, targetVersion, progressCallback))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new RuntimeException("版本升级失败：镜像下载过程中网络中断")));
+
+        // When & Then
+        CompletableFuture<Void> future = dockerVersionService.upgradeToVersion(sshConnection, containerName, targetVersion, progressCallback);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getCause().getMessage().contains("网络中断"));
+    }
+
+    @Test
+    @DisplayName("应该处理版本升级锁竞争超时")
+    void testVersionUpgradeLockTimeout() {
+        // Given
+        String containerName = "sillytavern";
+        String targetVersion = "1.12.2";
+        Consumer<String> progressCallback = progress -> System.out.println("Upgrade progress: " + progress);
+
+        when(dockerVersionService.upgradeToVersion(sshConnection, containerName, targetVersion, progressCallback))
+                .thenReturn(CompletableFuture.failedFuture(
+                        new RuntimeException("版本升级失败：无法获取升级锁，可能有其他升级操作正在进行")));
+
+        // When & Then
+        CompletableFuture<Void> future = dockerVersionService.upgradeToVersion(sshConnection, containerName, targetVersion, progressCallback);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getCause().getMessage().contains("无法获取升级锁"));
+    }
+
+    @Test
+    @DisplayName("应该处理旧镜像清理失败")
+    void testOldImageCleanupFailure() {
+        // Given
+        String containerName = "sillytavern";
+        String targetVersion = "1.12.2";
+        Consumer<String> progressCallback = progress -> System.out.println("Upgrade progress: " + progress);
+
+        // 升级成功但清理失败
+        when(dockerVersionService.upgradeToVersion(sshConnection, containerName, targetVersion, progressCallback))
                 .thenAnswer(invocation -> {
-                    Consumer<DeploymentProgressDto> callback = invocation.getArgument(2);
-                    
-                    callback.accept(DeploymentProgressDto.success("validation", 10, "Validating system..."));
-                    callback.accept(DeploymentProgressDto.success("check-existing", 20, "Checking existing containers..."));
-                    callback.accept(DeploymentProgressDto.success("pull-image", 50, "Pulling Docker image..."));
-                    callback.accept(DeploymentProgressDto.error("create-container", 
-                            "Port 8080 is already in use by another service"));
-                    
+                    Consumer<String> callback = invocation.getArgument(2);
+                    callback.accept("升级完成，但旧镜像清理失败：权限不足");
                     return CompletableFuture.completedFuture(null);
                 });
-        
+
         // When
-        CompletableFuture<Void> deploymentFuture = sillyTavernService.deployContainer(
-                sshConnection, request, progressCallback);
-        
-        deploymentFuture.get(5, TimeUnit.SECONDS);
-        
+        CompletableFuture<Void> future = dockerVersionService.upgradeToVersion(sshConnection, containerName, targetVersion, progressCallback);
+
         // Then
-        DeploymentProgressDto errorUpdate = progressUpdates.stream()
-                .filter(update -> update.getError() != null)
-                .findFirst()
-                .orElse(null);
-        
-        assertNotNull(errorUpdate);
-        assertEquals("create-container", errorUpdate.getStage());
-        assertTrue(errorUpdate.getError().contains("Port 8080 is already in use"));
+        assertDoesNotThrow(() -> {
+            future.get(5, TimeUnit.SECONDS);
+        });
     }
 
-    @Test
-    @DisplayName("Should handle Docker image pull failures")
-    void testDockerImagePullFailure() throws Exception {
-        // Given
-        DeploymentRequestDto request = DeploymentRequestDto.builder()
-                .containerName("sillytavern")
-                .dockerImage("invalid/nonexistent:latest")  // Non-existent image
-                .port(8000)
-                .dataPath("/opt/sillytavern")
-                .build();
-        
-        java.util.List<DeploymentProgressDto> progressUpdates = new java.util.ArrayList<>();
-        Consumer<DeploymentProgressDto> progressCallback = progressUpdates::add;
-        
-        when(sillyTavernService.deployContainer(sshConnection, request, progressCallback))
-                .thenAnswer(invocation -> {
-                    Consumer<DeploymentProgressDto> callback = invocation.getArgument(2);
-                    
-                    callback.accept(DeploymentProgressDto.success("validation", 10, "Validating system..."));
-                    callback.accept(DeploymentProgressDto.success("check-existing", 20, "Checking existing containers..."));
-                    callback.accept(DeploymentProgressDto.error("pull-image", 
-                            "Image pull failed: invalid/nonexistent:latest not found"));
-                    
-                    return CompletableFuture.completedFuture(null);
-                });
-        
-        // When
-        CompletableFuture<Void> deploymentFuture = sillyTavernService.deployContainer(
-                sshConnection, request, progressCallback);
-        
-        deploymentFuture.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        DeploymentProgressDto errorUpdate = progressUpdates.stream()
-                .filter(update -> update.getError() != null)
-                .findFirst()
-                .orElse(null);
-        
-        assertNotNull(errorUpdate);
-        assertEquals("pull-image", errorUpdate.getStage());
-        assertTrue(errorUpdate.getError().contains("Image pull failed"));
-        assertTrue(errorUpdate.getError().contains("not found"));
-    }
+    // ===== 网络连接错误处理测试 =====
 
     @Test
-    @DisplayName("Should handle container creation failures due to resource exhaustion")
-    void testContainerCreationResourceExhaustion() throws Exception {
-        // Given
-        DeploymentRequestDto request = DeploymentRequestDto.builder()
-                .containerName("sillytavern")
-                .dockerImage("ghcr.io/sillytavern/sillytavern:latest")
-                .port(8000)
-                .dataPath("/opt/sillytavern")
-                .build();
-        
-        java.util.List<DeploymentProgressDto> progressUpdates = new java.util.ArrayList<>();
-        Consumer<DeploymentProgressDto> progressCallback = progressUpdates::add;
-        
-        when(sillyTavernService.deployContainer(sshConnection, request, progressCallback))
-                .thenAnswer(invocation -> {
-                    Consumer<DeploymentProgressDto> callback = invocation.getArgument(2);
-                    
-                    callback.accept(DeploymentProgressDto.success("validation", 10, "Validating system..."));
-                    callback.accept(DeploymentProgressDto.success("check-existing", 20, "Checking existing containers..."));
-                    callback.accept(DeploymentProgressDto.success("pull-image", 60, "Image pulled successfully"));
-                    callback.accept(DeploymentProgressDto.error("create-container", 
-                            "Container creation failed: insufficient memory available"));
-                    
-                    return CompletableFuture.completedFuture(null);
-                });
-        
-        // When
-        CompletableFuture<Void> deploymentFuture = sillyTavernService.deployContainer(
-                sshConnection, request, progressCallback);
-        
-        deploymentFuture.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        DeploymentProgressDto errorUpdate = progressUpdates.stream()
-                .filter(update -> update.getError() != null)
-                .findFirst()
-                .orElse(null);
-        
-        assertNotNull(errorUpdate);
-        assertEquals("create-container", errorUpdate.getStage());
-        assertTrue(errorUpdate.getError().contains("insufficient memory"));
-    }
-
-    @Test
-    @DisplayName("Should handle network connectivity issues")
+    @DisplayName("应该处理网络连接问题")
     void testNetworkConnectivityIssues() {
         // Given
-        SystemInfoDto systemWithNetworkIssues = SystemInfoDto.builder()
-                .meetsRequirements(false)
-                .dockerInstalled(true)
-                .dockerRunning(true)
-                .sufficientDiskSpace(true)
-                .hasRootAccess(true)
-                .hasInternetAccess(false)  // No internet connectivity
-                .requirementChecks(java.util.List.of("Internet connectivity required for Docker image pulls"))
-                .build();
-        
+        SystemInfoDto systemWithNetworkIssues = new SystemInfoDto();
+        systemWithNetworkIssues.setMeetsRequirements(false);
+        systemWithNetworkIssues.setDockerInstalled(true);
+        systemWithNetworkIssues.setDockerRunning(true);
+        systemWithNetworkIssues.setSufficientDiskSpace(true);
+        systemWithNetworkIssues.setHasRootAccess(true);
+        systemWithNetworkIssues.setHasInternetAccess(false);  // 无网络连接
+        systemWithNetworkIssues.setRequirementChecks(List.of("需要互联网连接来拉取Docker镜像"));
+
         when(sillyTavernService.validateSystemRequirements(sshConnection))
                 .thenReturn(systemWithNetworkIssues);
-        
+
         // When
         SystemInfoDto result = sillyTavernService.validateSystemRequirements(sshConnection);
-        
+
         // Then
         assertFalse(result.getMeetsRequirements());
         assertFalse(result.getHasInternetAccess());
-        assertTrue(result.getRequirementChecks().contains("Internet connectivity required"));
+        assertTrue(result.getRequirementChecks().contains("需要互联网连接"));
     }
 
+    // ===== 系统资源耗尽错误处理测试 =====
+
     @Test
-    @DisplayName("Should handle container in corrupted state")
-    void testContainerCorruptedState() {
+    @DisplayName("应该处理系统资源耗尽")
+    void testSystemResourceExhaustion() {
         // Given
-        ContainerStatusDto corruptedStatus = new ContainerStatusDto();
-        corruptedStatus.setExists(true);
-        corruptedStatus.setRunning(false);
-        corruptedStatus.setStatus("dead");  // Container is in dead state
-        corruptedStatus.setContainerName("sillytavern");
-        corruptedStatus.setImage("ghcr.io/sillytavern/sillytavern:latest");
-        
+        ContainerStatusDto exhaustedStatus = new ContainerStatusDto();
+        exhaustedStatus.setExists(true);
+        exhaustedStatus.setRunning(false);
+        exhaustedStatus.setStatus("exited");
+        exhaustedStatus.setContainerName("sillytavern");
+        exhaustedStatus.setError("容器因系统资源不足而退出");
+
         when(sillyTavernService.getContainerStatus(sshConnection))
-                .thenReturn(corruptedStatus);
-        
+                .thenReturn(exhaustedStatus);
+
         // When
         ContainerStatusDto result = sillyTavernService.getContainerStatus(sshConnection);
-        
+
         // Then
         assertTrue(result.getExists());
         assertFalse(result.getRunning());
-        assertEquals("dead", result.getStatus());
-        
-        // Should not be able to start a dead container without cleanup
-        when(sillyTavernService.startContainer(sshConnection))
-                .thenThrow(new IllegalStateException("Cannot start container in 'dead' state. Remove and recreate."));
-        
-        Exception exception = assertThrows(IllegalStateException.class, () -> {
-            sillyTavernService.startContainer(sshConnection);
-        });
-        
-        assertTrue(exception.getMessage().contains("dead"));
+        assertEquals("exited", result.getStatus());
+        assertTrue(result.getError().contains("系统资源不足"));
     }
 
-    @Test
-    @DisplayName("Should handle very large file operations gracefully")
-    void testLargeFileOperations() throws Exception {
-        // Given - Simulate very large log files
-        LogRequestDto largeLogRequest = LogRequestDto.builder()
-                .containerName("sillytavern")
-                .days(30)  // 30 days of logs
-                .tailLines(10000)  // Very large number of lines
-                .build();
-        
-        when(sillyTavernService.getContainerLogs(sshConnection, largeLogRequest))
-                .thenThrow(new RuntimeException("Log file too large (>100MB). Please reduce the number of days or tail lines."));
-        
-        // When & Then
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            sillyTavernService.getContainerLogs(sshConnection, largeLogRequest);
-        });
-        
-        assertTrue(exception.getMessage().contains("Log file too large"));
-        assertTrue(exception.getMessage().contains("reduce the number"));
-    }
+    // ===== 操作超时处理测试 =====
 
     @Test
-    @DisplayName("Should handle deployment timeout scenarios")
-    void testDeploymentTimeout() throws Exception {
+    @DisplayName("应该处理操作超时")
+    void testOperationTimeout() {
         // Given
-        DeploymentRequestDto request = DeploymentRequestDto.builder()
-                .containerName("slow-sillytavern")
-                .dockerImage("ghcr.io/sillytavern/sillytavern:latest")
-                .port(8000)
-                .dataPath("/opt/sillytavern")
-                .build();
-        
-        java.util.List<DeploymentProgressDto> progressUpdates = new java.util.ArrayList<>();
-        Consumer<DeploymentProgressDto> progressCallback = progressUpdates::add;
-        
-        // Mock a deployment that times out during image pull
-        when(sillyTavernService.deployContainer(sshConnection, request, progressCallback))
-                .thenAnswer(invocation -> {
-                    Consumer<DeploymentProgressDto> callback = invocation.getArgument(2);
-                    
-                    callback.accept(DeploymentProgressDto.success("validation", 10, "Validating system..."));
-                    callback.accept(DeploymentProgressDto.success("check-existing", 20, "Checking existing containers..."));
-                    callback.accept(DeploymentProgressDto.success("pull-image", 30, "Pulling Docker image (this may take a while)..."));
-                    
-                    // Simulate timeout
-                    Thread.sleep(100);
-                    callback.accept(DeploymentProgressDto.error("pull-image", 
-                            "Image pull timed out after 10 minutes. Please check your internet connection."));
-                    
-                    return CompletableFuture.completedFuture(null);
-                });
-        
-        // When
-        CompletableFuture<Void> deploymentFuture = sillyTavernService.deployContainer(
-                sshConnection, request, progressCallback);
-        
-        deploymentFuture.get(1, TimeUnit.SECONDS);
-        
-        // Then
-        DeploymentProgressDto timeoutUpdate = progressUpdates.stream()
-                .filter(update -> update.getError() != null && update.getError().contains("timed out"))
-                .findFirst()
-                .orElse(null);
-        
-        assertNotNull(timeoutUpdate);
-        assertTrue(timeoutUpdate.getError().contains("timed out"));
-        assertTrue(timeoutUpdate.getError().contains("check your internet connection"));
-    }
+        String containerName = "sillytavern";
 
-    @Test
-    @DisplayName("Should handle invalid configuration data")
-    void testInvalidConfigurationData() {
-        // Test various invalid configuration scenarios
-        
-        // Test 1: Empty username
-        DeploymentRequestDto emptyUsernameRequest = DeploymentRequestDto.builder()
-                .containerName("sillytavern")
-                .dockerImage("ghcr.io/sillytavern/sillytavern:latest")
-                .port(8000)
-                .dataPath("/opt/sillytavern")
-                .username("")  // Empty username
-                .password("validpassword")
-                .build();
-        
-        assertNotNull(emptyUsernameRequest);
-        assertTrue(emptyUsernameRequest.getUsername().isEmpty());
-        
-        // Test 2: Invalid port numbers
-        DeploymentRequestDto invalidPortRequest = DeploymentRequestDto.builder()
-                .containerName("sillytavern")
-                .dockerImage("ghcr.io/sillytavern/sillytavern:latest")
-                .port(-1)  // Invalid port
-                .dataPath("/opt/sillytavern")
-                .build();
-        
-        assertNotNull(invalidPortRequest);
-        assertTrue(invalidPortRequest.getPort() < 0);
-        
-        // Test 3: Invalid data path
-        DeploymentRequestDto invalidPathRequest = DeploymentRequestDto.builder()
-                .containerName("sillytavern")
-                .dockerImage("ghcr.io/sillytavern/sillytavern:latest")
-                .port(8000)
-                .dataPath("/root")  // Potentially dangerous path
-                .build();
-        
-        assertNotNull(invalidPathRequest);
-        assertEquals("/root", invalidPathRequest.getDataPath());
-    }
-
-    @Test
-    @DisplayName("Should handle concurrent operation conflicts")
-    void testConcurrentOperationConflicts() throws Exception {
-        // Given - Simulate trying to start and stop container simultaneously
-        ContainerStatusDto runningStatus = new ContainerStatusDto();
-        runningStatus.setExists(true);
-        runningStatus.setRunning(true);
-        runningStatus.setContainerName("sillytavern");
-        
         when(sillyTavernService.getContainerStatus(sshConnection))
-                .thenReturn(runningStatus);
-        
-        // Mock start operation that detects container is already running
-        when(sillyTavernService.startContainer(sshConnection))
-                .thenThrow(new IllegalStateException("Container 'sillytavern' is already running"));
-        
-        // Mock stop operation that succeeds
-        doNothing().when(sillyTavernService).stopContainer(sshConnection);
-        
+                .thenThrow(new RuntimeException("操作超时：Docker命令执行超过30秒"));
+
         // When & Then
-        Exception startException = assertThrows(IllegalStateException.class, () -> {
-            sillyTavernService.startContainer(sshConnection);
+        Exception exception = assertThrows(RuntimeException.class, () -> {
+            sillyTavernService.getContainerStatus(sshConnection);
         });
-        
-        assertTrue(startException.getMessage().contains("already running"));
-        
-        // Stop should work
-        assertDoesNotThrow(() -> {
-            sillyTavernService.stopContainer(sshConnection);
-        });
+
+        assertTrue(exception.getMessage().contains("操作超时"));
     }
 
-    @Test
-    @DisplayName("Should handle malformed Docker responses")
-    void testMalformedDockerResponses() {
-        // Given - Container status with malformed data
-        ContainerStatusDto malformedStatus = new ContainerStatusDto();
-        malformedStatus.setExists(true);
-        malformedStatus.setRunning(null);  // Null running status
-        malformedStatus.setContainerName("sillytavern");
-        malformedStatus.setStatus("");  // Empty status
-        malformedStatus.setMemoryUsageMB(-1L);  // Invalid memory usage
-        malformedStatus.setCpuUsagePercent(Double.NaN);  // Invalid CPU usage
-        
-        when(sillyTavernService.getContainerStatus(sshConnection))
-                .thenReturn(malformedStatus);
-        
-        // When
-        ContainerStatusDto result = sillyTavernService.getContainerStatus(sshConnection);
-        
-        // Then - Should handle malformed data gracefully
-        assertNotNull(result);
-        assertTrue(result.getExists());
-        assertNull(result.getRunning());
-        assertEquals("", result.getStatus());
-        assertEquals(-1L, result.getMemoryUsageMB());
-        assertTrue(Double.isNaN(result.getCpuUsagePercent()));
-    }
+    // ===== 服务中断处理测试 =====
 
     @Test
-    @DisplayName("Should handle unexpected service interruptions")
-    void testUnexpectedServiceInterruptions() throws Exception {
-        // Given - Service operation that gets interrupted
+    @DisplayName("应该处理意外服务中断")
+    void testUnexpectedServiceInterruption() throws Exception {
+        // Given - 服务操作被中断
         when(sillyTavernService.startContainer(sshConnection))
                 .thenAnswer(invocation -> {
-                    Thread.currentThread().interrupt();  // Simulate interruption
-                    throw new InterruptedException("Service operation was interrupted");
+                    Thread.currentThread().interrupt();  // 模拟中断
+                    throw new InterruptedException("服务操作被中断");
                 });
-        
+
         // When & Then
         Exception exception = assertThrows(Exception.class, () -> {
             sillyTavernService.startContainer(sshConnection);
         });
-        
-        assertTrue(exception.getMessage().contains("interrupted") || 
+
+        assertTrue(exception.getMessage().contains("被中断") ||
                    exception.getCause() instanceof InterruptedException);
-        
-        // Verify thread interrupt status is handled properly
+
+        // 验证线程中断状态得到正确处理
         assertFalse(Thread.currentThread().isInterrupted());
     }
 }

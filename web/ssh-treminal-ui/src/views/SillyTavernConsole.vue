@@ -219,6 +219,11 @@
                 />
               </div>
               
+              <!-- 版本管理 -->
+              <div v-else-if="activeTab === 'versions'" class="content-panel">
+                <VersionManager />
+              </div>
+              
               <!-- 日志查看 -->
               <div v-else-if="activeTab === 'logs'" class="content-panel">
                 <LogViewer 
@@ -263,7 +268,7 @@ import ServiceControls from '../components/sillytavern/ServiceControls.vue'
 import ConfigurationEditor from '../components/sillytavern/ConfigurationEditor.vue'
 import LogViewer from '../components/sillytavern/LogViewer.vue'
 import DataManager from '../components/sillytavern/DataManager.vue'
-import AccessInfo from '../components/sillytavern/AccessInfo.vue'
+import VersionManager from '../components/sillytavern/VersionManager.vue'
 import useConnectionManager from '../composables/useConnectionManager'
 import { useSillyTavern } from '../composables/useSillyTavern'
 
@@ -310,6 +315,12 @@ const tabs = computed(() => [
     name: '配置管理',
     icon: 'fas fa-edit',
     disabled: !containerStatus.value?.exists
+  },
+  {
+    id: 'versions',
+    name: '版本管理',
+    icon: 'fab fa-docker',
+    disabled: false
   },
   {
     id: 'logs',

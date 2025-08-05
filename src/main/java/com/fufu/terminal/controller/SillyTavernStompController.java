@@ -5,7 +5,9 @@ import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.StompSessionManager;
 import com.fufu.terminal.service.sillytavern.SillyTavernService;
 import com.fufu.terminal.service.sillytavern.ConfigurationService;
+import com.fufu.terminal.service.sillytavern.DockerVersionService;
 import com.fufu.terminal.service.sillytavern.DataManagementService;
+import com.fufu.terminal.service.sillytavern.RealTimeLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Controller;
 
 import jakarta.validation.Valid;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * STOMP controller for SillyTavern management operations.
@@ -29,6 +32,8 @@ public class SillyTavernStompController {
 
     private final SillyTavernService sillyTavernService;
     private final ConfigurationService configurationService;
+    private final DockerVersionService dockerVersionService;
+    private final RealTimeLogService realTimeLogService;
     private final DataManagementService dataManagementService;
     private final StompSessionManager sessionManager;
     private final SimpMessagingTemplate messagingTemplate;
@@ -240,7 +245,7 @@ public class SillyTavernStompController {
     }
 
     /**
-     * Handle configuration update requests.
+     * 处理配置更新请求
      */
     @MessageMapping("/sillytavern/update-config")
     public void handleUpdateConfiguration(
@@ -248,45 +253,45 @@ public class SillyTavernStompController {
             SimpMessageHeaderAccessor headerAccessor) {
 
         String sessionId = headerAccessor.getSessionId();
-        log.debug("Handling update configuration request for session: {} with request: {}", sessionId, request);
+        log.debug("处理配置更新请求，会话: {} 请求: {}", sessionId, request);
 
         try {
             SshConnection connection = sessionManager.getConnection(sessionId);
             if (connection == null) {
-                log.warn("No SSH connection found for session: {}", sessionId);
-                sendErrorMessage(sessionId, "SSH connection not established");
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
                 return;
             }
 
-            // Validate configuration
+            // 验证配置
             Map<String, String> validationErrors = configurationService.validateConfiguration(request);
             if (!validationErrors.isEmpty()) {
                 Map<String, Object> errorResponse = Map.of(
                     "success", false,
-                    "message", "Configuration validation failed",
+                    "message", "配置验证失败",
                     "errors", validationErrors
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/config-updated-user" + sessionId, errorResponse);
                 return;
             }
 
-            // Update configuration
+            // 使用增强的配置更新方法（包含自动重启）
             String containerName = request.getContainerName() != null ? request.getContainerName() : "sillytavern";
-            boolean updated = configurationService.updateConfiguration(connection, containerName, request);
+            boolean updated = configurationService.updateConfigurationWithRestart(connection, containerName, request);
             
             Map<String, Object> response = Map.of(
                 "success", updated,
-                "message", updated ? "Configuration updated successfully" : "Configuration update failed",
-                "requiresRestart", true // SillyTavern typically requires restart for config changes
+                "message", updated ? "配置更新成功，容器已自动重启" : "配置更新失败",
+                "requiresRestart", false // 已经自动重启了
             );
             
             messagingTemplate.convertAndSend("/queue/sillytavern/config-updated-user" + sessionId, response);
 
         } catch (Exception e) {
-            log.error("Error updating configuration for session {}: {}", sessionId, e.getMessage(), e);
+            log.error("更新配置失败，会话 {}: {}", sessionId, e.getMessage(), e);
             Map<String, Object> errorResponse = Map.of(
                 "success", false,
-                "message", "Configuration update failed",
+                "message", "配置更新失败",
                 "error", e.getMessage()
             );
             messagingTemplate.convertAndSend("/queue/sillytavern/config-updated-user" + sessionId, errorResponse);
@@ -387,6 +392,249 @@ public class SillyTavernStompController {
     }
 
     /**
+     * 处理版本信息查询请求
+     */
+    @MessageMapping("/sillytavern/get-version-info")
+    public void handleGetVersionInfo(SimpMessageHeaderAccessor headerAccessor) {
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("处理版本信息查询请求，会话: {}", sessionId);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            String containerName = "sillytavern"; // 默认容器名
+            VersionInfoDto versionInfo = dockerVersionService.getVersionInfo(connection, containerName);
+            
+            sendSuccessMessage(sessionId, "version-info", versionInfo);
+
+        } catch (Exception e) {
+            log.error("获取版本信息失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "获取版本信息失败: " + e.getMessage());
+        }    
+    }
+
+    /**
+     * 处理版本升级请求
+     */
+    @MessageMapping("/sillytavern/upgrade-version")
+    public void handleUpgradeVersion(
+            Map<String, String> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        String targetVersion = request.get("targetVersion");
+        String containerName = request.getOrDefault("containerName", "sillytavern");
+        
+        log.debug("处理版本升级请求，会话: {} 目标版本: {}", sessionId, targetVersion);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            if (targetVersion == null || targetVersion.trim().isEmpty()) {
+                sendErrorMessage(sessionId, "目标版本不能为空");
+                return;
+            }
+
+            // 开始异步版本升级，发送进度更新
+            dockerVersionService.upgradeToVersion(connection, containerName, targetVersion, (progress) -> {
+                Map<String, Object> progressMessage = Map.of(
+                    "type", "version-upgrade-progress",
+                    "message", progress
+                );
+                messagingTemplate.convertAndSend("/queue/sillytavern/version-upgrade-progress-user" + sessionId, progressMessage);
+            }).thenRun(() -> {
+                // 升级完成，发送成功消息
+                Map<String, Object> result = Map.of(
+                    "success", true,
+                    "message", "版本升级完成: " + targetVersion,
+                    "newVersion", targetVersion
+                );
+                messagingTemplate.convertAndSend("/queue/sillytavern/version-upgrade-user" + sessionId, result);
+            }).exceptionally(throwable -> {
+                // 升级失败，发送错误消息
+                log.error("版本升级失败，会话 {}: {}", sessionId, throwable.getMessage());
+                Map<String, Object> result = Map.of(
+                    "success", false,
+                    "message", "版本升级失败",
+                    "error", throwable.getMessage()
+                );
+                messagingTemplate.convertAndSend("/queue/sillytavern/version-upgrade-user" + sessionId, result);
+                return null;
+            });
+
+        } catch (Exception e) {
+            log.error("启动版本升级失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "版本升级启动失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理清理未使用镜像请求
+     */
+    @MessageMapping("/sillytavern/cleanup-images")
+    public void handleCleanupImages(SimpMessageHeaderAccessor headerAccessor) {
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("处理镜像清理请求，会话: {}", sessionId);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 异步执行镜像清理
+            CompletableFuture.runAsync(() -> {
+                try {
+                    dockerVersionService.cleanupUnusedImages(connection);
+                    
+                    Map<String, Object> result = Map.of(
+                        "success", true,
+                        "message", "镜像清理完成"
+                    );
+                    messagingTemplate.convertAndSend("/queue/sillytavern/cleanup-images-user" + sessionId, result);
+                    
+                } catch (Exception e) {
+                    log.error("镜像清理失败，会话 {}: {}", sessionId, e.getMessage());
+                    Map<String, Object> result = Map.of(
+                        "success", false,
+                        "message", "镜像清理失败",
+                        "error", e.getMessage()
+                    );
+                    messagingTemplate.convertAndSend("/queue/sillytavern/cleanup-images-user" + sessionId, result);
+                }
+            });
+
+        } catch (Exception e) {
+            log.error("启动镜像清理失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "镜像清理启动失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理开始实时日志流请求
+     */
+    @MessageMapping("/sillytavern/start-realtime-logs")
+    public void handleStartRealtimeLogs(
+            Map<String, Object> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        String containerName = (String) request.getOrDefault("containerName", "sillytavern");
+        Integer maxLines = (Integer) request.getOrDefault("maxLines", 1000);
+        
+        log.debug("处理开始实时日志流请求，会话: {} 容器: {} 最大行数: {}", sessionId, containerName, maxLines);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 验证最大行数
+            if (maxLines != null && (maxLines < 100 || maxLines > 5000)) {
+                sendErrorMessage(sessionId, "最大行数必须在100-5000之间");
+                return;
+            }
+
+            // 开始实时日志流
+            realTimeLogService.startLogStream(sessionId, containerName, maxLines);
+            
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "实时日志流已启动",
+                "containerName", containerName,
+                "maxLines", maxLines
+            );
+            
+            sendSuccessMessage(sessionId, "realtime-logs-started", response);
+
+        } catch (Exception e) {
+            log.error("启动实时日志流失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "启动实时日志流失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理停止实时日志流请求
+     */
+    @MessageMapping("/sillytavern/stop-realtime-logs")
+    public void handleStopRealtimeLogs(SimpMessageHeaderAccessor headerAccessor) {
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("处理停止实时日志流请求，会话: {}", sessionId);
+
+        try {
+            // 停止实时日志流
+            realTimeLogService.stopLogStream(sessionId);
+            
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "实时日志流已停止"
+            );
+            
+            sendSuccessMessage(sessionId, "realtime-logs-stopped", response);
+
+        } catch (Exception e) {
+            log.error("停止实时日志流失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "停止实时日志流失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理获取历史日志请求
+     */
+    @MessageMapping("/sillytavern/get-history-logs")
+    public void handleGetHistoryLogs(
+            Map<String, Object> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        String containerName = (String) request.getOrDefault("containerName", "sillytavern");
+        Integer lines = (Integer) request.getOrDefault("lines", 500);
+        String level = (String) request.getOrDefault("level", "all");
+        
+        log.debug("处理获取历史日志请求，会话: {} 容器: {} 行数: {} 级别: {}", sessionId, containerName, lines, level);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 验证参数
+            if (lines != null && (lines < 1 || lines > 3000)) {
+                sendErrorMessage(sessionId, "日志行数必须在1-3000之间");
+                return;
+            }
+
+            // 获取历史日志
+            RealTimeLogDto historyLogs = realTimeLogService.getHistoryLogs(
+                connection, containerName, lines, level);
+            
+            sendSuccessMessage(sessionId, "history-logs", historyLogs);
+
+        } catch (Exception e) {
+            log.error("获取历史日志失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "获取历史日志失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * Send success message to session-specific queue
      */
     private void sendSuccessMessage(String sessionId, String messageType, Object data) {
@@ -418,4 +666,12 @@ public class SillyTavernStompController {
     private void sendErrorMessage(String sessionId, String message) {
         sessionManager.sendErrorMessage(sessionId, message);
     }
-}
+    
+    
+    
+    
+    
+    
+    
+    
+    

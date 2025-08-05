@@ -40,13 +40,13 @@
                 placeholder="Enter username"
                 required
                 minlength="3"
-                pattern="[a-zA-Z0-9_-]+"
+                pattern="[a-zA-Z_-]+"
               />
               <div v-if="errors.username" class="invalid-feedback">
                 {{ errors.username }}
               </div>
               <div class="form-text">
-                Username must be at least 3 characters (letters, numbers, underscore, dash only)
+                用户名至少3个字符（只允许字母、下划线和短横线，不能包含数字）
               </div>
             </div>
             
@@ -245,8 +245,12 @@ export default {
         errors.value.username = 'Username is required'
       } else if (config.value.username.length < 3) {
         errors.value.username = 'Username must be at least 3 characters long'
-      } else if (!/^[a-zA-Z0-9_-]+$/.test(config.value.username)) {
-        errors.value.username = 'Username can only contain letters, numbers, underscore, and dash'
+      } else if (config.value.username.length > 20) {
+        errors.value.username = 'Username must not exceed 20 characters'
+      } else if (/\d/.test(config.value.username)) {
+        errors.value.username = 'Username cannot contain numbers'
+      } else if (!/^[a-zA-Z_-]+$/.test(config.value.username)) {
+        errors.value.username = 'Username can only contain letters, underscore, and dash'
       }
       
       if (config.value.password && config.value.password.length < 6) {

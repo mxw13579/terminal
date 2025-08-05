@@ -18,6 +18,11 @@ import java.time.LocalDateTime;
 public class DataExportDto {
     
     /**
+     * Container name for which data was exported
+     */
+    private String containerName;
+    
+    /**
      * URL to download the exported data
      */
     private String downloadUrl;
@@ -28,9 +33,24 @@ public class DataExportDto {
     private String filename;
     
     /**
-     * Size of the exported file in bytes
+     * Alternative property name for filename (for compatibility)
+     */
+    private String fileName;
+    
+    /**
+     * Size of exported file in bytes
      */
     private Long sizeBytes;
+    
+    /**
+     * Size of compressed/final file in bytes
+     */
+    private Long compressedSize;
+    
+    /**
+     * Export path on the server
+     */
+    private String exportPath;
     
     /**
      * When the export expires and will be automatically deleted
@@ -61,6 +81,18 @@ public class DataExportDto {
      * Human-readable file size
      */
     private String formattedSize;
+    
+    // Getter/Setter for compatibility
+    public String getFileName() {
+        return fileName != null ? fileName : filename;
+    }
+    
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+        if (this.filename == null) {
+            this.filename = fileName;
+        }
+    }
     
     public static DataExportDto inProgress(int progress, String message) {
         DataExportDto dto = new DataExportDto();

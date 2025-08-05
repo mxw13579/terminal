@@ -103,6 +103,145 @@ export function useSillyTavern(options = {}) {
             }
         });
 
+        // Subscribe to configuration responses
+        client.subscribe('/user/queue/sillytavern/config', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleConfigResponse(data);
+            } catch (e) {
+                console.error('Error processing config response:', e);
+            }
+        });
+
+        // Subscribe to configuration update responses  
+        client.subscribe('/user/queue/sillytavern/config-updated', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleConfigUpdateResponse(data);
+            } catch (e) {
+                console.error('Error processing config update response:', e);
+            }
+        });
+
+        // Subscribe to version info responses
+        client.subscribe('/user/queue/sillytavern/version-info', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleVersionInfoResponse(data);
+            } catch (e) {
+                console.error('Error processing version info response:', e);
+            }
+        });
+
+        // Subscribe to version upgrade responses
+        client.subscribe('/user/queue/sillytavern/version-upgrade', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleVersionUpgradeResponse(data);
+            } catch (e) {
+                console.error('Error processing version upgrade response:', e);
+            }
+        });
+
+        // Subscribe to version upgrade progress
+        client.subscribe('/user/queue/sillytavern/version-upgrade-progress', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleVersionUpgradeProgress(data);
+            } catch (e) {
+                console.error('Error processing version upgrade progress:', e);
+            }
+        });
+
+        // Subscribe to image cleanup responses
+        client.subscribe('/user/queue/sillytavern/cleanup-images', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleImageCleanupResponse(data);
+            } catch (e) {
+                console.error('Error processing image cleanup response:', e);
+            }
+        });
+
+        // Subscribe to real-time logs
+        client.subscribe('/user/queue/sillytavern/realtime-logs', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleRealtimeLogsResponse(data);
+            } catch (e) {
+                console.error('Error processing realtime logs response:', e);
+            }
+        });
+
+        // Subscribe to real-time log control responses
+        client.subscribe('/user/queue/sillytavern/realtime-logs-started', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleRealtimeLogControlResponse(data, 'started');
+            } catch (e) {
+                console.error('Error processing realtime log start response:', e);
+            }
+        });
+
+        client.subscribe('/user/queue/sillytavern/realtime-logs-stopped', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleRealtimeLogControlResponse(data, 'stopped');
+            } catch (e) {
+                console.error('Error processing realtime log stop response:', e);
+            }
+        });
+
+        // Subscribe to history logs
+        client.subscribe('/user/queue/sillytavern/history-logs', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleHistoryLogsResponse(data);
+            } catch (e) {
+                console.error('Error processing history logs response:', e);
+            }
+        });
+
+        // Subscribe to data export responses
+        client.subscribe('/user/queue/sillytavern/export', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDataExportResponse(data);
+            } catch (e) {
+                console.error('Error processing data export response:', e);
+            }
+        });
+
+        // Subscribe to data export progress
+        client.subscribe('/user/queue/sillytavern/export-progress', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDataExportProgress(data);
+            } catch (e) {
+                console.error('Error processing data export progress:', e);
+            }
+        });
+
+        // Subscribe to data import responses
+        client.subscribe('/user/queue/sillytavern/import', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDataImportResponse(data);
+            } catch (e) {
+                console.error('Error processing data import response:', e);
+            }
+        });
+
+        // Subscribe to data import progress
+        client.subscribe('/user/queue/sillytavern/import-progress', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDataImportProgress(data);
+            } catch (e) {
+                console.error('Error processing data import progress:', e);
+            }
+        });
+
         // Subscribe to errors
         client.subscribe('/user/queue/errors', (message) => {
             try {
