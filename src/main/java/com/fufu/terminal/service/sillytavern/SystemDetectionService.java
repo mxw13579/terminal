@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 系统检测服务，负责检测目标主机的操作系统、Docker、资源等环境信息，
@@ -38,78 +39,38 @@ public class SystemDetectionService {
         log.info("开始校验SillyTavern系统部署要求");
         SystemInfoDto systemInfo = new SystemInfoDto();
         List<String> checks = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
 
         try {
-            // 检测操作系统类型
-            systemInfo.setOsType(detectOsType(connection));
-            checks.add("✓ 检测到操作系统: " + systemInfo.getOsType());
+            SystemInfo sysEnv = detectSystemEnvironment(connection);
+            log.info("系统环境信息:{}", sysEnv);
 
-            // 检查Docker可用性
-            if (checkDockerAvailability(connection)) {
-                systemInfo.setDockerInstalled(true);
-                systemInfo.setDockerVersion(getDockerVersion(connection));
-                checks.add("✓ Docker可用: " + systemInfo.getDockerVersion());
-            } else {
-                systemInfo.setDockerInstalled(false);
-                checks.add("✗ 未检测到Docker");
-                warnings.addAll(List.of(
-                        "Docker需要安装。请运行以下命令安装Docker:",
-                        "curl -fsSL https://get.docker.com -o get-docker.sh",
-                        "sudo sh get-docker.sh",
-                        "或访问 https://docs.docker.com/engine/install/ 查看安装指南"
-                ));
-            }
+            systemInfo.setOsType(sysEnv.getOsType());
+            checks.add("✓ 检测到操作系统: " + sysEnv.getOsType());
 
-            // 检查sudo权限
-            if (checkSudoAccess(connection)) {
-                systemInfo.setHasRootAccess(true);
-                checks.add("✓ 拥有sudo权限");
-            } else {
-                systemInfo.setHasRootAccess(false);
-                checks.add("✗ 没有sudo权限");
-            }
+            systemInfo.setDockerInstalled(sysEnv.isDockerInstalled());
+            systemInfo.setDockerVersion(sysEnv.getDockerVersion());
+            checks.add(sysEnv.isDockerInstalled() ? "✓ Docker可用: " + sysEnv.getDockerVersion() : "✗ 未检测到Docker");
 
-            // 检查磁盘空间
-            Long diskSpace = getAvailableDiskSpace(connection);
-            systemInfo.setAvailableDiskSpaceMB(diskSpace);
-            if (diskSpace != null && diskSpace >= MIN_DISK_SPACE_MB) {
-                checks.add("✓ 磁盘空间充足: " + formatDiskSpace(diskSpace));
-            } else {
-                checks.add("✗ 磁盘空间不足: " + formatDiskSpace(diskSpace) + "，至少需要 " + formatDiskSpace(MIN_DISK_SPACE_MB));
-            }
+            systemInfo.setHasRootAccess(sysEnv.isHasRootAccess());
+            checks.add(sysEnv.isHasRootAccess() ? "✓ 拥有sudo权限" : "✗ 没有sudo权限");
 
-            // 检查内存
-            Map<String, Long> memoryInfo = getMemoryInfo(connection);
-            if (memoryInfo != null) {
-                systemInfo.setTotalMemoryMB(memoryInfo.get("total"));
-                systemInfo.setAvailableMemoryMB(memoryInfo.get("available"));
-                if (memoryInfo.get("available") >= MIN_MEMORY_MB) {
-                    checks.add("✓ 可用内存充足: " + formatDiskSpace(memoryInfo.get("available")) + " MB");
-                } else {
-                    checks.add("✗ 可用内存不足: " + formatDiskSpace(memoryInfo.get("available")) + " MB，至少需要 " + MIN_MEMORY_MB + " MB");
-                }
-            } else {
-                checks.add("? 无法获取内存信息");
-            }
+            systemInfo.setAvailableDiskSpaceMB(sysEnv.getAvailableDiskSpaceMB());
+            checks.add(formatDiskCheck(sysEnv.getAvailableDiskSpaceMB()));
 
-            // 检查CPU核心数
-            Integer cpuCores = getCpuCoreCount(connection);
-            systemInfo.setCpuCores(cpuCores);
-            if (cpuCores != null && cpuCores > 0) {
-                checks.add("✓ CPU核心数: " + cpuCores);
-            } else {
-                checks.add("? 无法获取CPU信息");
-            }
+            systemInfo.setTotalMemoryMB(sysEnv.getTotalMemoryMB());
+            systemInfo.setAvailableMemoryMB(sysEnv.getAvailableMemoryMB());
+            checks.add(formatMemoryCheck(sysEnv.getAvailableMemoryMB()));
 
-            // 判断是否满足要求
-            boolean meetsRequirements = systemInfo.getDockerInstalled() &&
-                    systemInfo.getHasRootAccess() &&
-                    (diskSpace != null && diskSpace >= MIN_DISK_SPACE_MB);
+            systemInfo.setCpuCores(sysEnv.getCpuCores());
+            checks.add(sysEnv.getCpuCores() != null && sysEnv.getCpuCores() > 0
+                    ? "✓ CPU核心数: " + sysEnv.getCpuCores()
+                    : "? 无法获取CPU信息");
+
+            boolean meetsRequirements = sysEnv.isHasRootAccess() &&
+                    Optional.ofNullable(sysEnv.getAvailableDiskSpaceMB()).orElse(0L) >= MIN_DISK_SPACE_MB;
 
             systemInfo.setMeetsRequirements(meetsRequirements);
             systemInfo.setRequirementChecks(checks);
-            systemInfo.setWarnings(warnings);
 
             log.info("系统要求校验完成，是否满足要求: {}", meetsRequirements);
 
@@ -119,9 +80,27 @@ public class SystemDetectionService {
             systemInfo.setMeetsRequirements(false);
             systemInfo.setRequirementChecks(checks);
         }
-
         return systemInfo;
     }
+
+
+    private String formatDiskCheck(Long diskSpace) {
+        if (diskSpace == null) {
+            return "? 无法获取磁盘空间信息";
+        }
+        return diskSpace >= MIN_DISK_SPACE_MB
+                ? "✓ 磁盘空间充足: " + formatDiskSpace(diskSpace)
+                : "✗ 磁盘空间不足: " + formatDiskSpace(diskSpace) + "，至少需要 " + formatDiskSpace(MIN_DISK_SPACE_MB);
+    }
+    private String formatMemoryCheck(Long availableMemory) {
+        if (availableMemory == null) {
+            return "? 无法获取内存信息";
+        }
+        return availableMemory >= MIN_MEMORY_MB
+                ? "✓ 可用内存充足: " + formatDiskSpace(availableMemory) + " MB"
+                : "✗ 可用内存不足: " + formatDiskSpace(availableMemory) + " MB，至少需要 " + MIN_MEMORY_MB + " MB";
+    }
+
 
     /**
      * 检查指定端口列表在目标主机上的可用性。
@@ -131,21 +110,21 @@ public class SystemDetectionService {
      * @return 端口可用性映射，true表示可用
      */
     public Map<Integer, Boolean> checkPortAvailability(SshConnection connection, List<Integer> ports) {
-        if (ports == null || ports.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        Map<Integer, Boolean> availability = new HashMap<>();
-        for (Integer port : ports) {
-            try {
-                String cmd = String.format("netstat -ln | grep -q ':%d ' && echo 'used' || echo 'available'", port);
-                String result = executeCommand(connection, cmd).trim();
-                availability.put(port, "available".equals(result));
-            } catch (Exception e) {
-                log.warn("端口 {} 可用性检测失败: {}", port, e.getMessage());
-                availability.put(port, false);
-            }
-        }
-        return availability;
+        if (ports == null || ports.isEmpty()) return Collections.emptyMap();
+        // 并行流处理，提升大批量端口检测效率
+        return ports.parallelStream().collect(Collectors.toMap(
+                port -> port,
+                port -> {
+                    try {
+                        String cmd = String.format("netstat -ln | grep -q ':%d ' && echo 'used' || echo 'available'", port);
+                        String result = executeCommand(connection, cmd).trim();
+                        return "available".equals(result);
+                    } catch (Exception e) {
+                        log.warn("端口 {} 可用性检测失败: {}", port, e.getMessage());
+                        return false;
+                    }
+                }
+        ));
     }
 
     /**
@@ -156,18 +135,18 @@ public class SystemDetectionService {
      */
     public SystemInfo detectSystemEnvironment(SshConnection connection) {
         log.info("检测系统环境详细信息");
+        SystemInfo.SystemInfoBuilder builder = SystemInfo.builder();
         try {
-            SystemInfo.SystemInfoBuilder builder = SystemInfo.builder();
-            builder.osType(detectOsType(connection));
-            builder.dockerInstalled(checkDockerAvailability(connection));
-            builder.hasRootAccess(checkSudoAccess(connection));
+            builder.osType(detectOsType(connection))
+                    .dockerInstalled(checkDockerAvailability(connection))
+                    .hasRootAccess(checkSudoAccess(connection));
             detectDistributionInfo(connection, builder);
-            builder.availableDiskSpaceMB(getAvailableDiskSpace(connection));
-            builder.cpuCores(getCpuCoreCount(connection));
+            builder.availableDiskSpaceMB(getAvailableDiskSpace(connection))
+                    .cpuCores(getCpuCoreCount(connection));
             Map<String, Long> memoryInfo = getMemoryInfo(connection);
             if (memoryInfo != null) {
-                builder.totalMemoryMB(memoryInfo.get("total"));
-                builder.availableMemoryMB(memoryInfo.get("available"));
+                builder.totalMemoryMB(memoryInfo.get("total"))
+                        .availableMemoryMB(memoryInfo.get("available"));
             }
             if (builder.build().isDockerInstalled()) {
                 builder.dockerVersion(getDockerVersion(connection));
@@ -175,8 +154,7 @@ public class SystemDetectionService {
             return builder.build();
         } catch (Exception e) {
             log.error("检测系统环境失败", e);
-            return SystemInfo.builder()
-                    .osType("Unknown")
+            return builder.osType("Unknown")
                     .dockerInstalled(false)
                     .hasRootAccess(false)
                     .build();
@@ -192,52 +170,44 @@ public class SystemDetectionService {
     private void detectDistributionInfo(SshConnection connection, SystemInfo.SystemInfoBuilder builder) {
         try {
             String osRelease = executeCommand(connection, "cat /etc/os-release 2>/dev/null || echo ''");
-            if (!osRelease.isBlank()) {
+            if (org.springframework.util.StringUtils.hasText(osRelease)) {
                 parseOsRelease(osRelease, builder);
                 return;
             }
             String lsb = executeCommand(connection, "cat /etc/lsb-release 2>/dev/null || echo ''");
-            if (!lsb.isBlank()) {
-                for (String line : lsb.split("\\R")) {
-                    if (line.startsWith("DISTRIB_ID=")) {
-                        builder.osId(line.split("=",2)[1].replaceAll("\"","").toLowerCase());
-                    } else if (line.startsWith("DISTRIB_RELEASE=")) {
-                        builder.osVersionId(line.split("=",2)[1].replaceAll("\"",""));
-                    } else if (line.startsWith("DISTRIB_CODENAME=")) {
-                        builder.osVersionCodename(line.split("=",2)[1].replaceAll("\"",""));
-                    } else if (line.startsWith("DISTRIB_DESCRIPTION=")) {
-                        builder.distro(line.split("=",2)[1].replaceAll("\"",""));
-                    }
-                }
+            if (org.springframework.util.StringUtils.hasText(lsb)) {
+                parseLsbRelease(lsb, builder);
                 return;
             }
-            if (executeCommand(connection, "which apt-get").contains("apt-get")) {
+            // 优化：统一检测包管理器，减少命令执行次数
+            String pkgManager = getFirstAvailableCommand(connection, List.of("apt-get", "yum", "dnf"));
+            if ("apt-get".equals(pkgManager)) {
                 builder.osId("ubuntu").distro("Ubuntu");
-                try { builder.osVersionCodename(
-                        executeCommand(connection, "lsb_release -cs 2>/dev/null").trim());
+                try {
+                    builder.osVersionCodename(executeCommand(connection, "lsb_release -cs 2>/dev/null").trim());
                 } catch (Exception ignore) {}
                 return;
-            } else if (executeCommand(connection, "which yum").contains("yum")) {
+            } else if ("yum".equals(pkgManager)) {
                 builder.osId("centos").distro("CentOS");
                 return;
-            } else if (executeCommand(connection, "which dnf").contains("dnf")) {
+            } else if ("dnf".equals(pkgManager)) {
                 builder.osId("fedora").distro("Fedora");
                 return;
             }
+            // 兼容RedHat、SUSE、Alpine等
             String redhat = executeCommand(connection, "cat /etc/redhat-release 2>/dev/null || echo ''").trim();
             if (!redhat.isEmpty()) {
                 builder.distro(redhat);
                 String name = redhat.split("\\s+")[0];
                 builder.osId(name.toLowerCase());
-                String ver = redhat.replaceAll("^.*?([0-9]+(\\.[0-9]+)*).*$","$1");
+                String ver = redhat.replaceAll("^.*?([0-9]+(\\.[0-9]+)*).*$", "$1");
                 builder.osVersionId(ver);
                 return;
             }
             String suse = executeCommand(connection, "cat /etc/SuSE-release 2>/dev/null || echo ''").trim();
             if (!suse.isEmpty()) {
                 builder.osId("suse").distro("SUSE");
-                String vid = executeCommand(connection,
-                        "grep VERSION /etc/SuSE-release | head -1 | awk '{print $3}'").trim();
+                String vid = executeCommand(connection, "grep VERSION /etc/SuSE-release | head -1 | awk '{print $3}'").trim();
                 builder.osVersionId(vid);
                 return;
             }
@@ -252,7 +222,7 @@ public class SystemDetectionService {
             if (!issue.isEmpty()) {
                 String name = issue.split("\\s+")[0];
                 builder.osId(name.toLowerCase());
-                builder.distro(issue.replaceAll("\\\\l",""));
+                builder.distro(issue.replaceAll("\\\\l", ""));
                 return;
             }
             String unameS = executeCommand(connection, "uname -s").trim();
@@ -407,10 +377,7 @@ public class SystemDetectionService {
             try {
                 String result = executeCommand(connection, cmd).trim();
                 if (!result.isEmpty() && result.matches("\\d+")) {
-                    if (cmd.startsWith("df .")) {
-                        return Long.parseLong(result) / 1024;
-                    }
-                    return Long.parseLong(result);
+                    return cmd.startsWith("df .") ? Long.parseLong(result) / 1024 : Long.parseLong(result);
                 }
             } catch (Exception e) {
                 log.debug("磁盘空间检测命令失败: {} - {}", cmd, e.getMessage());
@@ -424,18 +391,39 @@ public class SystemDetectionService {
                 String[] fields = lines[1].trim().split("\\s+");
                 if (fields.length >= 4) {
                     String avail = fields[3];
-                    if (avail.endsWith("G")) {
-                        double gb = Double.parseDouble(avail.replace("G", ""));
-                        return (long) (gb * 1024);
-                    } else if (avail.endsWith("M")) {
-                        return Long.parseLong(avail.replace("M", ""));
-                    } else if (avail.endsWith("K")) {
-                        return Long.parseLong(avail.replace("K", "")) / 1024;
-                    }
+                    if (avail.endsWith("G")) return (long) (Double.parseDouble(avail.replace("G", "")) * 1024);
+                    if (avail.endsWith("M")) return Long.parseLong(avail.replace("M", ""));
+                    if (avail.endsWith("K")) return Long.parseLong(avail.replace("K", "")) / 1024;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         log.warn("无法获取磁盘空间信息");
+        return null;
+    }
+
+    private void parseLsbRelease(String lsb, SystemInfo.SystemInfoBuilder builder) {
+        for (String line : lsb.split("\\R")) {
+            if (line.startsWith("DISTRIB_ID=")) {
+                builder.osId(line.split("=", 2)[1].replaceAll("\"", "").toLowerCase());
+            } else if (line.startsWith("DISTRIB_RELEASE=")) {
+                builder.osVersionId(line.split("=", 2)[1].replaceAll("\"", ""));
+            } else if (line.startsWith("DISTRIB_CODENAME=")) {
+                builder.osVersionCodename(line.split("=", 2)[1].replaceAll("\"", ""));
+            } else if (line.startsWith("DISTRIB_DESCRIPTION=")) {
+                builder.distro(line.split("=", 2)[1].replaceAll("\"", ""));
+            }
+        }
+    }
+
+    private String getFirstAvailableCommand(SshConnection connection, List<String> commands) {
+        for (String cmd : commands) {
+            try {
+                if (executeCommand(connection, "which " + cmd).contains(cmd)) {
+                    return cmd;
+                }
+            } catch (Exception ignored) {}
+        }
         return null;
     }
 
@@ -450,10 +438,7 @@ public class SystemDetectionService {
             String result = executeCommand(connection, "free -m | grep '^Mem:' | awk '{print $2 \" \" $7}'").trim();
             String[] parts = result.split("\\s+");
             if (parts.length >= 2) {
-                return Map.of(
-                        "total", Long.parseLong(parts[0]),
-                        "available", Long.parseLong(parts[1])
-                );
+                return Map.of("total", Long.parseLong(parts[0]), "available", Long.parseLong(parts[1]));
             }
         } catch (Exception e) {
             log.warn("获取内存信息失败（free -m）: {}", e.getMessage());
@@ -462,18 +447,11 @@ public class SystemDetectionService {
             String meminfo = executeCommand(connection, "cat /proc/meminfo");
             long total = 0L, available = 0L;
             for (String line : meminfo.split("\n")) {
-                if (line.startsWith("MemTotal:")) {
-                    total = Long.parseLong(line.replaceAll("\\D+", ""));
-                }
-                if (line.startsWith("MemAvailable:")) {
-                    available = Long.parseLong(line.replaceAll("\\D+", ""));
-                }
+                if (line.startsWith("MemTotal:")) total = Long.parseLong(line.replaceAll("\\D+", ""));
+                if (line.startsWith("MemAvailable:")) available = Long.parseLong(line.replaceAll("\\D+", ""));
             }
             if (total > 0 && available > 0) {
-                return Map.of(
-                        "total", total / 1024,
-                        "available", available / 1024
-                );
+                return Map.of("total", total / 1024, "available", available / 1024);
             }
         } catch (Exception e) {
             log.warn("获取内存信息失败（/proc/meminfo）: {}", e.getMessage());
