@@ -49,6 +49,12 @@ public class SshMonitorService {
     private static final long LOW_FREQUENCY_SECONDS = 30;
 
 
+    /**
+     * 构造SSH监控服务
+     * @param objectMapper JSON对象映射器
+     * @param monitorScheduler 调度执行器
+     * @param sshCommandService SSH命令服务
+     */
     public SshMonitorService(ObjectMapper objectMapper,
                              @Qualifier("monitorScheduler") ScheduledExecutorService monitorScheduler,
                              SshCommandService sshCommandService) {

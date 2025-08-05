@@ -44,6 +44,11 @@ public class SftpService {
     private final ObjectMapper objectMapper;
     private final ExecutorService executorService;
 
+    /**
+     * 构造SFTP服务
+     * @param objectMapper JSON对象映射器
+     * @param executorService 线程池执行器
+     */
     public SftpService(ObjectMapper objectMapper,
                        @Qualifier("taskExecutor") ExecutorService executorService) {
         this.objectMapper = objectMapper;

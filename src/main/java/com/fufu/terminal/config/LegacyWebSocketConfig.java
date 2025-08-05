@@ -12,14 +12,14 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
- * Legacy WebSocket configuration for SSH terminal application.
+ * 传统WebSocket配置类
+ * 为SSH终端应用提供WebSocket配置支持
  * 
- * This configuration is preserved for backward compatibility during the STOMP migration.
- * It can be activated by setting the profile to 'legacy-websocket' or by removing the
- * WebSocketStompConfig class.
+ * 此配置保留用于STOMP迁移过程中的向后兼容性
+ * 可以通过设置profile为'legacy-websocket'或移除WebSocketStompConfig类来激活
  * 
  * @author lizelin
- * @deprecated Use WebSocketStompConfig for new STOMP-based implementation
+ * @deprecated 请使用WebSocketStompConfig进行新的基于STOMP的实现
  */
 @Configuration
 @EnableWebSocket
@@ -27,8 +27,19 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 @ConditionalOnWebApplication
 @Profile({"legacy-websocket", "test"})  // Enable for legacy profile or tests
 public class LegacyWebSocketConfig implements WebSocketConfigurer {
+    
+    /**
+     * SSH终端WebSocket处理器
+     * 用于处理WebSocket连接和SSH终端数据传输
+     */
     private final SshTerminalWebSocketHandler sshTerminalWebSocketHandler;
 
+    /**
+     * 注册WebSocket处理器
+     * 配置WebSocket终端处理器的映射路径和跨域设置
+     * 
+     * @param registry WebSocket处理器注册器
+     */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         // 直接使用注入的handler实例，它已经包含了所有必要的依赖

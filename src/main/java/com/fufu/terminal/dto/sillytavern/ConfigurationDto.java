@@ -6,8 +6,10 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 /**
- * DTO for SillyTavern configuration management.
- * Used for reading and updating configuration settings.
+ * SillyTavern配置管理DTO
+ * 用于读取和更新SillyTavern的配置设置
+ * 
+ * @author lizelin
  */
 @Data
 @Builder

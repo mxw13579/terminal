@@ -28,6 +28,11 @@ public class WebSocketSftpProgressMonitor implements SftpProgressMonitor {
     private boolean initialized = false;
 
 
+    /**
+     * 构造WebSocket SFTP进度监控器
+     * @param session WebSocket会话
+     * @param objectMapper JSON对象映射器
+     */
     public WebSocketSftpProgressMonitor(WebSocketSession session, ObjectMapper objectMapper) {
         this.session = session;
         this.objectMapper = objectMapper;

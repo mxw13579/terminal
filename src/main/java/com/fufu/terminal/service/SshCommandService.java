@@ -20,7 +20,16 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class SshCommandService {
 
+    /**
+     * 命令连接超时时间（毫秒）
+     * SSH命令执行连接的超时时间设置为5秒
+     */
     private static final int COMMAND_CONNECT_TIMEOUT_MS = 5000;
+    
+    /**
+     * 命令轮询间隔时间（毫秒）
+     * 在等待命令完成时的轮询检查间隔，设置为50毫秒
+     */
     private static final int COMMAND_POLL_INTERVAL_MS = 50;
 
     /**

@@ -5,8 +5,10 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 /**
- * DTO for deployment progress updates.
- * Sent during deployment to provide real-time progress feedback.
+ * 部署进度更新DTO
+ * 在部署过程中发送，提供实时的进度反馈信息
+ * 
+ * @author lizelin
  */
 @Data
 @NoArgsConstructor

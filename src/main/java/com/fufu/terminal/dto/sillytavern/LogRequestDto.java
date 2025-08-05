@@ -9,8 +9,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 
 /**
- * DTO for log viewing requests.
- * Specifies how many logs to retrieve and from what time period.
+ * 日志查看请求DTO
+ * 指定要检索的日志数量和时间范围
+ * 
+ * @author lizelin
  */
 @Data
 @Builder

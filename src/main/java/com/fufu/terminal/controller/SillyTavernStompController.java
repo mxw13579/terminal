@@ -21,8 +21,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * STOMP controller for SillyTavern management operations.
- * Handles deployment, status monitoring, and container lifecycle management.
+ * SillyTavern管理操作STOMP控制器
+ * 处理SillyTavern的部署、状态监控和容器生命周期管理
  *
  * @author lizelin
  */
@@ -31,17 +31,59 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class SillyTavernStompController {
 
+    /**
+     * SillyTavern服务
+     * 提供SillyTavern核心功能的服务
+     */
     private final SillyTavernService sillyTavernService;
+    
+    /**
+     * 配置服务
+     * 处理系统配置管理相关操作
+     */
     private final ConfigurationService configurationService;
+    
+    /**
+     * Docker版本服务
+     * 处理Docker版本检查和管理
+     */
     private final DockerVersionService dockerVersionService;
+    
+    /**
+     * 实时日志服务
+     * 提供容器实时日志查看功能
+     */
     private final RealTimeLogService realTimeLogService;
+    
+    /**
+     * 数据管理服务
+     * 处理数据备份和恢复操作
+     */
     private final DataManagementService dataManagementService;
+    
+    /**
+     * 交互式部署服务
+     * 提供分步式容器部署功能
+     */
     private final InteractiveDeploymentService interactiveDeploymentService;
+    
+    /**
+     * STOMP会话管理器
+     * 管理STOMP会话和SSH连接
+     */
     private final StompSessionManager sessionManager;
+    
+    /**
+     * 消息模板
+     * 用于向客户端发送STOMP消息
+     */
     private final SimpMessagingTemplate messagingTemplate;
 
     /**
-     * Handle system requirements validation requests.
+     * 处理系统需求验证请求
+     * 验证当前系统是否满足运行SillyTavern的要求
+     * 
+     * @param headerAccessor STOMP消息头访问器
      */
     @MessageMapping("/sillytavern/validate-system")
     public void handleSystemValidation(SimpMessageHeaderAccessor headerAccessor) {

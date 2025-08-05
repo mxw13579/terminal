@@ -8,8 +8,10 @@ import lombok.Builder;
 import java.time.LocalDateTime;
 
 /**
- * DTO for data export operations.
- * Provides download URL and metadata for exported data.
+ * 数据导出操作DTO
+ * 提供导出数据的下载URL和元数据信息
+ * 
+ * @author lizelin
  */
 @Data
 @Builder

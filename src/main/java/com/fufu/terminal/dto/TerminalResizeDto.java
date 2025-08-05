@@ -10,9 +10,18 @@ import jakarta.validation.constraints.Min;
  */
 @Data
 public class TerminalResizeDto {
+    
+    /**
+     * 终端列数
+     * 必须大于等于1
+     */
     @Min(1)
     private int cols;
     
+    /**
+     * 终端行数
+     * 必须大于等于1
+     */
     @Min(1)
     private int rows;
 }

@@ -7,8 +7,10 @@ import lombok.AllArgsConstructor;
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * DTO for service control actions.
- * Used to start, stop, restart, upgrade, or delete containers.
+ * 服务控制操作DTO
+ * 用于启动、停止、重启、升级或删除容器
+ * 
+ * @author lizelin
  */
 @Data
 @NoArgsConstructor

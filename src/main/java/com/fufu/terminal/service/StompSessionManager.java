@@ -31,6 +31,13 @@ public class StompSessionManager {
     private final StompAuthenticationInterceptor authInterceptor;
     private final ExecutorService executorService;
 
+    /**
+     * 构造STOMP会话管理器
+     * @param messagingTemplate Spring消息模板，用于发送STOMP消息
+     * @param objectMapper JSON对象映射器
+     * @param authInterceptor STOMP认证拦截器
+     * @param executorService 线程池执行器
+     */
     public StompSessionManager(SimpMessagingTemplate messagingTemplate,
             ObjectMapper objectMapper,
             StompAuthenticationInterceptor authInterceptor,
@@ -45,8 +52,9 @@ public class StompSessionManager {
     private final Map<String, Boolean> activeForwarders = new ConcurrentHashMap<>();
 
     /**
-     * Start terminal output forwarding for a given session.
-     * This replaces the output forwarding logic from the original WebSocket handler.
+     * 启动指定会话的终端输出转发
+     * 替换原始WebSocket处理器中的输出转发逻辑
+     * @param sessionId 会话ID
      */
     public void startTerminalOutputForwarder(String sessionId) {
         SshConnection connection = authInterceptor.getConnection(sessionId);
@@ -124,7 +132,8 @@ public class StompSessionManager {
     }
 
     /**
-     * Stop terminal output forwarding for a session.
+     * 停止指定会话的终端输出转发
+     * @param sessionId 会话ID
      */
     public void stopTerminalOutputForwarder(String sessionId) {
         if (activeForwarders.remove(sessionId) != null) {
@@ -133,7 +142,8 @@ public class StompSessionManager {
     }
 
     /**
-     * Clean up session resources.
+     * 清理会话资源
+     * @param sessionId 会话ID
      */
     public void cleanupSession(String sessionId) {
         log.info("Cleaning up session: {}", sessionId);
@@ -146,7 +156,9 @@ public class StompSessionManager {
     }
 
     /**
-     * Send error message to a specific user session.
+     * 发送错误消息到指定用户会话
+     * @param sessionId 会话ID
+     * @param errorMessage 错误消息内容
      */
     public void sendErrorMessage(String sessionId, String errorMessage) {
         try {
@@ -166,7 +178,10 @@ public class StompSessionManager {
     }
 
     /**
-     * Send success message to a specific user session.
+     * 发送成功消息到指定用户会话
+     * @param sessionId 会话ID
+     * @param type 消息类型
+     * @param payload 消息内容
      */
     public void sendSuccessMessage(String sessionId, String type, Object payload) {
         try {
@@ -186,35 +201,42 @@ public class StompSessionManager {
     }
 
     /**
-     * Get SSH connection for a session.
+     * 获取指定会话的SSH连接
+     * @param sessionId 会话ID
+     * @return SSH连接对象
      */
     public SshConnection getConnection(String sessionId) {
         return authInterceptor.getConnection(sessionId);
     }
 
     /**
-     * Check if output forwarding is active for a session.
+     * 检查指定会话的输出转发是否处于活动状态
+     * @param sessionId 会话ID
+     * @return 如果输出转发处于活动状态则返回true，否则返回false
      */
     public boolean isForwardingActive(String sessionId) {
         return activeForwarders.getOrDefault(sessionId, false);
     }
 
     /**
-     * Get count of active sessions.
+     * 获取活动会话数量
+     * @return 活动会话数量
      */
     public int getActiveSessionCount() {
         return authInterceptor.getAllConnections().size();
     }
 
     /**
-     * Get count of active forwarders.
+     * 获取活动转发器数量
+     * @return 活动转发器数量
      */
     public int getActiveForwarderCount() {
         return activeForwarders.size();
     }
 
     /**
-     * Send a direct test message to verify STOMP messaging works
+     * 发送直接测试消息以验证STOMP消息传递是否正常工作
+     * @param sessionId 会话ID
      */
     public void sendDirectTestMessage(String sessionId) {
         try {

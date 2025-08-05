@@ -17,6 +17,12 @@ import java.util.Arrays;
 @Configuration
 public class CorsConfig {
 
+    /**
+     * 配置跨域资源共享(CORS)源
+     * 设置允许的跨域请求来源、方法、头部等参数
+     * 
+     * @return CORS配置源
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();

@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * STOMP authentication interceptor that handles SSH connection establishment
- * and session management during the STOMP connection process.
+ * STOMP认证拦截器
+ * 在STOMP连接过程中处理SSH连接建立和会话管理
  * 
  * @author lizelin
  */
@@ -33,12 +33,19 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StompAuthenticationInterceptor implements ChannelInterceptor {
 
-    // Store SSH connections by STOMP session ID
+    /**
+     * SSH连接映射表
+     * 根据STOMP会话ID存储对应的SSH连接
+     */
     private final Map<String, SshConnection> connections = new ConcurrentHashMap<>();
 
     /**
-     * Intercept STOMP messages before they are sent to handle authentication
-     * and SSH connection establishment.
+     * 拦截STOMP消息发送前的处理
+     * 处理认证和SSH连接建立
+     * 
+     * @param message STOMP消息
+     * @param channel 消息通道
+     * @return 处理后的消息
      */
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -61,7 +68,11 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
     }
 
     /**
-     * Handle STOMP CONNECT command by establishing SSH connection.
+     * 处理STOMP CONNECT命令
+     * 通过建立SSH连接来处理STOMP连接请求
+     * 
+     * @param accessor STOMP头访问器
+     * @param sessionId 会话ID
      */
     private void handleConnect(StompHeaderAccessor accessor, String sessionId) {
         try {
@@ -118,7 +129,10 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
     }
 
     /**
-     * Handle STOMP DISCONNECT command by cleaning up SSH connection.
+     * 处理STOMP DISCONNECT命令
+     * 通过清理SSH连接来处理STOMP断开请求
+     * 
+     * @param sessionId 会话ID
      */
     private void handleDisconnect(String sessionId) {
         if (sessionId != null) {
@@ -135,22 +149,31 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
     }
 
     /**
-     * Get SSH connection by session ID.
+     * 根据会话ID获取SSH连接
+     * 
+     * @param sessionId 会话ID
+     * @return 对应的SSH连接，如果不存在则返回null
      */
     public SshConnection getConnection(String sessionId) {
         return connections.get(sessionId);
     }
 
     /**
-     * Get all active connections (for monitoring/debugging).
+     * 获取所有活动的SSH连接
+     * 用于监控和调试目的
+     * 
+     * @return 所有活动连接的不可修改映射
      */
     public Map<String, SshConnection> getAllConnections() {
         return Collections.unmodifiableMap(connections);
     }
 
     /**
-     * Parse query string into parameter map.
-     * Utility method for extracting connection parameters from various sources.
+     * 解析查询字符串为参数映射
+     * 用于从各种来源提取连接参数的工具方法
+     * 
+     * @param query 查询字符串
+     * @return 解析后的参数映射
      */
     private Map<String, String> parseQuery(String query) {
         if (query == null || query.trim().isEmpty()) {

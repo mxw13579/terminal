@@ -7,8 +7,10 @@ import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * DTO for container status information.
- * Provides detailed information about the SillyTavern container state.
+ * 容器状态信息DTO
+ * 提供SillyTavern容器状态的详细信息
+ * 
+ * @author lizelin
  */
 @Data
 @NoArgsConstructor

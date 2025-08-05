@@ -42,6 +42,14 @@ public class SshConnection {
      */
     private volatile Map<String, Object> lastMonitorStats;
 
+    /**
+     * 构造SSH连接对象
+     * @param jsch JSch实例
+     * @param session SSH会话
+     * @param channelShell Shell通道
+     * @param inputStream 输入流
+     * @param outputStream 输出流
+     */
     public SshConnection(JSch jsch, Session session, ChannelShell channelShell, InputStream inputStream, OutputStream outputStream) {
         this.jsch = jsch;
         this.session = session;
@@ -51,6 +59,10 @@ public class SshConnection {
     }
 
 
+    /**
+     * 获取JSch会话
+     * @return JSch会话实例
+     */
     public Session getJschSession() {
         return session;
     }
@@ -87,12 +99,18 @@ public class SshConnection {
         }
     }
 
-    // 新增方法
+    /**
+     * 设置监控任务
+     * @param monitoringTask 监控任务Future对象
+     */
     public synchronized void setMonitoringTask(Future<?> monitoringTask) {
         cancelMonitoringTask(); // 取消任何旧任务
         this.monitoringTask = monitoringTask;
     }
 
+    /**
+     * 取消监控任务
+     */
     public synchronized void cancelMonitoringTask() {
         if (this.monitoringTask != null && !this.monitoringTask.isDone()) {
             this.monitoringTask.cancel(true);

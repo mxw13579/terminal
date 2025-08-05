@@ -10,6 +10,11 @@ import jakarta.validation.constraints.NotNull;
  */
 @Data
 public class TerminalDataDto {
+    
+    /**
+     * 终端数据内容
+     * 允许空字符串但不允许null值
+     */
     @NotNull  // 改为NotNull，允许空字符串但不允许null
     private String data;
 }

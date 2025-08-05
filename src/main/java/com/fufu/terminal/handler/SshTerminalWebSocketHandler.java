@@ -41,18 +41,50 @@ import java.util.stream.Collectors;
 @Component
 public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
 
+    /**
+     * SSH连接映射表
+     * 根据WebSocket会话ID存储对应的SSH连接
+     */
     private final Map<String, SshConnection> connections = new ConcurrentHashMap<>();
+    
+    /**
+     * JSON对象映射器
+     * 用于WebSocket消息的JSON序列化和反序列化
+     */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-
+    /**
+     * 线程池执行器
+     * 用于异步执行SSH终端输出转发等任务
+     */
     private final ExecutorService executorService;
+    
+    /**
+     * SFTP服务
+     * 处理文件传输相关操作
+     */
     private final SftpService sftpService;
+    
+    /**
+     * SSH监控服务
+     * 处理系统监控相关操作
+     */
     private final SshMonitorService sshMonitorService;
 
-
-    // 使用Map实现策略模式，用于消息分发
+    /**
+     * 消息处理器映射表
+     * 使用Map实现策略模式，用于不同类型消息的分发处理
+     */
     private final Map<String, MessageHandler> messageHandlers = new HashMap<>();
 
+    /**
+     * 构造函数
+     * 初始化SSH终端WebSocket处理器所需的依赖服务
+     * 
+     * @param sftpService SFTP服务实例
+     * @param sshMonitorService SSH监控服务实例
+     * @param executorService 线程池执行器
+     */
     public SshTerminalWebSocketHandler(SftpService sftpService,
                                        SshMonitorService sshMonitorService,
                                        @Qualifier("taskExecutor") ExecutorService executorService) {
@@ -117,6 +149,13 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         );
     }
 
+    /**
+     * WebSocket连接建立后的处理
+     * 解析连接参数，建立SSH连接，并启动输出转发线程
+     * 
+     * @param session WebSocket会话
+     * @throws Exception 连接建立过程中的异常
+     */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         try {
@@ -153,6 +192,13 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 启动Shell输出转发器
+     * 在独立线程中读取SSH Shell输出并转发到WebSocket客户端
+     * 
+     * @param session WebSocket会话
+     * @param connection SSH连接
+     */
     private void startShellOutputForwarder(WebSocketSession session, SshConnection connection) {
         executorService.submit(() -> {
             try (InputStream inputStream = connection.getInputStream()) {
@@ -173,6 +219,13 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         });
     }
 
+    /**
+     * 处理接收到的文本消息
+     * 解析消息类型并分发给相应的处理器
+     * 
+     * @param session WebSocket会话
+     * @param message 接收到的文本消息
+     */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         SshConnection sshConnection = connections.get(session.getId());
@@ -201,18 +254,38 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * WebSocket连接关闭后的处理
+     * 清理相关的SSH连接和资源
+     * 
+     * @param session WebSocket会话
+     * @param status 连接关闭状态
+     */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.info("Session {} closed with status {}", session.getId(), status);
         closeConnection(session);
     }
 
+    /**
+     * 处理WebSocket传输错误
+     * 当发生传输错误时清理相关连接和资源
+     * 
+     * @param session WebSocket会话
+     * @param exception 传输异常
+     */
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         log.error("Transport error for session {}: {}", session.getId(), exception.getMessage());
         closeConnection(session);
     }
 
+    /**
+     * 关闭连接并清理资源
+     * 断开SSH连接，停止监控任务，清理上传缓存
+     * 
+     * @param session WebSocket会话
+     */
     private void closeConnection(WebSocketSession session) {
         SshConnection sshConnection = connections.remove(session.getId());
         if (sshConnection != null) {
@@ -226,6 +299,14 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 发送JSON格式的错误消息
+     * 向WebSocket客户端发送错误响应
+     * 
+     * @param session WebSocket会话
+     * @param errorMessage 错误消息
+     * @throws IOException 发送消息时的IO异常
+     */
     private void sendJsonError(WebSocketSession session, String errorMessage) throws IOException {
         if (session.isOpen()) {
             Map<String, String> errorResponse = Map.of("type", "error", "payload", errorMessage);
@@ -233,6 +314,13 @@ public class SshTerminalWebSocketHandler  extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 解析查询字符串
+     * 将URL查询字符串解析为键值对映射
+     * 
+     * @param query 查询字符串
+     * @return 解析后的参数映射
+     */
     private Map<String, String> parseQuery(String query) {
         if (query == null || query.trim().isEmpty()) {
             return Collections.emptyMap();
