@@ -14,9 +14,9 @@ import jakarta.validation.ConstraintViolationException;
 import java.io.IOException;
 
 /**
- * SillyTavern WebSocket全局异常处理器
- * 处理STOMP消息处理过程中抛出的异常，并将其转换为标准化的错误消息
- * 增强的中文支持和用户友好的错误信息
+ * <p>WebSocket全局异常处理器（STOMP消息）</p>
+ * <p>负责捕获STOMP消息处理过程中的各类异常，并将其转换为标准化的错误消息对象，推送给前端用户。</p>
+ * <p>所有错误信息均为中文，便于终端用户理解。</p>
  *
  * @author lizelin
  */
@@ -25,34 +25,37 @@ import java.io.IOException;
 public class StompGlobalExceptionHandler {
 
     /**
-     * 处理通用异常 - 提供用户友好的中文错误信息
+     * 处理所有未捕获的通用异常，返回用户友好的错误信息。
+     *
+     * @param e 异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(Exception.class)
     @SendToUser("/queue/error")
     public ErrorDto handleGenericException(Exception e) {
         log.error("STOMP消息处理错误", e);
-        
-        // 根据异常类型提供更友好的错误信息
         String userFriendlyMessage = getUserFriendlyMessage(e);
-        
         return new ErrorDto(
-            "PROCESSING_ERROR",
-            userFriendlyMessage,
-            getStackTraceAsString(e)
+                "PROCESSING_ERROR",
+                userFriendlyMessage,
+                getStackTraceAsString(e)
         );
     }
 
     /**
-     * 处理SSH连接相关异常 - 中文错误信息
+     * 处理SSH连接相关异常，返回中文错误信息。
+     *
+     * @param e JSch异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(JSchException.class)
     @SendToUser("/queue/error")
     public ErrorDto handleSshException(JSchException e) {
         log.error("SSH连接错误", e);
-        
-        String message = e.getMessage().toLowerCase();
+
+        String message = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
         String userMessage;
-        
+
         if (message.contains("auth fail")) {
             userMessage = "用户名或密码错误，请检查登录凭据";
         } else if (message.contains("connection refuse")) {
@@ -64,12 +67,15 @@ public class StompGlobalExceptionHandler {
         } else {
             userMessage = "SSH连接失败: " + e.getMessage();
         }
-        
+
         return new ErrorDto("SSH_ERROR", userMessage);
     }
 
     /**
-     * 处理SFTP操作相关异常 - 中文错误信息
+     * 处理SFTP操作相关异常，返回中文错误信息。
+     *
+     * @param e Sftp异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(SftpException.class)
     @SendToUser("/queue/error")
@@ -89,16 +95,19 @@ public class StompGlobalExceptionHandler {
     }
 
     /**
-     * 处理I/O异常（文件操作、网络错误） - 中文错误信息
+     * 处理I/O异常（如文件操作或网络错误），返回中文错误信息。
+     *
+     * @param e IOException对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(IOException.class)
     @SendToUser("/queue/error")
     public ErrorDto handleIOException(IOException e) {
         log.error("STOMP消息处理过程中I/O错误", e);
-        
+
         String message = e.getMessage();
         String userMessage;
-        
+
         if (message != null) {
             if (message.contains("No space left")) {
                 userMessage = "磁盘空间不足，无法完成操作";
@@ -112,12 +121,15 @@ public class StompGlobalExceptionHandler {
         } else {
             userMessage = "I/O操作失败";
         }
-        
+
         return new ErrorDto("IO_ERROR", userMessage);
     }
 
     /**
-     * 处理验证错误 - 中文错误信息
+     * 处理参数校验异常，返回详细的中文错误信息。
+     *
+     * @param e 约束校验异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(ConstraintViolationException.class)
     @SendToUser("/queue/error")
@@ -125,16 +137,19 @@ public class StompGlobalExceptionHandler {
         log.warn("STOMP消息验证错误", e);
         StringBuilder errorMsg = new StringBuilder("参数验证失败: ");
         e.getConstraintViolations().forEach(violation ->
-            errorMsg.append(violation.getPropertyPath())
-                   .append(" ")
-                   .append(violation.getMessage())
-                   .append("; "));
-
+                errorMsg.append(violation.getPropertyPath())
+                        .append(" ")
+                        .append(violation.getMessage())
+                        .append("; ")
+        );
         return new ErrorDto("VALIDATION_ERROR", errorMsg.toString());
     }
 
     /**
-     * 处理绑定异常（消息反序列化错误） - 中文错误信息
+     * 处理数据绑定异常（如消息反序列化错误），返回详细的中文错误信息。
+     *
+     * @param e 绑定异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(BindException.class)
     @SendToUser("/queue/error")
@@ -142,63 +157,73 @@ public class StompGlobalExceptionHandler {
         log.warn("消息绑定错误", e);
         StringBuilder errorMsg = new StringBuilder("消息格式错误: ");
         e.getBindingResult().getFieldErrors().forEach(error ->
-            errorMsg.append(error.getField())
-                   .append(" ")
-                   .append(error.getDefaultMessage())
-                   .append("; "));
-
+                errorMsg.append(error.getField())
+                        .append(" ")
+                        .append(error.getDefaultMessage())
+                        .append("; ")
+        );
         return new ErrorDto("BINDING_ERROR", errorMsg.toString());
     }
 
     /**
-     * 处理非法参数异常 - 中文错误信息
+     * 处理非法参数异常，返回中文错误信息。
+     *
+     * @param e 非法参数异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(IllegalArgumentException.class)
     @SendToUser("/queue/error")
     public ErrorDto handleIllegalArgumentException(IllegalArgumentException e) {
         log.warn("STOMP消息中的非法参数", e);
         return new ErrorDto(
-            "INVALID_ARGUMENT",
-            "无效的请求参数: " + e.getMessage()
+                "INVALID_ARGUMENT",
+                "无效的请求参数: " + e.getMessage()
         );
     }
 
     /**
-     * 新增: 处理SillyTavern相关的业务异常
+     * 处理SillyTavern相关的业务异常，返回友好的中文错误信息。
+     *
+     * @param e 运行时异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(RuntimeException.class)
     @SendToUser("/queue/error")
     public ErrorDto handleRuntimeException(RuntimeException e) {
         log.error("SillyTavern业务异常", e);
-        
         String message = e.getMessage();
         String userMessage = getSillyTavernFriendlyMessage(message);
-        
         return new ErrorDto("SILLYTAVERN_ERROR", userMessage);
     }
-    
+
     /**
-     * 处理安全相关异常 - 中文错误信息
+     * 处理安全相关异常，返回中文错误信息。
+     *
+     * @param e 安全异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(SecurityException.class)
     @SendToUser("/queue/error")
     public ErrorDto handleSecurityException(SecurityException e) {
         log.error("STOMP消息处理安全错误", e);
-        
+
         String message = e.getMessage();
         String userMessage;
-        
+
         if (message != null && message.contains("不允许执行的命令")) {
             userMessage = "安全限制: 不允许执行此命令";
         } else {
             userMessage = "访问被拒绝: " + (message != null ? message : "权限不足");
         }
-        
+
         return new ErrorDto("SECURITY_ERROR", userMessage);
     }
 
     /**
-     * 处理中断操作（取消的任务） - 中文错误信息
+     * 处理中断操作（如用户主动取消任务），返回中文提示。
+     *
+     * @param e 中断异常对象
+     * @return 标准化错误信息
      */
     @MessageExceptionHandler(InterruptedException.class)
     @SendToUser("/queue/error")
@@ -206,23 +231,25 @@ public class StompGlobalExceptionHandler {
         log.info("操作被中断", e);
         Thread.currentThread().interrupt(); // 恢复中断状态
         return new ErrorDto(
-            "OPERATION_CANCELLED",
-            "操作已取消: " + (e.getMessage() != null ? e.getMessage() : "用户取消操作")
+                "OPERATION_CANCELLED",
+                "操作已取消: " + (e.getMessage() != null ? e.getMessage() : "用户取消操作")
         );
     }
 
     /**
-     * 获取用户友好的通用错误信息
+     * 获取用户友好的通用错误信息（中文）。
+     *
+     * @param e 异常对象
+     * @return 用户可读的错误信息
      */
     private String getUserFriendlyMessage(Exception e) {
         String message = e.getMessage();
         if (message == null) {
             return "系统出现未知错误，请联系管理员";
         }
-        
-        // 常见错误模式匹配
+
         String lowerMessage = message.toLowerCase();
-        
+
         if (lowerMessage.contains("timeout")) {
             return "操作超时，请检查网络连接后重试";
         } else if (lowerMessage.contains("connection")) {
@@ -235,17 +262,20 @@ public class StompGlobalExceptionHandler {
             return "系统处理错误: " + message;
         }
     }
-    
+
     /**
-     * 获取SillyTavern相关的友好错误信息
+     * 获取SillyTavern相关的友好错误信息（中文）。
+     *
+     * @param message 原始错误信息
+     * @return 用户可读的错误信息
      */
     private String getSillyTavernFriendlyMessage(String message) {
         if (message == null) {
             return "SillyTavern操作失败";
         }
-        
+
         String lowerMessage = message.toLowerCase();
-        
+
         if (lowerMessage.contains("container") && lowerMessage.contains("not found")) {
             return "容器不存在，请先创建容器";
         } else if (lowerMessage.contains("container") && lowerMessage.contains("not running")) {
@@ -261,20 +291,22 @@ public class StompGlobalExceptionHandler {
         } else if (lowerMessage.contains("配置验证失败")) {
             return "配置参数验证失败，请检查输入的配置项";
         } else {
-            return message; // 返回原始错误信息
+            return message;
         }
     }
 
     /**
-     * 获取堆栈跟踪信息作为字符串（仅在开发模式下）
+     * 获取堆栈跟踪信息作为字符串（仅在开发/调试模式下）。
+     * 生产环境建议返回null以避免泄露敏感信息。
+     *
+     * @param e 异常对象
+     * @return 堆栈跟踪字符串，或null
      */
     private String getStackTraceAsString(Exception e) {
-        // 仅在开发/调试模式下包含堆栈跟踪
-        // 在生产环境中，出于安全考虑应返回null
         if (log.isDebugEnabled()) {
             StringBuilder sb = new StringBuilder();
             for (StackTraceElement element : e.getStackTrace()) {
-                sb.append(element.toString()).append("\n");
+                sb.append(element).append("\n");
             }
             return sb.toString();
         }

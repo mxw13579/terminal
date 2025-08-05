@@ -15,41 +15,63 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Service for managing temporary file cleanup.
- * Handles automatic cleanup of exported data files and uploaded files.
+ * 文件清理服务，用于管理临时文件的自动清理。
+ * 包括导出数据文件和上传文件的定时清理与强制清理。
+ * <p>
+ * 支持定时任务与手动触发，自动维护最大文件数和最大存活时间。
+ * </p>
+ *
+ * @author lizelin
  */
 @Slf4j
 @Service
 public class FileCleanupService {
-    
+
+    /**
+     * 临时目录路径
+     */
     @Value("${sillytavern.temp.directory:./temp}")
     private String tempDirectory;
-    
+
+    /**
+     * 文件最大存活时间（小时）
+     */
     @Value("${sillytavern.cleanup.max-age-hours:1}")
     private int defaultMaxAgeHours;
-    
+
+    /**
+     * 临时目录最大文件数
+     */
     @Value("${sillytavern.cleanup.max-files:100}")
     private int maxTotalFiles;
-    
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+
+    /**
+     * 定时任务线程池（单线程）
+     */
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    /**
+     * 已调度的文件清理任务映射（文件路径 -> 清理时间）
+     */
     private final ConcurrentHashMap<String, LocalDateTime> scheduledCleanups = new ConcurrentHashMap<>();
-    
+
+    /**
+     * 初始化方法，创建临时目录（如不存在）。
+     */
     @PostConstruct
     public void initialize() {
-        // Create temp directory if it doesn't exist
         File tempDir = new File(tempDirectory);
-        if (!tempDir.exists()) {
-            boolean created = tempDir.mkdirs();
-            if (created) {
-                log.info("Created temporary directory: {}", tempDirectory);
-            } else {
-                log.warn("Failed to create temporary directory: {}", tempDirectory);
-            }
+        if (!tempDir.exists() && tempDir.mkdirs()) {
+            log.info("已创建临时目录: {}", tempDirectory);
+        } else if (!tempDir.exists()) {
+            log.warn("无法创建临时目录: {}", tempDirectory);
         }
-        
-        log.info("FileCleanupService initialized with temp directory: {}", tempDirectory);
+        log.info("FileCleanupService 初始化完成，临时目录: {}", tempDirectory);
     }
-    
+
+    /**
+     * 销毁前关闭线程池，确保资源释放。
+     */
     @PreDestroy
     public void shutdown() {
         scheduler.shutdown();
@@ -62,64 +84,61 @@ public class FileCleanupService {
             Thread.currentThread().interrupt();
         }
     }
-    
+
     /**
-     * Schedule cleanup for a specific file
+     * 调度指定文件在若干小时后清理。
+     *
+     * @param filePath     文件绝对路径
+     * @param hoursFromNow 多少小时后清理
      */
     public void scheduleCleanup(String filePath, int hoursFromNow) {
         if (filePath == null || filePath.trim().isEmpty()) {
-            log.warn("Cannot schedule cleanup for null or empty file path");
+            log.warn("无法调度清理，文件路径为空");
             return;
         }
-        
         LocalDateTime cleanupTime = LocalDateTime.now().plusHours(hoursFromNow);
         scheduledCleanups.put(filePath, cleanupTime);
-        
         scheduler.schedule(() -> {
             deleteFile(filePath);
             scheduledCleanups.remove(filePath);
         }, hoursFromNow, TimeUnit.HOURS);
-        
-        log.debug("Scheduled cleanup for file: {} at {}", filePath, cleanupTime);
+        log.debug("已调度文件清理: {}，清理时间: {}", filePath, cleanupTime);
     }
-    
+
     /**
-     * Schedule immediate cleanup for a file
+     * 立即调度文件清理。
+     *
+     * @param filePath 文件绝对路径
      */
     public void scheduleImmediateCleanup(String filePath) {
         scheduleCleanup(filePath, 0);
     }
-    
+
     /**
-     * Periodic cleanup of old files (runs every 15 minutes)
+     * 定时任务：每 15 分钟清理超时文件，并维护最大文件数。
      */
-    @Scheduled(fixedRate = 900000) // 15 minutes
+    @Scheduled(fixedRate = 900_000)
     public void periodicCleanup() {
-        log.debug("Starting periodic cleanup of temporary files");
-        
+        log.debug("开始定时清理临时文件");
         File tempDir = new File(tempDirectory);
         if (!tempDir.exists() || !tempDir.isDirectory()) {
-            log.warn("Temporary directory does not exist or is not a directory: {}", tempDirectory);
+            log.warn("临时目录不存在或不是目录: {}", tempDirectory);
             return;
         }
-        
         File[] files = tempDir.listFiles();
         if (files == null) {
-            log.debug("No files found in temporary directory");
+            log.debug("临时目录下无文件");
             return;
         }
-        
         LocalDateTime cutoffTime = LocalDateTime.now().minusHours(defaultMaxAgeHours);
         int deletedCount = 0;
         long totalSizeDeleted = 0;
-        
         for (File file : files) {
             if (file.isFile()) {
                 LocalDateTime fileTime = LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(file.lastModified()),
-                    java.time.ZoneId.systemDefault()
+                        java.time.Instant.ofEpochMilli(file.lastModified()),
+                        java.time.ZoneId.systemDefault()
                 );
-                
                 if (fileTime.isBefore(cutoffTime)) {
                     long fileSize = file.length();
                     if (deleteFile(file.getAbsolutePath())) {
@@ -129,18 +148,14 @@ public class FileCleanupService {
                 }
             }
         }
-        
         if (deletedCount > 0) {
-            log.info("Periodic cleanup completed: {} files deleted, {} bytes freed", 
-                deletedCount, totalSizeDeleted);
+            log.info("定时清理完成: 删除 {} 个文件，释放 {} 字节", deletedCount, totalSizeDeleted);
         }
-        
-        // Check if we have too many files and delete oldest ones
         enforceFileLimit();
     }
-    
+
     /**
-     * Enforce maximum file limit by deleting oldest files
+     * 强制限制临时目录文件数，超出则删除最旧文件。
      */
     private void enforceFileLimit() {
         File tempDir = new File(tempDirectory);
@@ -148,137 +163,146 @@ public class FileCleanupService {
         if (files == null || files.length <= maxTotalFiles) {
             return;
         }
-        
-        // Sort files by last modified time (oldest first)
-        java.util.Arrays.sort(files, (f1, f2) -> 
-            Long.compare(f1.lastModified(), f2.lastModified()));
-        
+        // 按最后修改时间升序排序
+        java.util.Arrays.sort(files, (f1, f2) -> Long.compare(f1.lastModified(), f2.lastModified()));
         int filesToDelete = files.length - maxTotalFiles;
         int deletedCount = 0;
-        
         for (int i = 0; i < filesToDelete && i < files.length; i++) {
-            if (files[i].isFile()) {
-                if (deleteFile(files[i].getAbsolutePath())) {
-                    deletedCount++;
-                }
+            if (files[i].isFile() && deleteFile(files[i].getAbsolutePath())) {
+                deletedCount++;
             }
         }
-        
         if (deletedCount > 0) {
-            log.info("Enforced file limit: deleted {} oldest files (limit: {})", 
-                deletedCount, maxTotalFiles);
+            log.info("已强制删除 {} 个最旧文件（文件数上限: {}）", deletedCount, maxTotalFiles);
         }
     }
-    
+
     /**
-     * Delete a specific file
+     * 删除指定文件。
+     *
+     * @param filePath 文件绝对路径
+     * @return 删除成功返回 true，不存在视为成功
      */
     public boolean deleteFile(String filePath) {
         if (filePath == null || filePath.trim().isEmpty()) {
             return false;
         }
-        
         File file = new File(filePath);
         if (!file.exists()) {
-            log.debug("File does not exist, skipping deletion: {}", filePath);
-            return true; // Consider it successful if it doesn't exist
+            log.debug("文件不存在，跳过删除: {}", filePath);
+            return true;
         }
-        
         try {
             if (file.delete()) {
-                log.debug("Successfully deleted file: {}", filePath);
+                log.debug("成功删除文件: {}", filePath);
                 return true;
             } else {
-                log.warn("Failed to delete file: {}", filePath);
+                log.warn("删除文件失败: {}", filePath);
                 return false;
             }
         } catch (SecurityException e) {
-            log.error("Security exception while deleting file: {}", filePath, e);
+            log.error("删除文件时发生安全异常: {}", filePath, e);
             return false;
         }
     }
-    
+
     /**
-     * Get current temporary directory usage statistics
+     * 获取当前临时目录的文件统计信息。
+     *
+     * @return 文件统计信息
      */
     public FileCleanupStats getCleanupStats() {
         File tempDir = new File(tempDirectory);
         if (!tempDir.exists() || !tempDir.isDirectory()) {
             return new FileCleanupStats(0, 0, 0);
         }
-        
         File[] files = tempDir.listFiles();
         if (files == null) {
             return new FileCleanupStats(0, 0, 0);
         }
-        
         long totalSize = 0;
         int fileCount = 0;
-        
         for (File file : files) {
             if (file.isFile()) {
                 totalSize += file.length();
                 fileCount++;
             }
         }
-        
         return new FileCleanupStats(fileCount, totalSize, scheduledCleanups.size());
     }
-    
+
     /**
-     * Force cleanup of all files in temp directory (admin function)
+     * 强制清理临时目录下所有文件（管理员功能）。
+     *
+     * @return 实际删除的文件数
      */
     public int forceCleanupAll() {
-        log.warn("Force cleanup of all temporary files requested");
-        
+        log.warn("收到强制清理所有临时文件请求");
         File tempDir = new File(tempDirectory);
         if (!tempDir.exists() || !tempDir.isDirectory()) {
             return 0;
         }
-        
         File[] files = tempDir.listFiles();
         if (files == null) {
             return 0;
         }
-        
         int deletedCount = 0;
         for (File file : files) {
-            if (file.isFile()) {
-                if (deleteFile(file.getAbsolutePath())) {
-                    deletedCount++;
-                }
+            if (file.isFile() && deleteFile(file.getAbsolutePath())) {
+                deletedCount++;
             }
         }
-        
-        // Clear scheduled cleanups
         scheduledCleanups.clear();
-        
-        log.info("Force cleanup completed: {} files deleted", deletedCount);
+        log.info("强制清理完成: 删除 {} 个文件", deletedCount);
         return deletedCount;
     }
-    
+
     /**
-     * Statistics about cleanup service
+     * 文件清理服务的统计信息。
      */
     public static class FileCleanupStats {
+        /**
+         * 当前文件数
+         */
         private final int currentFileCount;
+        /**
+         * 当前总文件大小（字节）
+         */
         private final long currentTotalSizeBytes;
+        /**
+         * 已调度清理的文件数
+         */
         private final int scheduledCleanupCount;
-        
+
+        /**
+         * 构造方法
+         *
+         * @param currentFileCount       当前文件数
+         * @param currentTotalSizeBytes  当前总大小
+         * @param scheduledCleanupCount  已调度清理数
+         */
         public FileCleanupStats(int currentFileCount, long currentTotalSizeBytes, int scheduledCleanupCount) {
             this.currentFileCount = currentFileCount;
             this.currentTotalSizeBytes = currentTotalSizeBytes;
             this.scheduledCleanupCount = scheduledCleanupCount;
         }
-        
-        public int getCurrentFileCount() { return currentFileCount; }
-        public long getCurrentTotalSizeBytes() { return currentTotalSizeBytes; }
-        public int getScheduledCleanupCount() { return scheduledCleanupCount; }
-        
+
+        public int getCurrentFileCount() {
+            return currentFileCount;
+        }
+
+        public long getCurrentTotalSizeBytes() {
+            return currentTotalSizeBytes;
+        }
+
+        public int getScheduledCleanupCount() {
+            return scheduledCleanupCount;
+        }
+
         @Override
         public String toString() {
-            return String.format("FileCleanupStats{files=%d, size=%d bytes, scheduled=%d}", 
-                currentFileCount, currentTotalSizeBytes, scheduledCleanupCount);
+            return String.format("FileCleanupStats{files=%d, size=%d bytes, scheduled=%d}",
+                    currentFileCount, currentTotalSizeBytes, scheduledCleanupCount);
         }
     }
 }

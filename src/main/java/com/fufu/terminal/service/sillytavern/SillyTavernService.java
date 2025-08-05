@@ -8,10 +8,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.List;
 
 /**
- * Core service for SillyTavern management operations.
- * Provides high-level operations for deployment, status checking, and lifecycle management.
+ * SillyTavern 管理核心服务类。
+ * 提供部署、状态检查、生命周期管理等高阶操作。
  */
 @Slf4j
 @Service
@@ -25,37 +26,54 @@ public class SillyTavernService {
     private static final String DEFAULT_IMAGE = "ghcr.io/sillytavern/sillytavern:latest";
 
     /**
-     * Validate system requirements for SillyTavern deployment
+     * 校验 SillyTavern 部署所需的系统要求。
+     *
+     * @param connection SSH 连接信息
+     * @return 系统信息 DTO，包含校验结果
      */
     public SystemInfoDto validateSystemRequirements(SshConnection connection) {
-        log.info("Validating system requirements for SillyTavern deployment");
+        log.info("正在校验 SillyTavern 部署的系统要求");
         return systemDetectionService.validateSystemRequirements(connection);
     }
 
     /**
-     * Get current container status
+     * 获取默认容器的当前状态。
+     *
+     * @param connection SSH 连接信息
+     * @return 容器状态 DTO
      */
     public ContainerStatusDto getContainerStatus(SshConnection connection) {
         return getContainerStatus(connection, DEFAULT_CONTAINER_NAME);
     }
 
-    /**k
-     * Get container status for specific container name
+    /**
+     * 获取指定容器名的容器状态。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @return 容器状态 DTO
      */
     public ContainerStatusDto getContainerStatus(SshConnection connection, String containerName) {
-        log.debug("Getting container status for: {}", containerName);
+        log.debug("获取容器状态: {}", containerName);
         return dockerService.getContainerStatus(connection, containerName);
     }
 
     /**
-     * Check if SillyTavern container is running
+     * 判断默认 SillyTavern 容器是否正在运行。
+     *
+     * @param connection SSH 连接信息
+     * @return 是否运行中
      */
     public boolean isContainerRunning(SshConnection connection) {
         return isContainerRunning(connection, DEFAULT_CONTAINER_NAME);
     }
 
     /**
-     * Check if specific container is running
+     * 判断指定容器是否正在运行。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @return 是否运行中
      */
     public boolean isContainerRunning(SshConnection connection, String containerName) {
         ContainerStatusDto status = getContainerStatus(connection, containerName);
@@ -63,18 +81,21 @@ public class SillyTavernService {
     }
 
     /**
-     * Deploy SillyTavern container asynchronously with progress updates
+     * 异步部署 SillyTavern 容器，并通过回调实时反馈进度。
      *
-     * 部署酒馆
+     * @param connection SSH 连接信息
+     * @param request 部署请求参数
+     * @param progressCallback 进度回调，实时反馈部署阶段
+     * @return CompletableFuture<Void>
      */
     public CompletableFuture<Void> deployContainer(SshConnection connection,
-                                                  DeploymentRequestDto request,
-                                                  Consumer<DeploymentProgressDto> progressCallback) {
-        log.info("Starting SillyTavern deployment with request: {}", request);
+                                                   DeploymentRequestDto request,
+                                                   Consumer<DeploymentProgressDto> progressCallback) {
+        log.info("开始部署 SillyTavern，参数: {}", request);
 
         return CompletableFuture.runAsync(() -> {
             try {
-                // Stage 1: System validation
+                // 阶段 1：系统校验
                 progressCallback.accept(DeploymentProgressDto.success("validation", 10, "验证系统要求..."));
 
                 SystemInfoDto systemInfo = validateSystemRequirements(connection);
@@ -84,149 +105,179 @@ public class SillyTavernService {
                     return;
                 }
 
-                // Stage 2: Check if container already exists
+                // 阶段 2：检查容器是否已存在
                 progressCallback.accept(DeploymentProgressDto.success("check-existing", 20, "检查现有容器..."));
 
                 ContainerStatusDto existingStatus = getContainerStatus(connection, request.getContainerName());
                 if (existingStatus.getExists()) {
                     progressCallback.accept(DeploymentProgressDto.error("check-existing",
-                        "容器 '" + request.getContainerName() + "' 已存在。请先删除现有容器或使用不同的名称。"));
+                            "容器 '" + request.getContainerName() + "' 已存在。请先删除现有容器或使用不同的名称。"));
                     return;
                 }
 
-                // Stage 3: Pull Docker image
+                // 阶段 3：拉取 Docker 镜像
                 progressCallback.accept(DeploymentProgressDto.success("pull-image", 30, "拉取 Docker 镜像..."));
 
                 dockerService.pullImage(connection, request.getDockerImage(), (pullProgress) -> {
                     progressCallback.accept(DeploymentProgressDto.success("pull-image", 50, pullProgress));
-                }).get(); // Wait for image pull to complete
+                }).get(); // 等待镜像拉取完成
 
-                // Stage 4: Create container
+                // 阶段 4：创建容器
                 progressCallback.accept(DeploymentProgressDto.success("create-container", 70, "创建容器..."));
 
                 String containerId = dockerService.createContainer(
-                    connection,
-                    request.getContainerName(),
-                    request.getDockerImage(),
-                    request.getPort(),
-                    request.getDataPath()
+                        connection,
+                        request.getContainerName(),
+                        request.getDockerImage(),
+                        request.getPort(),
+                        request.getDataPath()
                 );
 
-                // Stage 5: Verify deployment
+                // 阶段 5：验证部署
                 progressCallback.accept(DeploymentProgressDto.success("verify", 90, "验证部署..."));
 
-                // Wait a moment for container to start
+                // 等待容器启动
                 Thread.sleep(2000);
 
                 ContainerStatusDto finalStatus = getContainerStatus(connection, request.getContainerName());
                 if (finalStatus.getExists() && finalStatus.getRunning()) {
                     progressCallback.accept(DeploymentProgressDto.completed(
-                        "SillyTavern 部署成功！容器正在运行，可通过端口 " + request.getPort() + " 访问。"));
-                    log.info("SillyTavern deployment completed successfully");
+                            "SillyTavern 部署成功！容器正在运行，可通过端口 " + request.getPort() + " 访问。"));
+                    log.info("SillyTavern 部署成功");
                 } else {
                     progressCallback.accept(DeploymentProgressDto.error("verify",
-                        "容器创建成功但未正常启动。请检查日志获取详细信息。"));
+                            "容器创建成功但未正常启动。请检查日志获取详细信息。"));
                 }
 
             } catch (Exception e) {
-                log.error("Error during SillyTavern deployment", e);
+                log.error("部署 SillyTavern 过程中发生异常", e);
                 progressCallback.accept(DeploymentProgressDto.error("deployment",
-                    "部署过程中发生错误: " + e.getMessage()));
+                        "部署过程中发生错误: " + e.getMessage()));
             }
         });
     }
 
     /**
-     * Start SillyTavern container
+     * 启动默认 SillyTavern 容器。
+     *
+     * @param connection SSH 连接信息
+     * @throws Exception 启动失败时抛出
      */
     public void startContainer(SshConnection connection) throws Exception {
         startContainer(connection, DEFAULT_CONTAINER_NAME);
     }
 
     /**
-     * Start specific container
+     * 启动指定容器。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @throws Exception 启动失败时抛出
      */
     public void startContainer(SshConnection connection, String containerName) throws Exception {
-        log.info("Starting SillyTavern container: {}", containerName);
+        log.info("启动 SillyTavern 容器: {}", containerName);
 
         ContainerStatusDto status = getContainerStatus(connection, containerName);
         if (!status.getExists()) {
-            throw new IllegalStateException("Container '" + containerName + "' does not exist");
+            throw new IllegalStateException("容器 '" + containerName + "' 不存在");
         }
 
         if (status.getRunning()) {
-            throw new IllegalStateException("Container '" + containerName + "' is already running");
+            throw new IllegalStateException("容器 '" + containerName + "' 已经在运行");
         }
 
         dockerService.startContainer(connection, containerName);
     }
 
     /**
-     * Stop SillyTavern container
+     * 停止默认 SillyTavern 容器。
+     *
+     * @param connection SSH 连接信息
+     * @throws Exception 停止失败时抛出
      */
     public void stopContainer(SshConnection connection) throws Exception {
         stopContainer(connection, DEFAULT_CONTAINER_NAME);
     }
 
     /**
-     * Stop specific container
+     * 停止指定容器。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @throws Exception 停止失败时抛出
      */
     public void stopContainer(SshConnection connection, String containerName) throws Exception {
-        log.info("Stopping SillyTavern container: {}", containerName);
+        log.info("停止 SillyTavern 容器: {}", containerName);
 
         ContainerStatusDto status = getContainerStatus(connection, containerName);
         if (!status.getExists()) {
-            throw new IllegalStateException("Container '" + containerName + "' does not exist");
+            throw new IllegalStateException("容器 '" + containerName + "' 不存在");
         }
 
         if (!status.getRunning()) {
-            throw new IllegalStateException("Container '" + containerName + "' is not running");
+            throw new IllegalStateException("容器 '" + containerName + "' 未在运行");
         }
 
         dockerService.stopContainer(connection, containerName);
     }
 
     /**
-     * Restart SillyTavern container
+     * 重启默认 SillyTavern 容器。
+     *
+     * @param connection SSH 连接信息
+     * @throws Exception 重启失败时抛出
      */
     public void restartContainer(SshConnection connection) throws Exception {
         restartContainer(connection, DEFAULT_CONTAINER_NAME);
     }
 
     /**
-     * Restart specific container
+     * 重启指定容器。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @throws Exception 重启失败时抛出
      */
     public void restartContainer(SshConnection connection, String containerName) throws Exception {
-        log.info("Restarting SillyTavern container: {}", containerName);
+        log.info("重启 SillyTavern 容器: {}", containerName);
 
         ContainerStatusDto status = getContainerStatus(connection, containerName);
         if (!status.getExists()) {
-            throw new IllegalStateException("Container '" + containerName + "' does not exist");
+            throw new IllegalStateException("容器 '" + containerName + "' 不存在");
         }
 
         dockerService.restartContainer(connection, containerName);
     }
 
     /**
-     * Upgrade SillyTavern container (pull latest image and restart)
+     * 升级默认 SillyTavern 容器（拉取最新镜像并重启）。
+     *
+     * @param connection SSH 连接信息
+     * @param progressCallback 进度回调
+     * @return CompletableFuture<Void>
      */
     public CompletableFuture<Void> upgradeContainer(SshConnection connection,
-                                                   Consumer<String> progressCallback) {
+                                                    Consumer<String> progressCallback) {
         return upgradeContainer(connection, DEFAULT_CONTAINER_NAME, progressCallback);
     }
 
     /**
-     * Upgrade specific container
+     * 升级指定容器（拉取最新镜像并重启）。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @param progressCallback 进度回调
+     * @return CompletableFuture<Void>
      */
     public CompletableFuture<Void> upgradeContainer(SshConnection connection, String containerName,
-                                                   Consumer<String> progressCallback) {
-        log.info("Upgrading SillyTavern container: {}", containerName);
+                                                    Consumer<String> progressCallback) {
+        log.info("升级 SillyTavern 容器: {}", containerName);
 
         return CompletableFuture.runAsync(() -> {
             try {
                 ContainerStatusDto status = getContainerStatus(connection, containerName);
                 if (!status.getExists()) {
-                    throw new IllegalStateException("Container '" + containerName + "' does not exist");
+                    throw new IllegalStateException("容器 '" + containerName + "' 不存在");
                 }
 
                 String image = status.getImage();
@@ -234,67 +285,80 @@ public class SillyTavernService {
                     image = DEFAULT_IMAGE;
                 }
 
-                // Stop container if running
+                // 停止容器（如已运行）
                 if (status.getRunning()) {
-                    progressCallback.accept("Stopping container...");
+                    progressCallback.accept("正在停止容器...");
                     dockerService.stopContainer(connection, containerName);
                 }
 
-                // Pull latest image
-                progressCallback.accept("Pulling latest image...");
+                // 拉取最新镜像
+                progressCallback.accept("正在拉取最新镜像...");
                 dockerService.pullImage(connection, image, progressCallback).get();
 
-                // Start container
-                progressCallback.accept("Starting container...");
+                // 启动容器
+                progressCallback.accept("正在启动容器...");
                 dockerService.startContainer(connection, containerName);
 
-                progressCallback.accept("Upgrade completed successfully");
+                progressCallback.accept("升级完成");
 
             } catch (Exception e) {
-                log.error("Error upgrading container: {}", containerName, e);
-                throw new RuntimeException("Upgrade failed: " + e.getMessage(), e);
+                log.error("升级容器 '{}' 失败", containerName, e);
+                throw new RuntimeException("升级失败: " + e.getMessage(), e);
             }
         });
     }
 
     /**
-     * Delete SillyTavern container
+     * 删除默认 SillyTavern 容器。
+     *
+     * @param connection SSH 连接信息
+     * @param removeData 是否同时删除数据目录
+     * @throws Exception 删除失败时抛出
      */
     public void deleteContainer(SshConnection connection, boolean removeData) throws Exception {
         deleteContainer(connection, DEFAULT_CONTAINER_NAME, removeData);
     }
 
     /**
-     * Delete specific container
+     * 删除指定容器。
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @param removeData 是否同时删除数据目录
+     * @throws Exception 删除失败时抛出
      */
     public void deleteContainer(SshConnection connection, String containerName, boolean removeData) throws Exception {
-        log.info("Deleting SillyTavern container: {} (removeData: {})", containerName, removeData);
+        log.info("删除 SillyTavern 容器: {} (removeData: {})", containerName, removeData);
 
         ContainerStatusDto status = getContainerStatus(connection, containerName);
         if (!status.getExists()) {
-            throw new IllegalStateException("Container '" + containerName + "' does not exist");
+            throw new IllegalStateException("容器 '" + containerName + "' 不存在");
         }
 
-        // Stop container if running
+        // 如容器正在运行，先停止
         if (status.getRunning()) {
             dockerService.stopContainer(connection, containerName);
         }
 
-        // Remove container
+        // 删除容器
         dockerService.removeContainer(connection, containerName, true);
 
-        // Optionally remove data directory
+        // 可选：删除数据目录（具体实现需根据数据路径管理方式补充）
         if (removeData) {
-            // This would need to be implemented based on how data paths are managed
-            log.info("Data removal requested but not implemented yet");
+            log.info("请求删除数据目录，但尚未实现具体逻辑");
         }
     }
 
     /**
-     * Get container logs with specified parameters
+     * 获取容器日志。
+     *
+     * @param connection SSH 连接信息
+     * @param request 日志请求参数
+     * @return 日志内容列表
+     * @throws Exception 获取日志失败时抛出
      */
-    public java.util.List<String> getContainerLogs(SshConnection connection, LogRequestDto request) throws Exception {
+    public List<String> getContainerLogs(SshConnection connection, LogRequestDto request) throws Exception {
         return dockerService.getContainerLogs(connection, request.getContainerName(),
-                                            request.getTailLines(), request.getDays());
+                request.getTailLines(), request.getDays());
     }
 }

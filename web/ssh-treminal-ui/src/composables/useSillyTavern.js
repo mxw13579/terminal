@@ -24,6 +24,18 @@ export function useSillyTavern(options = {}) {
     // Deployment
     const isDeploying = ref(false);
     const deploymentProgress = ref(null);
+    
+    // Interactive deployment state
+    const interactiveDeployment = ref({
+        active: false,
+        mode: null, // 'trusted' | 'interactive'
+        config: null,
+        currentStep: null,
+        steps: [],
+        completed: false,
+        success: false,
+        accessInfo: null
+    });
 
     // Service actions
     const isPerformingAction = ref(false);
@@ -242,6 +254,56 @@ export function useSillyTavern(options = {}) {
             }
         });
 
+        // Subscribe to interactive deployment progress
+        client.subscribe('/user/queue/sillytavern/interactive-deploy-progress', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleInteractiveDeploymentProgress(data);
+            } catch (e) {
+                console.error('Error processing interactive deployment progress:', e);
+            }
+        });
+
+        // Subscribe to interactive deployment results
+        client.subscribe('/user/queue/sillytavern/interactive-deploy', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleInteractiveDeploymentResult(data);
+            } catch (e) {
+                console.error('Error processing interactive deployment result:', e);
+            }
+        });
+
+        // Subscribe to deployment confirmation responses
+        client.subscribe('/user/queue/sillytavern/deployment-confirm', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDeploymentConfirmResponse(data);
+            } catch (e) {
+                console.error('Error processing deployment confirm response:', e);
+            }
+        });
+
+        // Subscribe to deployment skip responses
+        client.subscribe('/user/queue/sillytavern/deployment-skip', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDeploymentSkipResponse(data);
+            } catch (e) {
+                console.error('Error processing deployment skip response:', e);
+            }
+        });
+
+        // Subscribe to deployment cancel responses
+        client.subscribe('/user/queue/sillytavern/deployment-cancel', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleDeploymentCancelResponse(data);
+            } catch (e) {
+                console.error('Error processing deployment cancel response:', e);
+            }
+        });
+
         // Subscribe to errors
         client.subscribe('/user/queue/errors', (message) => {
             try {
@@ -316,6 +378,96 @@ export function useSillyTavern(options = {}) {
             logs.value = data.payload.logs || [];
         } else {
             onShowModal("日志获取失败: " + (data.error || 'Unknown error'));
+        }
+    };
+
+    // --- Interactive Deployment Handlers ---
+    const handleInteractiveDeploymentProgress = (data) => {
+        if (data.payload) {
+            const { step, message, progress, requiresConfirmation, stepData } = data.payload;
+            
+            // 更新交互式部署状态
+            interactiveDeployment.value.active = true;
+            interactiveDeployment.value.currentStep = step;
+            
+            // 如果有步骤数据，更新对应步骤
+            if (interactiveDeployment.value.steps && step) {
+                const stepIndex = interactiveDeployment.value.steps.findIndex(s => s.id === step);
+                if (stepIndex !== -1) {
+                    const currentStep = interactiveDeployment.value.steps[stepIndex];
+                    currentStep.status = requiresConfirmation ? 'waiting' : 'running';
+                    currentStep.progress = progress || 0;
+                    currentStep.requiresConfirmation = requiresConfirmation;
+                    
+                    // 添加日志消息
+                    if (message) {
+                        if (!currentStep.logs) currentStep.logs = [];
+                        currentStep.logs.push({
+                            timestamp: new Date(),
+                            message: message,
+                            type: 'info'
+                        });
+                    }
+                    
+                    // 更新步骤数据
+                    if (stepData) {
+                        currentStep.stepData = stepData;
+                    }
+                }
+            }
+        }
+    };
+
+    const handleInteractiveDeploymentResult = (data) => {
+        if (data.success) {
+            interactiveDeployment.value.completed = true;
+            interactiveDeployment.value.success = true;
+            interactiveDeployment.value.accessInfo = data.accessInfo;
+            
+            onShowModal(data.message || "交互式部署完成！", "部署成功");
+            
+            // 刷新容器状态
+            getContainerStatus();
+        } else {
+            interactiveDeployment.value.completed = true;
+            interactiveDeployment.value.success = false;
+            
+            onShowModal("交互式部署失败: " + (data.error || data.message), "部署失败");
+        }
+    };
+
+    const handleDeploymentConfirmResponse = (data) => {
+        if (data.success) {
+            // 确认成功，等待下一步进度更新
+            console.log('部署步骤确认成功:', data.stepId);
+        } else {
+            onShowModal("步骤确认失败: " + (data.error || data.message), "确认失败");
+        }
+    };
+
+    const handleDeploymentSkipResponse = (data) => {
+        if (data.success) {
+            // 跳过成功，更新步骤状态
+            const stepIndex = interactiveDeployment.value.steps.findIndex(s => s.id === data.stepId);
+            if (stepIndex !== -1) {
+                interactiveDeployment.value.steps[stepIndex].status = 'skipped';
+            }
+            console.log('部署步骤跳过成功:', data.stepId);
+        } else {
+            onShowModal("步骤跳过失败: " + (data.error || data.message), "跳过失败");
+        }
+    };
+
+    const handleDeploymentCancelResponse = (data) => {
+        if (data.success) {
+            // 取消成功，重置交互式部署状态
+            interactiveDeployment.value.active = false;
+            interactiveDeployment.value.completed = true;
+            interactiveDeployment.value.success = false;
+            
+            onShowModal("部署已取消", "部署取消");
+        } else {
+            onShowModal("取消部署失败: " + (data.error || data.message), "取消失败");
         }
     };
 
@@ -414,6 +566,167 @@ export function useSillyTavern(options = {}) {
         });
     };
 
+    // --- Interactive Deployment Methods ---
+    const startInteractiveDeployment = (deploymentConfig) => {
+        const client = getStompClient();
+        if (!client || !client.connected) {
+            onShowModal("WebSocket 未连接");
+            return;
+        }
+
+        // 初始化交互式部署状态
+        interactiveDeployment.value = {
+            active: true,
+            mode: deploymentConfig.mode,
+            config: deploymentConfig,
+            currentStep: null,
+            steps: [
+                {
+                    id: 'geo-detection',
+                    title: '地理位置检测',
+                    status: 'pending',
+                    requiresConfirmation: false,
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'system-detection', 
+                    title: '系统检测',
+                    status: 'pending',
+                    requiresConfirmation: false,
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'package-manager',
+                    title: '包管理器配置',
+                    status: 'pending',
+                    requiresConfirmation: deploymentConfig.mode === 'interactive',
+                    confirmationMessage: '是否配置系统镜像源以加速软件包下载？',
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'docker-installation',
+                    title: 'Docker安装',
+                    status: 'pending',
+                    requiresConfirmation: false,
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'docker-mirror',
+                    title: 'Docker镜像加速',
+                    status: 'pending',
+                    requiresConfirmation: deploymentConfig.mode === 'interactive',
+                    confirmationMessage: '是否配置Docker镜像加速器？',
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'sillytavern-deployment',
+                    title: 'SillyTavern部署',
+                    status: 'pending',
+                    requiresConfirmation: false,
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'external-access',
+                    title: '外网访问配置',
+                    status: 'pending',
+                    requiresConfirmation: false,
+                    logs: [],
+                    progress: 0
+                },
+                {
+                    id: 'service-validation',
+                    title: '服务验证',
+                    status: 'pending',
+                    requiresConfirmation: false,
+                    logs: [],
+                    progress: 0
+                }
+            ],
+            completed: false,
+            success: false,
+            accessInfo: null
+        };
+
+        // 发送交互式部署请求
+        client.publish({
+            destination: '/app/sillytavern/interactive-deploy',
+            body: JSON.stringify(deploymentConfig)
+        });
+    };
+
+    const confirmDeploymentStep = (stepId, confirmed, userInput = {}) => {
+        const client = getStompClient();
+        if (!client || !client.connected) {
+            onShowModal("WebSocket 未连接");
+            return;
+        }
+
+        const confirmRequest = {
+            stepId,
+            confirmed,
+            userInput
+        };
+
+        client.publish({
+            destination: '/app/sillytavern/deployment-confirm',
+            body: JSON.stringify(confirmRequest)
+        });
+    };
+
+    const skipDeploymentStep = (stepId, reason = '用户选择跳过') => {
+        const client = getStompClient();
+        if (!client || !client.connected) {
+            onShowModal("WebSocket 未连接");
+            return;
+        }
+
+        const skipRequest = {
+            stepId,
+            reason
+        };
+
+        client.publish({
+            destination: '/app/sillytavern/deployment-skip',
+            body: JSON.stringify(skipRequest)
+        });
+    };
+
+    const cancelInteractiveDeployment = (reason = '用户取消部署') => {
+        const client = getStompClient();
+        if (!client || !client.connected) {
+            onShowModal("WebSocket 未连接");
+            return;
+        }
+
+        const cancelRequest = {
+            reason
+        };
+
+        client.publish({
+            destination: '/app/sillytavern/deployment-cancel',
+            body: JSON.stringify(cancelRequest)
+        });
+    };
+
+    const resetInteractiveDeployment = () => {
+        interactiveDeployment.value = {
+            active: false,
+            mode: null,
+            config: null,
+            currentStep: null,
+            steps: [],
+            completed: false,
+            success: false,
+            accessInfo: null
+        };
+    };
+
     // Initialize subscriptions when composable is first used
     const initialized = ref(false);
     const ensureInitialized = () => {
@@ -433,6 +746,7 @@ export function useSillyTavern(options = {}) {
         systemChecking: readonly(systemChecking),
         isDeploying: readonly(isDeploying),
         deploymentProgress: readonly(deploymentProgress),
+        interactiveDeployment: readonly(interactiveDeployment),
         isPerformingAction: readonly(isPerformingAction),
         currentAction: readonly(currentAction),
         logs: readonly(logs),
@@ -458,6 +772,27 @@ export function useSillyTavern(options = {}) {
         getContainerLogs: (config) => {
             ensureInitialized();
             return getContainerLogs(config);
+        },
+        
+        // Interactive deployment methods
+        startInteractiveDeployment: (config) => {
+            ensureInitialized();
+            return startInteractiveDeployment(config);
+        },
+        confirmDeploymentStep: (stepId, confirmed, userInput) => {
+            ensureInitialized();
+            return confirmDeploymentStep(stepId, confirmed, userInput);
+        },
+        skipDeploymentStep: (stepId, reason) => {
+            ensureInitialized();
+            return skipDeploymentStep(stepId, reason);
+        },
+        cancelInteractiveDeployment: (reason) => {
+            ensureInitialized();
+            return cancelInteractiveDeployment(reason);
+        },
+        resetInteractiveDeployment: () => {
+            return resetInteractiveDeployment();
         },
         
         // Initialization helper

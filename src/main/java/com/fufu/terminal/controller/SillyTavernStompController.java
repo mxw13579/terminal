@@ -8,6 +8,7 @@ import com.fufu.terminal.service.sillytavern.ConfigurationService;
 import com.fufu.terminal.service.sillytavern.DockerVersionService;
 import com.fufu.terminal.service.sillytavern.DataManagementService;
 import com.fufu.terminal.service.sillytavern.RealTimeLogService;
+import com.fufu.terminal.service.sillytavern.InteractiveDeploymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -35,6 +36,7 @@ public class SillyTavernStompController {
     private final DockerVersionService dockerVersionService;
     private final RealTimeLogService realTimeLogService;
     private final DataManagementService dataManagementService;
+    private final InteractiveDeploymentService interactiveDeploymentService;
     private final StompSessionManager sessionManager;
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -55,7 +57,7 @@ public class SillyTavernStompController {
             }
 
             SystemInfoDto systemInfo = sillyTavernService.validateSystemRequirements(connection);
-            
+
             sendSuccessMessage(sessionId, "system-validation", systemInfo);
 
         } catch (Exception e) {
@@ -81,7 +83,7 @@ public class SillyTavernStompController {
             }
 
             ContainerStatusDto status = sillyTavernService.getContainerStatus(connection);
-            
+
             sendSuccessMessage(sessionId, "status", status);
 
         } catch (Exception e) {
@@ -202,14 +204,14 @@ public class SillyTavernStompController {
             }
 
             java.util.List<String> logs = sillyTavernService.getContainerLogs(connection, request);
-            
+
             Map<String, Object> logResponse = Map.of(
-                "logs", logs,
-                "totalLines", logs.size(),
-                "truncated", logs.size() >= request.getTailLines(),
-                "containerName", request.getContainerName()
+                    "logs", logs,
+                    "totalLines", logs.size(),
+                    "truncated", logs.size() >= request.getTailLines(),
+                    "containerName", request.getContainerName()
             );
-            
+
             sendSuccessMessage(sessionId, "logs", logResponse);
 
         } catch (Exception e) {
@@ -235,7 +237,7 @@ public class SillyTavernStompController {
             }
 
             ConfigurationDto config = configurationService.readConfiguration(connection, "sillytavern");
-            
+
             sendSuccessMessage(sessionId, "config", config);
 
         } catch (Exception e) {
@@ -267,9 +269,9 @@ public class SillyTavernStompController {
             Map<String, String> validationErrors = configurationService.validateConfiguration(request);
             if (!validationErrors.isEmpty()) {
                 Map<String, Object> errorResponse = Map.of(
-                    "success", false,
-                    "message", "配置验证失败",
-                    "errors", validationErrors
+                        "success", false,
+                        "message", "配置验证失败",
+                        "errors", validationErrors
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/config-updated-user" + sessionId, errorResponse);
                 return;
@@ -278,21 +280,21 @@ public class SillyTavernStompController {
             // 使用增强的配置更新方法（包含自动重启）
             String containerName = request.getContainerName() != null ? request.getContainerName() : "sillytavern";
             boolean updated = configurationService.updateConfigurationWithRestart(connection, containerName, request);
-            
+
             Map<String, Object> response = Map.of(
-                "success", updated,
-                "message", updated ? "配置更新成功，容器已自动重启" : "配置更新失败",
-                "requiresRestart", false // 已经自动重启了
+                    "success", updated,
+                    "message", updated ? "配置更新成功，容器已自动重启" : "配置更新失败",
+                    "requiresRestart", false // 已经自动重启了
             );
-            
+
             messagingTemplate.convertAndSend("/queue/sillytavern/config-updated-user" + sessionId, response);
 
         } catch (Exception e) {
             log.error("更新配置失败，会话 {}: {}", sessionId, e.getMessage(), e);
             Map<String, Object> errorResponse = Map.of(
-                "success", false,
-                "message", "配置更新失败",
-                "error", e.getMessage()
+                    "success", false,
+                    "message", "配置更新失败",
+                    "error", e.getMessage()
             );
             messagingTemplate.convertAndSend("/queue/sillytavern/config-updated-user" + sessionId, errorResponse);
         }
@@ -317,8 +319,8 @@ public class SillyTavernStompController {
             // Start data export asynchronously with progress updates
             dataManagementService.exportData(connection, "sillytavern", (progress) -> {
                 Map<String, Object> progressMessage = Map.of(
-                    "type", "export-progress",
-                    "message", progress
+                        "type", "export-progress",
+                        "message", progress
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/export-progress-user" + sessionId, progressMessage);
             }).thenAccept(exportDto -> {
@@ -363,23 +365,23 @@ public class SillyTavernStompController {
             // Start data import asynchronously with progress updates
             dataManagementService.importData(connection, "sillytavern", uploadedFileName, (progress) -> {
                 Map<String, Object> progressMessage = Map.of(
-                    "type", "import-progress",
-                    "message", progress
+                        "type", "import-progress",
+                        "message", progress
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/import-progress-user" + sessionId, progressMessage);
             }).thenAccept(success -> {
                 Map<String, Object> result = Map.of(
-                    "success", success,
-                    "message", success ? "Data imported successfully" : "Data import failed",
-                    "requiresRestart", true // Usually requires restart after data import
+                        "success", success,
+                        "message", success ? "Data imported successfully" : "Data import failed",
+                        "requiresRestart", true // Usually requires restart after data import
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/import-user" + sessionId, result);
             }).exceptionally(throwable -> {
                 log.error("Data import failed for session {}: {}", sessionId, throwable.getMessage());
                 Map<String, Object> result = Map.of(
-                    "success", false,
-                    "message", "Data import failed",
-                    "error", throwable.getMessage()
+                        "success", false,
+                        "message", "Data import failed",
+                        "error", throwable.getMessage()
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/import-user" + sessionId, result);
                 return null;
@@ -409,13 +411,13 @@ public class SillyTavernStompController {
 
             String containerName = "sillytavern"; // 默认容器名
             VersionInfoDto versionInfo = dockerVersionService.getVersionInfo(connection, containerName);
-            
+
             sendSuccessMessage(sessionId, "version-info", versionInfo);
 
         } catch (Exception e) {
             log.error("获取版本信息失败，会话 {}: {}", sessionId, e.getMessage(), e);
             sendErrorMessage(sessionId, "获取版本信息失败: " + e.getMessage());
-        }    
+        }
     }
 
     /**
@@ -429,7 +431,7 @@ public class SillyTavernStompController {
         String sessionId = headerAccessor.getSessionId();
         String targetVersion = request.get("targetVersion");
         String containerName = request.getOrDefault("containerName", "sillytavern");
-        
+
         log.debug("处理版本升级请求，会话: {} 目标版本: {}", sessionId, targetVersion);
 
         try {
@@ -448,25 +450,25 @@ public class SillyTavernStompController {
             // 开始异步版本升级，发送进度更新
             dockerVersionService.upgradeToVersion(connection, containerName, targetVersion, (progress) -> {
                 Map<String, Object> progressMessage = Map.of(
-                    "type", "version-upgrade-progress",
-                    "message", progress
+                        "type", "version-upgrade-progress",
+                        "message", progress
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/version-upgrade-progress-user" + sessionId, progressMessage);
             }).thenRun(() -> {
                 // 升级完成，发送成功消息
                 Map<String, Object> result = Map.of(
-                    "success", true,
-                    "message", "版本升级完成: " + targetVersion,
-                    "newVersion", targetVersion
+                        "success", true,
+                        "message", "版本升级完成: " + targetVersion,
+                        "newVersion", targetVersion
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/version-upgrade-user" + sessionId, result);
             }).exceptionally(throwable -> {
                 // 升级失败，发送错误消息
                 log.error("版本升级失败，会话 {}: {}", sessionId, throwable.getMessage());
                 Map<String, Object> result = Map.of(
-                    "success", false,
-                    "message", "版本升级失败",
-                    "error", throwable.getMessage()
+                        "success", false,
+                        "message", "版本升级失败",
+                        "error", throwable.getMessage()
                 );
                 messagingTemplate.convertAndSend("/queue/sillytavern/version-upgrade-user" + sessionId, result);
                 return null;
@@ -498,19 +500,19 @@ public class SillyTavernStompController {
             CompletableFuture.runAsync(() -> {
                 try {
                     dockerVersionService.cleanupUnusedImages(connection);
-                    
+
                     Map<String, Object> result = Map.of(
-                        "success", true,
-                        "message", "镜像清理完成"
+                            "success", true,
+                            "message", "镜像清理完成"
                     );
                     messagingTemplate.convertAndSend("/queue/sillytavern/cleanup-images-user" + sessionId, result);
-                    
+
                 } catch (Exception e) {
                     log.error("镜像清理失败，会话 {}: {}", sessionId, e.getMessage());
                     Map<String, Object> result = Map.of(
-                        "success", false,
-                        "message", "镜像清理失败",
-                        "error", e.getMessage()
+                            "success", false,
+                            "message", "镜像清理失败",
+                            "error", e.getMessage()
                     );
                     messagingTemplate.convertAndSend("/queue/sillytavern/cleanup-images-user" + sessionId, result);
                 }
@@ -533,7 +535,7 @@ public class SillyTavernStompController {
         String sessionId = headerAccessor.getSessionId();
         String containerName = (String) request.getOrDefault("containerName", "sillytavern");
         Integer maxLines = (Integer) request.getOrDefault("maxLines", 1000);
-        
+
         log.debug("处理开始实时日志流请求，会话: {} 容器: {} 最大行数: {}", sessionId, containerName, maxLines);
 
         try {
@@ -552,14 +554,14 @@ public class SillyTavernStompController {
 
             // 开始实时日志流
             realTimeLogService.startLogStream(sessionId, containerName, maxLines);
-            
+
             Map<String, Object> response = Map.of(
-                "success", true,
-                "message", "实时日志流已启动",
-                "containerName", containerName,
-                "maxLines", maxLines
+                    "success", true,
+                    "message", "实时日志流已启动",
+                    "containerName", containerName,
+                    "maxLines", maxLines
             );
-            
+
             sendSuccessMessage(sessionId, "realtime-logs-started", response);
 
         } catch (Exception e) {
@@ -579,12 +581,12 @@ public class SillyTavernStompController {
         try {
             // 停止实时日志流
             realTimeLogService.stopLogStream(sessionId);
-            
+
             Map<String, Object> response = Map.of(
-                "success", true,
-                "message", "实时日志流已停止"
+                    "success", true,
+                    "message", "实时日志流已停止"
             );
-            
+
             sendSuccessMessage(sessionId, "realtime-logs-stopped", response);
 
         } catch (Exception e) {
@@ -605,7 +607,7 @@ public class SillyTavernStompController {
         String containerName = (String) request.getOrDefault("containerName", "sillytavern");
         Integer lines = (Integer) request.getOrDefault("lines", 500);
         String level = (String) request.getOrDefault("level", "all");
-        
+
         log.debug("处理获取历史日志请求，会话: {} 容器: {} 行数: {} 级别: {}", sessionId, containerName, lines, level);
 
         try {
@@ -624,8 +626,8 @@ public class SillyTavernStompController {
 
             // 获取历史日志
             RealTimeLogDto historyLogs = realTimeLogService.getHistoryLogs(
-                connection, containerName, lines, level);
-            
+                    connection, containerName, lines, level);
+
             sendSuccessMessage(sessionId, "history-logs", historyLogs);
 
         } catch (Exception e) {
@@ -639,11 +641,11 @@ public class SillyTavernStompController {
      */
     private void sendSuccessMessage(String sessionId, String messageType, Object data) {
         Map<String, Object> message = Map.of(
-            "type", messageType,
-            "success", true,
-            "payload", data
+                "type", messageType,
+                "success", true,
+                "payload", data
         );
-        
+
         messagingTemplate.convertAndSend("/queue/sillytavern/" + messageType + "-user" + sessionId, message);
     }
 
@@ -652,11 +654,11 @@ public class SillyTavernStompController {
      */
     private void sendActionResult(String sessionId, boolean success, String message, String error) {
         Map<String, Object> result = Map.of(
-            "success", success,
-            "message", message,
-            "error", error != null ? error : ""
+                "success", success,
+                "message", message,
+                "error", error != null ? error : ""
         );
-        
+
         messagingTemplate.convertAndSend("/queue/sillytavern/action-result-user" + sessionId, result);
     }
 
@@ -666,12 +668,186 @@ public class SillyTavernStompController {
     private void sendErrorMessage(String sessionId, String message) {
         sessionManager.sendErrorMessage(sessionId, message);
     }
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+    // ==================== 交互式部署功能端点 ====================
+
+    /**
+     * 处理交互式部署请求
+     * 启动交互式SillyTavern部署流程，支持完全信任和分步确认两种模式
+     */
+    @MessageMapping("/sillytavern/interactive-deploy")
+    public void handleInteractiveDeployment(
+            @Valid InteractiveDeploymentDto.RequestDto request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("处理交互式部署请求，会话: {} 请求: {}", sessionId, request);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 启动交互式部署流程
+            interactiveDeploymentService.startInteractiveDeployment(
+                sessionId,
+                connection, 
+                request
+            );
+
+        } catch (Exception e) {
+            log.error("启动交互式部署失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "启动交互式部署失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理部署确认请求
+     * 用户对交互式部署过程中的确认步骤进行响应
+     */
+    @MessageMapping("/sillytavern/deployment-confirm")
+    public void handleDeploymentConfirmation(
+            Map<String, Object> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        String stepId = (String) request.get("stepId");
+        Boolean confirmed = (Boolean) request.getOrDefault("confirmed", false);
+        Map<String, Object> userInput = (Map<String, Object>) request.getOrDefault("userInput", Map.of());
+
+        log.debug("处理部署确认请求，会话: {} 步骤: {} 确认: {} 用户输入: {}", 
+            sessionId, stepId, confirmed, userInput);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 处理用户确认响应 - 创建确认对象
+            InteractiveDeploymentDto.ConfirmationDto confirmation = InteractiveDeploymentDto.ConfirmationDto.builder()
+                .stepId(stepId)
+                .action(confirmed ? "confirm" : "cancel")
+                .userChoice(userInput)
+                .build();
+                
+            interactiveDeploymentService.handleUserConfirmation(sessionId, confirmation);
+            
+            // 发送响应
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "stepId", stepId,
+                "message", confirmed ? "确认处理成功" : "操作取消"
+            );
+            messagingTemplate.convertAndSend(
+                "/queue/sillytavern/deployment-confirm-user" + sessionId, 
+                response);
+
+        } catch (Exception e) {
+            log.error("处理部署确认失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "处理部署确认失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理部署跳过请求
+     * 用户选择跳过某个交互式部署步骤
+     */
+    @MessageMapping("/sillytavern/deployment-skip")
+    public void handleDeploymentSkip(
+            Map<String, String> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        String stepId = request.get("stepId");
+        String reason = request.getOrDefault("reason", "用户选择跳过");
+
+        log.debug("处理部署跳过请求，会话: {} 步骤: {} 原因: {}", sessionId, stepId, reason);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 处理跳过请求 - 创建跳过确认对象
+            InteractiveDeploymentDto.ConfirmationDto confirmation = InteractiveDeploymentDto.ConfirmationDto.builder()
+                .stepId(stepId)
+                .action("skip")
+                .reason(reason)
+                .build();
+                
+            interactiveDeploymentService.handleUserConfirmation(sessionId, confirmation);
+            
+            // 发送响应
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "stepId", stepId,
+                "message", "步骤已跳过",
+                "reason", reason
+            );
+            messagingTemplate.convertAndSend(
+                "/queue/sillytavern/deployment-skip-user" + sessionId, 
+                response);
+
+        } catch (Exception e) {
+            log.error("处理部署跳过失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "处理部署跳过失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理部署取消请求
+     * 用户取消整个交互式部署流程
+     */
+    @MessageMapping("/sillytavern/deployment-cancel")
+    public void handleDeploymentCancel(
+            Map<String, String> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        String reason = request.getOrDefault("reason", "用户取消部署");
+
+        log.debug("处理部署取消请求，会话: {} 原因: {}", sessionId, reason);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("会话未找到SSH连接: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            // 处理取消请求
+            interactiveDeploymentService.cancelDeployment(sessionId, reason);
+            
+            // 发送响应
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "部署已取消",
+                "reason", reason
+            );
+            messagingTemplate.convertAndSend(
+                "/queue/sillytavern/deployment-cancel-user" + sessionId, 
+                response);
+
+        } catch (Exception e) {
+            log.error("处理部署取消失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "处理部署取消失败: " + e.getMessage());
+        }
+    }
+}
+
+
+
+
+
+
+

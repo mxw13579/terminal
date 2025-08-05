@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
       "WebFetch(domain:docs.spring.io)",
@@ -10,9 +11,11 @@
       "Bash(rm:*)",
       "Bash(find:*)",
       "Bash(java:*)",
-      "Bash(.mvnw.cmd compile -q)"
+      "Bash(.mvnw.cmd compile -q)",
+      "Bash(grep:*)",
+      "Bash(where mvn)",
+      "Bash(ls:*)"
     ],
     "deny": []
-  },
-  "$schema": "https://json.schemastore.org/claude-code-settings.json"
+  }
 }

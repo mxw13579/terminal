@@ -14,9 +14,9 @@ import org.springframework.stereotype.Controller;
 import jakarta.validation.Valid;
 
 /**
- * STOMP controller for system monitoring operations.
- * Handles start and stop monitoring requests.
- * 
+ * <p>STOMP 控制器：用于处理系统监控相关的 WebSocket 消息。</p>
+ * <p>包括启动和停止监控的请求处理。</p>
+ *
  * @author lizelin
  */
 @Slf4j
@@ -28,63 +28,76 @@ public class MonitorStompController {
     private final StompSessionManager sessionManager;
 
     /**
-     * Handle monitoring start requests.
+     * 处理监控启动请求。
+     *
+     * @param message        启动监控的请求参数，包含监控频率等信息
+     * @param headerAccessor WebSocket 消息头访问器，用于获取 sessionId
      */
     @MessageMapping("/monitor/start")
     public void handleMonitorStart(
             @Valid MonitorStartDto message,
             SimpMessageHeaderAccessor headerAccessor) {
-        
+
         String sessionId = headerAccessor.getSessionId();
-        log.info("Starting monitoring for session: {} with frequency: {}s", 
-                sessionId, message.getFrequencySeconds());
-        
+        log.info("收到启动监控请求，sessionId: {}，频率: {}s", sessionId, message.getFrequencySeconds());
+
+        SshConnection connection = getConnectionOrNotifyError(sessionId);
+        if (connection == null) {
+            return;
+        }
+
         try {
-            SshConnection connection = sessionManager.getConnection(sessionId);
-            if (connection == null) {
-                log.warn("No SSH connection found for session: {}", sessionId);
-                sessionManager.sendErrorMessage(sessionId, "SSH connection not established");
-                return;
-            }
-
-            // Use the STOMP monitoring service
+            // 调用监控服务启动监控
             stompMonitoringService.startMonitoring(sessionId, connection);
-            
-            log.info("Monitoring started successfully for session: {}", sessionId);
-
+            log.info("监控启动成功，sessionId: {}", sessionId);
         } catch (Exception e) {
-            log.error("Error starting monitoring for session {}: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "Failed to start monitoring: " + e.getMessage());
+            log.error("启动监控失败，sessionId: {}，原因: {}", sessionId, e.getMessage(), e);
+            sessionManager.sendErrorMessage(sessionId, "启动监控失败: " + e.getMessage());
         }
     }
 
     /**
-     * Handle monitoring stop requests.
+     * 处理监控停止请求。
+     *
+     * @param message        停止监控的请求参数
+     * @param headerAccessor WebSocket 消息头访问器，用于获取 sessionId
      */
     @MessageMapping("/monitor/stop")
     public void handleMonitorStop(
             @Valid MonitorStopDto message,
             SimpMessageHeaderAccessor headerAccessor) {
-        
+
         String sessionId = headerAccessor.getSessionId();
-        log.info("Stopping monitoring for session: {}", sessionId);
-        
-        try {
-            SshConnection connection = sessionManager.getConnection(sessionId);
-            if (connection == null) {
-                log.warn("No SSH connection found for session: {}", sessionId);
-                sessionManager.sendErrorMessage(sessionId, "SSH connection not established");
-                return;
-            }
+        log.info("收到停止监控请求，sessionId: {}", sessionId);
 
-            // Use the STOMP monitoring service
-            stompMonitoringService.stopMonitoring(sessionId, connection);
-            
-            log.info("Monitoring stopped successfully for session: {}", sessionId);
-
-        } catch (Exception e) {
-            log.error("Error stopping monitoring for session {}: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "Failed to stop monitoring: " + e.getMessage());
+        SshConnection connection = getConnectionOrNotifyError(sessionId);
+        if (connection == null) {
+            return;
         }
+
+        try {
+            // 调用监控服务停止监控
+            stompMonitoringService.stopMonitoring(sessionId, connection);
+            log.info("监控已停止，sessionId: {}", sessionId);
+        } catch (Exception e) {
+            log.error("停止监控失败，sessionId: {}，原因: {}", sessionId, e.getMessage(), e);
+            sessionManager.sendErrorMessage(sessionId, "停止监控失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 根据 sessionId 获取 SSH 连接，若不存在则发送错误消息给客户端。
+     *
+     * @param sessionId WebSocket 会话 ID
+     * @return SshConnection 实例，若不存在则返回 null
+     */
+    private SshConnection getConnectionOrNotifyError(String sessionId) {
+        SshConnection connection = sessionManager.getConnection(sessionId);
+        if (connection == null) {
+            log.warn("未找到 SSH 连接，sessionId: {}", sessionId);
+            sessionManager.sendErrorMessage(sessionId, "SSH 连接尚未建立");
+            return null;
+        }
+        return connection;
     }
 }
