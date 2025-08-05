@@ -448,6 +448,38 @@ public class DockerInstallationService {
         private boolean serviceRunning;
         /** 状态描述信息 */
         private String message;
+
+        /**
+         * 获取Docker是否已安装
+         * @return 是否已安装
+         */
+        public boolean isInstalled() {
+            return installed;
+        }
+
+        /**
+         * 获取Docker版本信息
+         * @return 版本信息
+         */
+        public String getVersion() {
+            return version;
+        }
+
+        /**
+         * 获取Docker服务是否运行中
+         * @return 是否运行中
+         */
+        public boolean isServiceRunning() {
+            return serviceRunning;
+        }
+
+        /**
+         * 获取状态描述信息
+         * @return 状态描述
+         */
+        public String getMessage() {
+            return message;
+        }
     }
 
     /**
@@ -464,5 +496,37 @@ public class DockerInstallationService {
         private String installedVersion;
         /** 安装方式描述 */
         private String installationMethod;
+
+        /**
+         * 获取安装是否成功
+         * @return 是否成功
+         */
+        public boolean isSuccess() {
+            return success;
+        }
+
+        /**
+         * 获取安装结果描述
+         * @return 结果描述
+         */
+        public String getMessage() {
+            return message;
+        }
+
+        /**
+         * 获取已安装的Docker版本
+         * @return 安装版本
+         */
+        public String getInstalledVersion() {
+            return installedVersion;
+        }
+
+        /**
+         * 获取安装方式描述
+         * @return 安装方式
+         */
+        public String getInstallationMethod() {
+            return installationMethod;
+        }
     }
 }

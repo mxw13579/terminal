@@ -377,6 +377,46 @@ public class ServiceValidationService {
         private boolean configValid;
         /** 服务访问信息 */
         private ServiceAccessInfo accessInfo;
+
+        /**
+         * 获取验证是否成功
+         * @return 是否成功
+         */
+        public boolean isSuccess() {
+            return success;
+        }
+
+        /**
+         * 获取验证结果消息
+         * @return 结果消息
+         */
+        public String getMessage() {
+            return message;
+        }
+
+        /**
+         * 获取容器是否运行
+         * @return 是否运行
+         */
+        public boolean isContainerRunning() {
+            return containerRunning;
+        }
+
+        /**
+         * 获取端口监听是否正常
+         * @return 是否监听
+         */
+        public boolean isPortListening() {
+            return portListening;
+        }
+
+        /**
+         * 获取HTTP服务是否响应
+         * @return 是否响应
+         */
+        public boolean isHttpResponsive() {
+            return httpResponsive;
+        }
     }
 
     /**

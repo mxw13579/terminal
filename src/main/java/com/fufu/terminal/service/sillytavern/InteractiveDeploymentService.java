@@ -1,7 +1,9 @@
 package com.fufu.terminal.service.sillytavern;
 
 import com.fufu.terminal.dto.sillytavern.InteractiveDeploymentDto;
+import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
+import com.fufu.terminal.service.SshCommandService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -35,6 +37,8 @@ public class InteractiveDeploymentService {
     private final ExternalAccessService externalAccessService;
     private final ServiceValidationService validationService;
     private final SystemDetectionService systemDetectionService;
+    private final SystemConfigurationService systemConfigurationService;
+    private final SshCommandService sshCommandService;
     private final SimpMessagingTemplate messagingTemplate;
 
     /** 存储部署状态，key为sessionId */
@@ -54,6 +58,27 @@ public class InteractiveDeploymentService {
             "service_validation",
             "deployment_complete"
     );
+
+    /**
+     * 启动增强版交互式部署
+     * <p>包含Docker自动安装功能的完整部署流程</p>
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param request 部署请求
+     * @return 异步部署任务
+     */
+    public CompletableFuture<Void> startEnhancedInteractiveDeployment(
+            String sessionId,
+            SshConnection connection,
+            InteractiveDeploymentDto.RequestDto request) {
+        
+        log.info("启动增强版交互式部署，会话: {}, 模式: {}", sessionId, request.getDeploymentMode());
+        
+        // 增强版部署逻辑与普通版本相同，但在Docker安装步骤会自动处理未安装的情况
+        // 关键改进已经在 executeDockerInstallation 方法中实现
+        return startInteractiveDeployment(sessionId, connection, request);
+    }
 
     /**
      * 启动交互式部署
@@ -354,7 +379,7 @@ public class InteractiveDeploymentService {
         step.setProgress(30);
         sendDeploymentProgress(sessionId);
 
-        SystemDetectionService.SystemInfo systemInfo = systemDetectionService.detectSystemEnvironment(connection);
+        SystemDetectionService.SystemInfo systemInfo = systemDetectionService.detectSystemEnvironmentSync(connection);
 
         step.setMessage("系统环境检测完成");
         step.setProgress(100);
@@ -378,12 +403,25 @@ public class InteractiveDeploymentService {
         step.setProgress(25);
         sendDeploymentProgress(sessionId);
 
-        PackageManagerService.PackageManagerConfigResult result = packageManagerService.configurePackageManager(connection).join();
+        // 使用新的SystemConfigurationService进行系统配置
+        SystemConfigurationService.SystemConfigResult result = systemConfigurationService
+                .configureSystemMirrors(connection, (progressMsg) -> {
+                    step.setMessage(progressMsg);
+                    addStepLog(step, progressMsg);
+                    sendDeploymentProgress(sessionId);
+                }).join();
 
-        step.setMessage(result.isSuccess() ? "包管理器配置完成" : "包管理器配置跳过");
+        step.setMessage(result.isSuccess() ? "系统镜像源配置完成" : 
+                       (result.isSkipped() ? "系统镜像源配置跳过" : "系统镜像源配置失败"));
         step.setProgress(100);
+        step.setConfirmationData(Map.of("configResult", result));
 
         addStepLog(step, result.getMessage());
+        
+        if (result.getGeolocationInfo() != null) {
+            addStepLog(step, "地理位置: " + result.getGeolocationInfo().getCountryCode());
+            addStepLog(step, "使用中国镜像: " + result.getGeolocationInfo().isUseChineseMirror());
+        }
     }
 
     /**
@@ -396,7 +434,7 @@ public class InteractiveDeploymentService {
      */
     private void executeDockerInstallation(String sessionId, SshConnection connection,
                                            InteractiveDeploymentDto.StepDto step) throws Exception {
-        step.setMessage("安装Docker...");
+        step.setMessage("检查Docker安装状态...");
         step.setProgress(10);
         sendDeploymentProgress(sessionId);
 
@@ -407,20 +445,51 @@ public class InteractiveDeploymentService {
             sendDeploymentProgress(sessionId);
         };
 
-        // 获取系统信息
-        SystemDetectionService.SystemInfo systemInfo = systemDetectionService.detectSystemEnvironment(connection);
+        // 首先检查Docker是否已安装
+        DockerInstallationService.DockerInstallationStatus dockerStatus = 
+                dockerInstallationService.checkDockerInstallation(connection).join();
+        
+        if (dockerStatus.isInstalled() && dockerStatus.isServiceRunning()) {
+            step.setMessage("Docker已安装且运行正常");
+            step.setProgress(100);
+            addStepLog(step, "Docker版本: " + dockerStatus.getVersion());
+            addStepLog(step, "Docker服务状态: 正常运行");
+            step.setConfirmationData(Map.of("dockerStatus", dockerStatus));
+            return;
+        }
+        
+        if (dockerStatus.isInstalled() && !dockerStatus.isServiceRunning()) {
+            progressCallback.accept("Docker已安装但服务未运行，尝试启动...");
+            try {
+                startDockerService(connection, progressCallback);
+                step.setMessage("Docker服务启动成功");
+                step.setProgress(100);
+                addStepLog(step, "Docker服务已启动");
+                return;
+            } catch (Exception e) {
+                progressCallback.accept("Docker服务启动失败，将重新安装Docker");
+                addStepLog(step, "服务启动失败: " + e.getMessage());
+            }
+        }
 
+        // 关键修复：Docker未安装时，自动安装而不是失败
+        progressCallback.accept("Docker未安装，开始自动安装...");
+        
+        // 获取系统信息
+        SystemDetectionService.SystemInfo systemInfo = systemDetectionService.detectSystemEnvironmentSync(connection);
+        
         // 判断是否使用中国镜像源（从前面步骤获取）
         boolean useChineseMirror = false;
         try {
             InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
-            if (status != null && status.getSteps().size() > 0) {
-                InteractiveDeploymentDto.StepDto geoStep = status.getSteps().get(0);
-                if (geoStep.getConfirmationData() != null) {
-                    GeolocationDetectionService.GeolocationInfo geoResult =
-                            (GeolocationDetectionService.GeolocationInfo) geoStep.getConfirmationData().get("geolocationResult");
-                    if (geoResult != null) {
-                        useChineseMirror = geoResult.isUseChineseMirror();
+            if (status != null && status.getSteps().size() > 2) {
+                // 从包管理器配置步骤获取地理位置信息
+                InteractiveDeploymentDto.StepDto packageStep = status.getSteps().get(2);
+                if (packageStep.getConfirmationData() != null) {
+                    SystemConfigurationService.SystemConfigResult configResult =
+                            (SystemConfigurationService.SystemConfigResult) packageStep.getConfirmationData().get("configResult");
+                    if (configResult != null && configResult.getGeolocationInfo() != null) {
+                        useChineseMirror = configResult.getGeolocationInfo().isUseChineseMirror();
                     }
                 }
             }
@@ -428,13 +497,81 @@ public class InteractiveDeploymentService {
             log.warn("无法获取地理位置信息，使用默认设置: {}", e.getMessage());
         }
 
+        // 执行Docker安装
         DockerInstallationService.DockerInstallationResult result = dockerInstallationService.installDocker(
                 connection, systemInfo, useChineseMirror, progressCallback).join();
 
-        step.setMessage(result.isSuccess() ? "Docker安装完成" : "Docker安装失败");
-        step.setProgress(100);
+        if (!result.isSuccess()) {
+            // 安装失败时的处理
+            step.setMessage("Docker安装失败");
+            step.setProgress(100);
+            step.setConfirmationData(Map.of("installationResult", result));
+            addStepLog(step, "安装失败: " + result.getMessage());
+            throw new RuntimeException("Docker安装失败: " + result.getMessage());
+        }
 
-        addStepLog(step, result.getMessage());
+        step.setMessage("Docker安装成功");
+        step.setProgress(100);
+        step.setConfirmationData(Map.of("installationResult", result));
+
+        addStepLog(step, "安装方式: " + result.getInstallationMethod());
+        addStepLog(step, "安装版本: " + result.getInstalledVersion());
+        
+        // 验证安装结果
+        progressCallback.accept("验证Docker安装...");
+        DockerInstallationService.DockerInstallationStatus finalStatus = 
+                dockerInstallationService.checkDockerInstallation(connection).join();
+                
+        if (finalStatus.isInstalled() && finalStatus.isServiceRunning()) {
+            addStepLog(step, "Docker安装验证成功");
+        } else {
+            addStepLog(step, "警告: Docker安装后验证失败，可能需要手动启动服务");
+        }
+    }
+    
+    /**
+     * 启动Docker服务
+     *
+     * @param connection SSH连接
+     * @param progressCallback 进度回调
+     * @throws Exception 启动异常
+     */
+    private void startDockerService(SshConnection connection, Consumer<String> progressCallback) throws Exception {
+        progressCallback.accept("启动Docker服务...");
+        
+        // 尝试使用systemctl启动
+        try {
+            CommandResult result = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    "sudo systemctl start docker && sudo systemctl enable docker"
+            );
+            
+            if (result.exitStatus() != 0) {
+                throw new RuntimeException("Docker服务启动失败: " + result.stderr());
+            }
+            
+            progressCallback.accept("Docker服务启动成功");
+        } catch (Exception e) {
+            log.error("使用systemctl启动Docker失败", e);
+            
+            // 尝试使用service命令
+            try {
+                progressCallback.accept("尝试使用service命令启动Docker...");
+                CommandResult serviceResult = sshCommandService.executeCommand(
+                        connection.getJschSession(),
+                        "sudo service docker start"
+                );
+                
+                if (serviceResult.exitStatus() != 0) {
+                    throw new RuntimeException("Docker服务启动失败: " + serviceResult.stderr());
+                }
+                
+                progressCallback.accept("Docker服务启动成功");
+            } catch (Exception serviceException) {
+                log.error("使用service启动Docker也失败", serviceException);
+                throw new RuntimeException("无法启动Docker服务: " + serviceException.getMessage());
+            }
+        }
     }
 
     /**

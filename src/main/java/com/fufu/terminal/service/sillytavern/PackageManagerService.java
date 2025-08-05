@@ -311,7 +311,7 @@ public class PackageManagerService {
             try {
                 // 检测系统环境
                 SystemDetectionService systemDetectionService = new SystemDetectionService(sshCommandService);
-                SystemDetectionService.SystemInfo osInfo = systemDetectionService.detectSystemEnvironment(connection);
+                SystemDetectionService.SystemInfo osInfo = systemDetectionService.detectSystemEnvironmentSync(connection);
 
                 // 根据地理位置决定是否使用中国镜像源
                 GeolocationDetectionService geoService = new GeolocationDetectionService(sshCommandService);

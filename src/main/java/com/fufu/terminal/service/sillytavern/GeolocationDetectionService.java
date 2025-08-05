@@ -170,6 +170,22 @@ public class GeolocationDetectionService {
          * 错误信息（如有异常时填充）
          */
         private String errorMessage;
+
+        /**
+         * 获取国家/地区代码
+         * @return 国家代码
+         */
+        public String getCountryCode() {
+            return countryCode;
+        }
+
+        /**
+         * 获取是否建议使用国内镜像源
+         * @return 是否使用中国镜像
+         */
+        public boolean isUseChineseMirror() {
+            return useChineseMirror;
+        }
     }
 
     /**

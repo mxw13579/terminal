@@ -9,6 +9,9 @@ import com.fufu.terminal.service.sillytavern.DockerVersionService;
 import com.fufu.terminal.service.sillytavern.DataManagementService;
 import com.fufu.terminal.service.sillytavern.RealTimeLogService;
 import com.fufu.terminal.service.sillytavern.InteractiveDeploymentService;
+import com.fufu.terminal.service.sillytavern.SystemConfigurationService;
+import com.fufu.terminal.service.sillytavern.DockerInstallationService;
+import com.fufu.terminal.service.sillytavern.SystemDetectionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -57,6 +60,12 @@ public class SillyTavernStompController {
     private final DataManagementService dataManagementService;
     /** 交互式部署服务 */
     private final InteractiveDeploymentService interactiveDeploymentService;
+    /** 系统配置服务 */
+    private final SystemConfigurationService systemConfigurationService;
+    /** Docker安装服务 */
+    private final DockerInstallationService dockerInstallationService;
+    /** 系统检测服务 */
+    private final SystemDetectionService systemDetectionService;
     /** STOMP会话管理器 */
     private final StompSessionManager sessionManager;
     /** 消息模板 */
@@ -831,4 +840,191 @@ public class SillyTavernStompController {
             sendErrorMessage(sessionId, "交互式部署取消失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 启动增强版交互式部署
+     * <p>支持Docker自动安装的完整部署流程</p>
+     *
+     * @param request 部署请求
+     * @param headerAccessor WebSocket会话头
+     */
+    @MessageMapping("/sillytavern/enhanced-deploy")
+    public void handleEnhancedInteractiveDeployment(
+            @Valid InteractiveDeploymentDto.RequestDto request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("增强版交互式部署，请求会话: {} 请求: {}", sessionId, request);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("未找到SSH连接，会话: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+            
+            // 启动增强版部署流程，包含Docker自动安装
+            interactiveDeploymentService.startEnhancedInteractiveDeployment(
+                    sessionId,
+                    connection,
+                    request
+            );
+        } catch (Exception e) {
+            log.error("增强版交互式部署启动失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "增强版交互式部署启动失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 系统配置和镜像源设置
+     *
+     * @param request 配置请求
+     * @param headerAccessor WebSocket会话头
+     */
+    @MessageMapping("/sillytavern/configure-system")
+    public void handleSystemConfiguration(
+            Map<String, Object> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("配置系统镜像源，请求会话: {}", sessionId);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("未找到SSH连接，会话: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            systemConfigurationService.configureSystemMirrors(connection, (progressMsg) -> {
+                // 发送实时进度更新
+                Map<String, Object> progressResponse = Map.of(
+                        "type", "system-config-progress",
+                        "message", progressMsg
+                );
+                messagingTemplate.convertAndSend("/queue/sillytavern/system-config-user" + sessionId, progressResponse);
+            }).thenAccept(result -> {
+                Map<String, Object> response = Map.of(
+                        "success", result.isSuccess(),
+                        "message", result.getMessage(),
+                        "skipped", result.isSkipped(),
+                        "geolocationInfo", result.getGeolocationInfo() != null ? result.getGeolocationInfo() : Map.of(),
+                        "systemInfo", result.getSystemInfo() != null ? result.getSystemInfo() : Map.of()
+                );
+                messagingTemplate.convertAndSend("/queue/sillytavern/system-config-user" + sessionId, response);
+            }).exceptionally(throwable -> {
+                log.error("系统配置失败，会话 {}: {}", sessionId, throwable.getMessage(), throwable);
+                sendErrorMessage(sessionId, "系统配置失败: " + throwable.getMessage());
+                return null;
+            });
+
+        } catch (Exception e) {
+            log.error("系统配置启动失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "系统配置启动失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Docker安装状态检查和自动安装
+     *
+     * @param request 请求参数
+     * @param headerAccessor WebSocket会话头
+     */
+    @MessageMapping("/sillytavern/docker-install-check")
+    public void handleDockerInstallationCheck(
+            Map<String, Object> request,
+            SimpMessageHeaderAccessor headerAccessor) {
+
+        String sessionId = headerAccessor.getSessionId();
+        log.debug("检查Docker安装状态，请求会话: {}", sessionId);
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("未找到SSH连接，会话: {}", sessionId);
+                sendErrorMessage(sessionId, "SSH连接未建立");
+                return;
+            }
+
+            dockerInstallationService.checkDockerInstallation(connection)
+                    .thenCompose(dockerStatus -> {
+                        if (dockerStatus.isInstalled() && dockerStatus.isServiceRunning()) {
+                            // Docker已安装且运行正常
+                            Map<String, Object> response = Map.of(
+                                    "success", true,
+                                    "dockerInstalled", true,
+                                    "dockerStatus", Map.of(
+                                            "installed", dockerStatus.isInstalled(),
+                                            "version", dockerStatus.getVersion(),
+                                            "serviceRunning", dockerStatus.isServiceRunning(),
+                                            "message", dockerStatus.getMessage()
+                                    ),
+                                    "message", "Docker运行正常"
+                            );
+                            messagingTemplate.convertAndSend("/queue/sillytavern/docker-check-user" + sessionId, response);
+                            return CompletableFuture.completedFuture(null);
+                        } else {
+                            // 需要安装或启动Docker
+                            boolean autoInstall = (Boolean) request.getOrDefault("autoInstall", true);
+                            if (!autoInstall) {
+                                Map<String, Object> response = Map.of(
+                                        "success", false,
+                                        "dockerInstalled", false,
+                                        "dockerStatus", Map.of(
+                                                "installed", dockerStatus.isInstalled(),
+                                                "version", dockerStatus.getVersion(),
+                                                "serviceRunning", dockerStatus.isServiceRunning(),
+                                                "message", dockerStatus.getMessage()
+                                        ),
+                                        "message", "Docker未安装或未运行"
+                                );
+                                messagingTemplate.convertAndSend("/queue/sillytavern/docker-check-user" + sessionId, response);
+                                return CompletableFuture.completedFuture(null);
+                            }
+
+                            // 自动安装Docker
+                            return systemDetectionService.detectSystemEnvironment(connection)
+                                    .thenCompose(systemInfo -> {
+                                        boolean useChineseMirror = (Boolean) request.getOrDefault("useChineseMirror", false);
+                                        
+                                        return dockerInstallationService.installDocker(
+                                                connection, systemInfo, useChineseMirror, (progressMsg) -> {
+                                                    // 发送Docker安装进度
+                                                    Map<String, Object> progressResponse = Map.of(
+                                                            "type", "docker-install-progress",
+                                                            "message", progressMsg
+                                                    );
+                                                    messagingTemplate.convertAndSend("/queue/sillytavern/docker-install-user" + sessionId, progressResponse);
+                                                }
+                                        );
+                                    })
+                                    .thenAccept(installResult -> {
+                                        Map<String, Object> response = Map.of(
+                                                "success", installResult.isSuccess(),
+                                                "dockerInstalled", installResult.isSuccess(),
+                                                "installationResult", Map.of(
+                                                        "success", installResult.isSuccess(),
+                                                        "message", installResult.getMessage(),
+                                                        "installedVersion", installResult.getInstalledVersion(),
+                                                        "installationMethod", installResult.getInstallationMethod()
+                                                ),
+                                                "message", installResult.getMessage()
+                                        );
+                                        messagingTemplate.convertAndSend("/queue/sillytavern/docker-install-user" + sessionId, response);
+                                    });
+                        }
+                    }).exceptionally(throwable -> {
+                        log.error("Docker检查/安装失败，会话 {}: {}", sessionId, throwable.getMessage(), throwable);
+                        sendErrorMessage(sessionId, "Docker检查/安装失败: " + throwable.getMessage());
+                        return null;
+                    });
+
+        } catch (Exception e) {
+            log.error("Docker检查启动失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "Docker检查启动失败: " + e.getMessage());
+        }
+    }
+
 }

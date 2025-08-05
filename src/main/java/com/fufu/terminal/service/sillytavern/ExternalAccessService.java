@@ -478,6 +478,38 @@ public class ExternalAccessService {
          */
         @lombok.Builder.Default
         private String port = "";
+
+        /**
+         * 获取配置是否成功
+         * @return 是否成功
+         */
+        public boolean isSuccess() {
+            return success;
+        }
+
+        /**
+         * 获取配置结果描述信息
+         * @return 结果描述
+         */
+        public String getMessage() {
+            return message;
+        }
+
+        /**
+         * 获取用户名
+         * @return 用户名
+         */
+        public String getUsername() {
+            return username;
+        }
+
+        /**
+         * 获取密码
+         * @return 密码
+         */
+        public String getPassword() {
+            return password;
+        }
     }
 
 }

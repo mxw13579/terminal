@@ -188,7 +188,7 @@
             <div class="content-body">
               <!-- 部署向导 -->
               <div v-if="activeTab === 'deployment'" class="content-panel">
-                <DeploymentWizard 
+                <InteractiveDeploymentWizard 
                   :connection="connectionState.connectionInfo"
                   :system-info="systemInfo"
                   :is-system-valid="isSystemValid"
@@ -264,6 +264,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import NavigationHeader from '../components/NavigationHeader.vue'
 import ConnectionManager from '../components/ConnectionManager.vue'
 import DeploymentWizard from '../components/sillytavern/DeploymentWizard.vue'
+import InteractiveDeploymentWizard from '../components/sillytavern/InteractiveDeploymentWizard.vue'
 import ServiceControls from '../components/sillytavern/ServiceControls.vue'
 import ConfigurationEditor from '../components/sillytavern/ConfigurationEditor.vue'
 import LogViewer from '../components/sillytavern/LogViewer.vue'
@@ -289,6 +290,7 @@ const {
   performServiceAction,
   validateSystem,
   deployContainer,
+  startInteractiveDeployment,
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
 
@@ -397,7 +399,16 @@ const handleValidateSystem = async () => {
 const handleDeploy = async (deploymentConfig) => {
   try {
     console.log('开始部署，配置:', deploymentConfig)
-    await deployContainer(deploymentConfig)
+    
+    // 检查是否是交互式部署请求（包含mode属性）
+    if (deploymentConfig.mode) {
+      console.log('启动交互式部署，模式:', deploymentConfig.mode)
+      await startInteractiveDeployment(deploymentConfig)
+    } else {
+      // 传统部署方式
+      await deployContainer(deploymentConfig)
+    }
+    
     activeTab.value = 'services'
   } catch (error) {
     console.error('部署失败:', error)

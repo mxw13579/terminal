@@ -345,6 +345,22 @@ public class DockerMirrorService {
          * 配置文件路径
          */
         private String configFilePath;
+
+        /**
+         * 获取是否配置成功
+         * @return 是否成功
+         */
+        public boolean isSuccess() {
+            return success;
+        }
+
+        /**
+         * 获取配置结果消息
+         * @return 结果消息
+         */
+        public String getMessage() {
+            return message;
+        }
     }
 
     /**

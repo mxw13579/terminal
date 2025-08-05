@@ -149,8 +149,35 @@
           {{ deploymentProgress.message }}
         </div>
         
+        <!-- Docker安装提示 -->
+        <div v-if="deploymentProgress.dockerInstallationInProgress" class="docker-install-notice">
+          <div class="notice-header">
+            <span class="notice-icon">🐳</span>
+            <span class="notice-title">Docker自动安装中</span>
+          </div>
+          <div class="notice-content">
+            <p>检测到系统未安装Docker，正在自动安装...</p>
+            <p>这是一个一次性操作，完成后即可部署SillyTavern</p>
+          </div>
+        </div>
+        
         <div v-if="deploymentProgress.error" class="progress-error">
           ❌ {{ deploymentProgress.error }}
+          <!-- Docker安装失败时的额外信息 -->
+          <div v-if="deploymentProgress.dockerInstallationFailed" class="docker-error-help">
+            <p><strong>Docker安装失败可能的原因：</strong></p>
+            <ul>
+              <li>系统不支持当前的Docker安装方式</li>
+              <li>缺少必要的系统权限</li>
+              <li>网络连接问题</li>
+            </ul>
+            <p><strong>建议解决方案：</strong></p>
+            <ul>
+              <li>手动安装Docker后重新尝试部署</li>
+              <li>检查系统权限和网络连接</li>
+              <li>联系系统管理员获取帮助</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
@@ -431,6 +458,64 @@ const handleDeploy = () => {
   color: #e53e3e;
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+/* Docker安装相关样式 */
+.docker-install-notice {
+  background: #e3f2fd;
+  border: 1px solid #2196f3;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.notice-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.notice-icon {
+  font-size: 1.2rem;
+  margin-right: 8px;
+}
+
+.notice-title {
+  font-weight: 600;
+  color: #1976d2;
+}
+
+.notice-content {
+  color: #424242;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.notice-content p {
+  margin: 4px 0;
+}
+
+.docker-error-help {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 12px;
+  color: #856404;
+  font-size: 0.85rem;
+}
+
+.docker-error-help p {
+  margin: 8px 0 4px 0;
+}
+
+.docker-error-help ul {
+  margin: 4px 0 8px 20px;
+  padding: 0;
+}
+
+.docker-error-help li {
+  margin: 2px 0;
 }
 
 /* Common Button Styles */

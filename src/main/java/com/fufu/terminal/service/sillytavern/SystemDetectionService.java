@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -41,7 +42,7 @@ public class SystemDetectionService {
         List<String> checks = new ArrayList<>();
 
         try {
-            SystemInfo sysEnv = detectSystemEnvironment(connection);
+            SystemInfo sysEnv = detectSystemEnvironmentSync(connection);
             log.info("系统环境信息:{}", sysEnv);
 
             systemInfo.setOsType(sysEnv.getOsType());
@@ -128,12 +129,22 @@ public class SystemDetectionService {
     }
 
     /**
-     * 检测系统环境详细信息，包括操作系统、发行版、资源等。
+     * 异步检测系统环境详细信息
+     *
+     * @param connection SSH连接信息
+     * @return 异步返回系统详细信息
+     */
+    public CompletableFuture<SystemInfo> detectSystemEnvironment(SshConnection connection) {
+        return CompletableFuture.supplyAsync(() -> detectSystemEnvironmentSync(connection));
+    }
+
+    /**
+     * 同步检测系统环境详细信息，包括操作系统、发行版、资源等。
      *
      * @param connection SSH连接信息
      * @return 系统详细信息
      */
-    public SystemInfo detectSystemEnvironment(SshConnection connection) {
+    public SystemInfo detectSystemEnvironmentSync(SshConnection connection) {
         log.info("检测系统环境详细信息");
         SystemInfo.SystemInfoBuilder builder = SystemInfo.builder();
         try {
@@ -515,6 +526,97 @@ public class SystemDetectionService {
     }
 
     /**
+     * 检查Docker是否已安装
+     *
+     * @param connection SSH连接信息
+     * @return 是否已安装Docker
+     */
+    public boolean checkDockerInstallation(SshConnection connection) {
+        return checkDockerAvailability(connection);
+    }
+
+    /**
+     * 检测Linux发行版类型
+     *
+     * @param connection SSH连接信息
+     * @return Linux发行版ID
+     */
+    public String detectLinuxDistribution(SshConnection connection) {
+        SystemInfo systemInfo = detectSystemEnvironmentSync(connection);
+        return systemInfo.getOsId();
+    }
+
+    /**
+     * 检查网络连接状态
+     *
+     * @param connection SSH连接信息
+     * @return 是否有网络连接
+     */
+    public boolean checkInternetConnectivity(SshConnection connection) {
+        try {
+            CommandResult result = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    "ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1"
+            );
+            return result.exitStatus() == 0;
+        } catch (Exception e) {
+            log.debug("网络连接检查失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 检查指定端口是否可用
+     *
+     * @param connection SSH连接信息
+     * @param port 端口号
+     * @return 端口是否可用
+     */
+    public boolean checkPortAvailability(SshConnection connection, int port) {
+        try {
+            CommandResult result = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    String.format("netstat -ln | grep -q ':%d ' && echo 'used' || echo 'available'", port)
+            );
+            return result.exitStatus() == 0 && "available".equals(result.stdout().trim());
+        } catch (Exception e) {
+            log.debug("端口{}可用性检查失败", port, e);
+            return false;
+        }
+    }
+
+    /**
+     * 获取系统资源信息
+     *
+     * @param connection SSH连接信息
+     * @return 系统资源信息映射
+     */
+    public Map<String, String> getSystemResources(SshConnection connection) {
+        Map<String, String> resources = new HashMap<>();
+        try {
+            SystemInfo systemInfo = detectSystemEnvironmentSync(connection);
+
+            resources.put("osType", systemInfo.getOsType());
+            resources.put("osId", systemInfo.getOsId());
+            resources.put("distro", systemInfo.getDistro());
+            resources.put("version", systemInfo.getOsVersionId());
+            resources.put("codename", systemInfo.getOsVersionCodename());
+            resources.put("cpuCores", String.valueOf(systemInfo.getCpuCores()));
+            resources.put("totalMemoryMB", String.valueOf(systemInfo.getTotalMemoryMB()));
+            resources.put("availableMemoryMB", String.valueOf(systemInfo.getAvailableMemoryMB()));
+            resources.put("availableDiskSpaceMB", String.valueOf(systemInfo.getAvailableDiskSpaceMB()));
+            resources.put("dockerInstalled", String.valueOf(systemInfo.isDockerInstalled()));
+            resources.put("dockerVersion", systemInfo.getDockerVersion());
+            resources.put("hasRootAccess", String.valueOf(systemInfo.isHasRootAccess()));
+
+        } catch (Exception e) {
+            log.error("获取系统资源信息失败", e);
+            resources.put("error", e.getMessage());
+        }
+        return resources;
+    }
+
+    /**
      * 系统信息数据对象，用于服务间传递系统检测结果。
      */
     @Data
@@ -628,6 +730,22 @@ public class SystemDetectionService {
                     architecture != null ? architecture : "Unknown Arch",
                     cpuCores != null ? cpuCores : 0,
                     totalMemoryMB != null ? totalMemoryMB : 0);
+        }
+
+        /**
+         * 获取操作系统类型
+         * @return 操作系统类型
+         */
+        public String getOsType() {
+            return osType;
+        }
+
+        /**
+         * 获取系统架构
+         * @return 系统架构
+         */
+        public String getArchitecture() {
+            return architecture;
         }
     }
 

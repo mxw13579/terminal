@@ -47,6 +47,39 @@
         </div>
       </div>
       
+      <!-- 系统状态检查 -->
+      <div class="system-status-panel" v-if="selectedMode">
+        <h4 class="status-title">🔍 系统状态检查</h4>
+        
+        <div v-if="systemInfo" class="status-checks">
+          <div v-for="check in systemInfo.requirementChecks" 
+               :key="check"
+               class="status-item"
+               :class="getCheckClass(check)">
+            {{ check }}
+          </div>
+          
+          <!-- Docker未安装时的特别提示 -->
+          <div v-if="!systemInfo.dockerInstalled" class="docker-install-notice">
+            <div class="notice-header">
+              <span class="notice-icon">🐳</span>
+              <span class="notice-title">Docker自动安装</span>
+            </div>
+            <div class="notice-content">
+              <p>检测到系统未安装Docker，系统将在部署过程中自动安装。</p>
+              <p>{{ selectedMode === 'trusted' ? '自动安装模式：无需用户确认' : '交互确认模式：每个安装步骤需要您的确认' }}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div v-else class="status-loading">
+          <p>请先进行系统检查以了解当前状态</p>
+          <button @click="$emit('validate-system')" class="btn btn-secondary">
+            检查系统状态
+          </button>
+        </div>
+      </div>
+      
       <!-- 部署配置 -->
       <div class="deployment-config" v-if="selectedMode">
         <h4 class="config-title">部署配置</h4>
@@ -186,6 +219,25 @@
               >
                 <span class="log-time">{{ formatTime(log.timestamp) }}</span>
                 <span class="log-message">{{ log.message }}</span>
+              </div>
+            </div>
+            
+            <!-- Docker安装特殊提示 -->
+            <div v-if="step.id === 'docker-installation' && step.status === 'running'" class="docker-install-info">
+              <div class="install-info-header">
+                <span class="info-icon">🐳</span>
+                <span class="info-title">Docker自动安装</span>
+              </div>
+              <div class="install-info-content">
+                <p>正在自动检测和安装Docker...</p>
+                <div class="install-steps">
+                  <div class="mini-step">✓ 检测系统类型</div>
+                  <div class="mini-step">✓ 配置安装源</div>
+                  <div class="mini-step active">🔄 安装Docker引擎</div>
+                  <div class="mini-step">⏳ 启动Docker服务</div>
+                  <div class="mini-step">⏳ 验证安装结果</div>
+                </div>
+                <p class="install-tip">首次安装可能需要5-10分钟，请耐心等待...</p>
               </div>
             </div>
             
@@ -351,7 +403,29 @@
 <script>
 export default {
   name: 'InteractiveDeploymentWizard',
-  emits: ['deployment-complete', 'system-validation', 'deployment-started'],
+  emits: ['deployment-complete', 'validate-system', 'deploy'],
+  props: {
+    systemInfo: {
+      type: Object,
+      default: null
+    },
+    isSystemValid: {
+      type: Boolean,
+      default: false
+    },
+    systemChecking: {
+      type: Boolean,
+      default: false
+    },
+    isDeploying: {
+      type: Boolean,
+      default: false
+    },
+    deploymentProgress: {
+      type: Object,
+      default: null
+    }
+  },
   
   data() {
     return {
@@ -472,32 +546,22 @@ export default {
       this.selectedMode = mode
     },
     
+    getCheckClass(check) {
+      if (check.startsWith('✓')) return 'status-pass'
+      if (check.startsWith('✗')) return 'status-fail'
+      if (check.startsWith('⚠')) return 'status-warning'
+      return 'status-info'
+    },
+    
     startDeployment() {
-      this.deploymentStarted = true
-      this.deploymentCompleted = false
-      this.deploymentSuccess = false
-      
-      // 重置步骤状态
-      this.deploymentSteps.forEach(step => {
-        step.status = 'pending'
-        step.logs = []
-        step.progress = 0
-      })
-      
-      // 根据模式调整步骤的确认要求
-      if (this.selectedMode === 'trusted') {
-        this.deploymentSteps.forEach(step => {
-          step.requiresConfirmation = false
-        })
-      }
-      
-      // 发送部署请求
+      // 使用真正的交互式部署API而不是模拟
       const deploymentRequest = {
         mode: this.selectedMode,
         config: this.deploymentConfig
       }
       
-      this.$emit('deployment-started', deploymentRequest)
+      // 调用父组件的部署方法，传递交互式部署配置
+      this.$emit('deploy', deploymentRequest)
     },
     
     confirmStep(stepId, confirmed) {
@@ -663,6 +727,93 @@ export default {
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   margin-bottom: 24px;
+}
+
+/* 系统状态面板样式 */
+.system-status-panel {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.status-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 16px 0;
+}
+
+.status-checks {
+  space-y: 8px;
+}
+
+.status-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.status-pass {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.status-fail {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.status-warning {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+}
+
+.status-info {
+  background: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
+.docker-install-notice {
+  background: #e3f2fd;
+  border: 2px solid #2196f3;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.notice-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.notice-icon {
+  font-size: 20px;
+  margin-right: 8px;
+}
+
+.notice-title {
+  font-weight: 600;
+  color: #1976d2;
+}
+
+.notice-content p {
+  margin: 4px 0;
+  color: #0d47a1;
+  font-size: 14px;
+}
+
+.status-loading {
+  text-align: center;
+  padding: 20px;
+  color: #6c757d;
 }
 
 .mode-card {
@@ -909,6 +1060,64 @@ export default {
 .log-success { color: #28a745; }
 .log-warning { color: #ffc107; }
 .log-error { color: #dc3545; }
+
+/* Docker安装信息样式 */
+.docker-install-info {
+  background: #e8f4fd;
+  border: 1px solid #2196f3;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.install-info-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.info-icon {
+  font-size: 1.3rem;
+  margin-right: 8px;
+}
+
+.info-title {
+  font-weight: 600;
+  color: #1976d2;
+  font-size: 1.1rem;
+}
+
+.install-info-content {
+  color: #424242;
+}
+
+.install-steps {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+}
+
+.mini-step {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 0.9rem;
+  opacity: 0.6;
+}
+
+.mini-step.active {
+  opacity: 1;
+  font-weight: 500;
+  color: #1976d2;
+}
+
+.install-tip {
+  font-size: 0.85rem;
+  color: #666;
+  font-style: italic;
+  margin: 8px 0 0 0;
+}
 
 .step-interaction {
   background: #fff;
