@@ -18,70 +18,89 @@ import java.time.LocalDateTime;
 public class ContainerStatusDto {
     
     /**
-     * Whether the container is currently running
+     * 容器是否正在运行
+     * 标识容器当前是否处于运行状态，默认为false
      */
     private Boolean running = false;
     
     /**
-     * Container uptime in seconds (null if not running)
+     * 容器运行时间（秒）
+     * 容器持续运行的时间（秒），如果容器未运行则为null
      */
     private Long uptimeSeconds;
     
     /**
-     * Memory usage in MB
+     * 内存使用量（MB）
+     * 容器当前使用的内存量，单位为兆字节
      */
     private Long memoryUsageMB;
     
     /**
-     * CPU usage percentage
+     * CPU使用率百分比
+     * 容器当前CPU使用率的百分比
      */
     private Double cpuUsagePercent;
     
     /**
-     * Port the container is exposed on
+     * 容器暴露的端口
+     * 容器对外暴露的服务端口号
      */
     private Integer port;
     
     /**
-     * Container status string from Docker
+     * 容器状态字符串
+     * 从Docker获取的容器状态描述字符串
      */
     private String status;
     
     /**
-     * Container health status
+     * 容器健康状态
+     * 容器的健康检查状态
      */
     private String health;
     
     /**
-     * When the status was last updated
+     * 状态最后更新时间
+     * 容器状态信息最后一次更新的时间
      */
     private LocalDateTime lastUpdated;
     
     /**
-     * Container ID
+     * 容器ID
+     * Docker分配的容器唯一标识符
      */
     private String containerId;
     
     /**
-     * Container name
+     * 容器名称
+     * 容器的用户定义名称
      */
     private String containerName;
     
     /**
-     * Docker image being used
+     * Docker镜像
+     * 容器当前使用的Docker镜像名称
      */
     private String image;
     
     /**
-     * Whether the container exists (but may not be running)
+     * 容器是否存在
+     * 标识容器是否存在（但可能未运行），默认为false
      */
     private Boolean exists = false;
     
     /**
-     * Error message if there was a problem getting container status
+     * 错误信息
+     * 获取容器状态时出现问题的错误消息
      */
     private String error;
     
+    /**
+     * 创建容器不存在的状态DTO
+     * 用于表示容器不存在的情况
+     * 
+     * @return 容器不存在的状态DTO
+     */
     public static ContainerStatusDto notExists() {
         ContainerStatusDto status = new ContainerStatusDto();
         status.setExists(false);
@@ -91,6 +110,12 @@ public class ContainerStatusDto {
         return status;
     }
     
+    /**
+     * 创建Docker不可用的状态DTO
+     * 用于表示Docker服务不可用的情况
+     * 
+     * @return Docker不可用的状态DTO
+     */
     public static ContainerStatusDto dockerNotAvailable() {
         ContainerStatusDto status = new ContainerStatusDto();
         status.setExists(false);
@@ -101,6 +126,13 @@ public class ContainerStatusDto {
         return status;
     }
     
+    /**
+     * 创建容器已停止的状态DTO
+     * 用于表示容器已停止运行的情况
+     * 
+     * @param containerName 容器名称
+     * @return 容器已停止的状态DTO
+     */
     public static ContainerStatusDto stopped(String containerName) {
         ContainerStatusDto status = new ContainerStatusDto();
         status.setExists(true);
