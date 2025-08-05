@@ -15,7 +15,10 @@ import java.util.function.Consumer;
 
 /**
  * 交互式部署服务
- * 负责管理SillyTavern的交互式部署流程，支持分步确认和完全信任两种模式
+ * <p>
+ * 负责管理 SillyTavern 的交互式部署流程，支持分步确认和完全信任两种模式。
+ * 提供部署状态跟踪、步骤执行、用户交互等功能。
+ * </p>
  *
  * @author lizelin
  */
@@ -34,25 +37,22 @@ public class InteractiveDeploymentService {
     private final SystemDetectionService systemDetectionService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    // 存储部署状态，key为sessionId
+    /** 存储部署状态，key为sessionId */
     private final Map<String, InteractiveDeploymentDto.StatusDto> deploymentStates = new ConcurrentHashMap<>();
-
-    // 存储待确认的请求，key为sessionId
+    /** 存储待确认的请求，key为sessionId */
     private final Map<String, InteractiveDeploymentDto.ConfirmationRequestDto> pendingConfirmations = new ConcurrentHashMap<>();
 
-    /**
-     * 定义部署步骤
-     */
+    /** 定义部署步骤 */
     private static final List<String> DEPLOYMENT_STEPS = Arrays.asList(
-        "geolocation_detection",     // 地理位置检测
-        "system_detection",          // 系统环境检测
-        "package_manager_config",    // 包管理器配置
-        "docker_installation",       // Docker安装
-        "docker_mirror_config",      // Docker镜像源配置
-        "sillytavern_deployment",    // SillyTavern部署
-        "external_access_config",    // 外网访问配置
-        "service_validation",        // 服务验证
-        "deployment_complete"        // 部署完成
+            "geolocation_detection",
+            "system_detection",
+            "package_manager_config",
+            "docker_installation",
+            "docker_mirror_config",
+            "sillytavern_deployment",
+            "external_access_config",
+            "service_validation",
+            "deployment_complete"
     );
 
     /**
@@ -165,6 +165,10 @@ public class InteractiveDeploymentService {
 
     /**
      * 初始化部署状态
+     *
+     * @param sessionId 会话ID
+     * @param request 部署请求
+     * @return 初始部署状态对象
      */
     private InteractiveDeploymentDto.StatusDto initializeDeploymentStatus(
             String sessionId, InteractiveDeploymentDto.RequestDto request) {
@@ -199,9 +203,13 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行部署步骤
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param request 部署请求
      */
     private void executeDeploymentSteps(String sessionId, SshConnection connection,
-                                      InteractiveDeploymentDto.RequestDto request) {
+                                        InteractiveDeploymentDto.RequestDto request) {
 
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
         if (status == null) return;
@@ -254,10 +262,16 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行单个步骤
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 当前步骤
+     * @param request 部署请求
+     * @throws Exception 步骤执行异常
      */
     private void executeStep(String sessionId, SshConnection connection,
-                           InteractiveDeploymentDto.StepDto step,
-                           InteractiveDeploymentDto.RequestDto request) throws Exception {
+                             InteractiveDeploymentDto.StepDto step,
+                             InteractiveDeploymentDto.RequestDto request) throws Exception {
 
         step.setStatus("running");
         step.setTimestamp(System.currentTimeMillis());
@@ -298,18 +312,23 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行地理位置检测
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 检测异常
      */
     private void executeGeolocationDetection(String sessionId, SshConnection connection,
-                                           InteractiveDeploymentDto.StepDto step) throws Exception {
+                                             InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("检测服务器地理位置...");
         step.setProgress(20);
         sendDeploymentProgress(sessionId);
 
         GeolocationDetectionService.GeolocationInfo result = geolocationService.detectGeolocation(connection,
-            (progressMsg) -> {
-                step.setMessage(progressMsg);
-                sendDeploymentProgress(sessionId);
-            }).join();
+                (progressMsg) -> {
+                    step.setMessage(progressMsg);
+                    sendDeploymentProgress(sessionId);
+                }).join();
 
         step.setMessage("地理位置检测完成: " + (result.getCountryCode() != null ? result.getCountryCode() : "未知"));
         step.setProgress(100);
@@ -323,9 +342,14 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行系统检测
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 检测异常
      */
     private void executeSystemDetection(String sessionId, SshConnection connection,
-                                      InteractiveDeploymentDto.StepDto step) throws Exception {
+                                        InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("检测系统环境...");
         step.setProgress(30);
         sendDeploymentProgress(sessionId);
@@ -342,9 +366,14 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行包管理器配置
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 配置异常
      */
     private void executePackageManagerConfig(String sessionId, SshConnection connection,
-                                           InteractiveDeploymentDto.StepDto step) throws Exception {
+                                             InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("配置包管理器镜像源...");
         step.setProgress(25);
         sendDeploymentProgress(sessionId);
@@ -359,9 +388,14 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行Docker安装
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 安装异常
      */
     private void executeDockerInstallation(String sessionId, SshConnection connection,
-                                         InteractiveDeploymentDto.StepDto step) throws Exception {
+                                           InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("安装Docker...");
         step.setProgress(10);
         sendDeploymentProgress(sessionId);
@@ -384,7 +418,7 @@ public class InteractiveDeploymentService {
                 InteractiveDeploymentDto.StepDto geoStep = status.getSteps().get(0);
                 if (geoStep.getConfirmationData() != null) {
                     GeolocationDetectionService.GeolocationInfo geoResult =
-                        (GeolocationDetectionService.GeolocationInfo) geoStep.getConfirmationData().get("geolocationResult");
+                            (GeolocationDetectionService.GeolocationInfo) geoStep.getConfirmationData().get("geolocationResult");
                     if (geoResult != null) {
                         useChineseMirror = geoResult.isUseChineseMirror();
                     }
@@ -395,7 +429,7 @@ public class InteractiveDeploymentService {
         }
 
         DockerInstallationService.DockerInstallationResult result = dockerInstallationService.installDocker(
-            connection, systemInfo, useChineseMirror, progressCallback).join();
+                connection, systemInfo, useChineseMirror, progressCallback).join();
 
         step.setMessage(result.isSuccess() ? "Docker安装完成" : "Docker安装失败");
         step.setProgress(100);
@@ -405,9 +439,14 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行Docker镜像源配置
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 配置异常
      */
     private void executeDockerMirrorConfig(String sessionId, SshConnection connection,
-                                         InteractiveDeploymentDto.StepDto step) throws Exception {
+                                           InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("配置Docker镜像加速器...");
         step.setProgress(30);
         sendDeploymentProgress(sessionId);
@@ -422,9 +461,14 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行SillyTavern部署
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 部署异常
      */
     private void executeSillyTavernDeployment(String sessionId, SshConnection connection,
-                                            InteractiveDeploymentDto.StepDto step) throws Exception {
+                                              InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("部署SillyTavern容器...");
         step.setProgress(10);
         sendDeploymentProgress(sessionId);
@@ -438,13 +482,13 @@ public class InteractiveDeploymentService {
 
         // 创建部署配置
         SillyTavernDeploymentService.SillyTavernDeploymentConfig deploymentConfig =
-            SillyTavernDeploymentService.SillyTavernDeploymentConfig.builder()
-                .selectedVersion("latest")
-                .port("8000")
-                .enableExternalAccess(false)
-                .username("")
-                .password("")
-                .build();
+                SillyTavernDeploymentService.SillyTavernDeploymentConfig.builder()
+                        .selectedVersion("latest")
+                        .port("8000")
+                        .enableExternalAccess(false)
+                        .username("")
+                        .password("")
+                        .build();
 
         // 判断是否使用中国镜像源
         boolean useChineseMirror = false;
@@ -454,7 +498,7 @@ public class InteractiveDeploymentService {
                 InteractiveDeploymentDto.StepDto geoStep = status.getSteps().get(0);
                 if (geoStep.getConfirmationData() != null) {
                     GeolocationDetectionService.GeolocationInfo geoResult =
-                        (GeolocationDetectionService.GeolocationInfo) geoStep.getConfirmationData().get("geolocationResult");
+                            (GeolocationDetectionService.GeolocationInfo) geoStep.getConfirmationData().get("geolocationResult");
                     if (geoResult != null) {
                         useChineseMirror = geoResult.isUseChineseMirror();
                     }
@@ -465,7 +509,7 @@ public class InteractiveDeploymentService {
         }
 
         SillyTavernDeploymentService.SillyTavernDeploymentResult result =
-            sillyTavernDeploymentService.deploySillyTavern(connection, deploymentConfig, useChineseMirror, progressCallback).join();
+                sillyTavernDeploymentService.deploySillyTavern(connection, deploymentConfig, useChineseMirror, progressCallback).join();
 
         step.setMessage(result.isSuccess() ? "SillyTavern部署完成" : "SillyTavern部署失败");
         step.setProgress(100);
@@ -479,29 +523,34 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行外网访问配置
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 配置异常
      */
     private void executeExternalAccessConfig(String sessionId, SshConnection connection,
-                                           InteractiveDeploymentDto.StepDto step) throws Exception {
+                                             InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("配置外网访问...");
         step.setProgress(20);
         sendDeploymentProgress(sessionId);
 
         // 创建外网访问配置
         ExternalAccessService.ExternalAccessConfig accessConfig =
-            ExternalAccessService.ExternalAccessConfig.builder()
-                .enableExternalAccess(true)
-                .useRandomCredentials(false)
-                .username("admin")
-                .password("password123")
-                .port("8000")
-                .build();
+                ExternalAccessService.ExternalAccessConfig.builder()
+                        .enableExternalAccess(true)
+                        .useRandomCredentials(false)
+                        .username("admin")
+                        .password("password123")
+                        .port("8000")
+                        .build();
 
         ExternalAccessService.ExternalAccessConfigResult result =
-            externalAccessService.configureExternalAccess(connection, accessConfig, (message) -> {
-                step.setMessage(message);
-                addStepLog(step, message);
-                sendDeploymentProgress(sessionId);
-            }).join();
+                externalAccessService.configureExternalAccess(connection, accessConfig, (message) -> {
+                    step.setMessage(message);
+                    addStepLog(step, message);
+                    sendDeploymentProgress(sessionId);
+                }).join();
 
         step.setMessage(result.isSuccess() ? "外网访问配置完成" : "外网访问配置跳过");
         step.setProgress(100);
@@ -515,9 +564,14 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行服务验证
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
+     * @throws Exception 验证异常
      */
     private void executeServiceValidation(String sessionId, SshConnection connection,
-                                        InteractiveDeploymentDto.StepDto step) throws Exception {
+                                          InteractiveDeploymentDto.StepDto step) throws Exception {
         step.setMessage("验证服务状态...");
         step.setProgress(25);
         sendDeploymentProgress(sessionId);
@@ -542,9 +596,13 @@ public class InteractiveDeploymentService {
 
     /**
      * 执行部署完成
+     *
+     * @param sessionId 会话ID
+     * @param connection SSH连接
+     * @param step 步骤对象
      */
     private void executeDeploymentComplete(String sessionId, SshConnection connection,
-                                         InteractiveDeploymentDto.StepDto step) throws Exception {
+                                           InteractiveDeploymentDto.StepDto step) {
         step.setMessage("部署完成");
         step.setProgress(100);
 
@@ -554,36 +612,39 @@ public class InteractiveDeploymentService {
 
     /**
      * 等待用户确认
+     *
+     * @param sessionId 会话ID
+     * @param step 当前步骤
      */
     private void waitForUserConfirmation(String sessionId, InteractiveDeploymentDto.StepDto step) {
         InteractiveDeploymentDto.ConfirmationRequestDto confirmationRequest =
-            InteractiveDeploymentDto.ConfirmationRequestDto.builder()
-                .stepId(step.getStepId())
-                .stepName(step.getStepName())
-                .message("是否继续执行 " + step.getStepName() + "?")
-                .options(Arrays.asList(
-                    InteractiveDeploymentDto.ConfirmationOptionDto.builder()
-                        .key("confirm")
-                        .label("确认")
-                        .description("继续执行此步骤")
-                        .isRecommended(true)
-                        .build(),
-                    InteractiveDeploymentDto.ConfirmationOptionDto.builder()
-                        .key("skip")
-                        .label("跳过")
-                        .description("跳过此步骤")
-                        .build(),
-                    InteractiveDeploymentDto.ConfirmationOptionDto.builder()
-                        .key("cancel")
-                        .label("取消")
-                        .description("取消整个部署")
-                        .isRisky(true)
-                        .build()
-                ))
-                .defaultChoice("confirm")
-                .timeoutSeconds(180)
-                .additionalData(step.getConfirmationData())
-                .build();
+                InteractiveDeploymentDto.ConfirmationRequestDto.builder()
+                        .stepId(step.getStepId())
+                        .stepName(step.getStepName())
+                        .message("是否继续执行 " + step.getStepName() + "?")
+                        .options(Arrays.asList(
+                                InteractiveDeploymentDto.ConfirmationOptionDto.builder()
+                                        .key("confirm")
+                                        .label("确认")
+                                        .description("继续执行此步骤")
+                                        .isRecommended(true)
+                                        .build(),
+                                InteractiveDeploymentDto.ConfirmationOptionDto.builder()
+                                        .key("skip")
+                                        .label("跳过")
+                                        .description("跳过此步骤")
+                                        .build(),
+                                InteractiveDeploymentDto.ConfirmationOptionDto.builder()
+                                        .key("cancel")
+                                        .label("取消")
+                                        .description("取消整个部署")
+                                        .isRisky(true)
+                                        .build()
+                        ))
+                        .defaultChoice("confirm")
+                        .timeoutSeconds(180)
+                        .additionalData(step.getConfirmationData())
+                        .build();
 
         pendingConfirmations.put(sessionId, confirmationRequest);
         step.setStatus("waiting_confirmation");
@@ -594,6 +655,9 @@ public class InteractiveDeploymentService {
 
     /**
      * 确认后恢复部署
+     *
+     * @param sessionId 会话ID
+     * @param confirmation 用户确认响应
      */
     private void resumeDeploymentAfterConfirmation(String sessionId, InteractiveDeploymentDto.ConfirmationDto confirmation) {
         // 在新线程中恢复部署执行
@@ -612,6 +676,9 @@ public class InteractiveDeploymentService {
 
     /**
      * 跳过当前步骤
+     *
+     * @param sessionId 会话ID
+     * @param confirmation 用户确认响应
      */
     private void skipCurrentStep(String sessionId, InteractiveDeploymentDto.ConfirmationDto confirmation) {
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
@@ -629,6 +696,8 @@ public class InteractiveDeploymentService {
 
     /**
      * 完成部署
+     *
+     * @param sessionId 会话ID
      */
     private void completeDeployment(String sessionId) {
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
@@ -651,6 +720,9 @@ public class InteractiveDeploymentService {
 
     /**
      * 处理部署错误
+     *
+     * @param sessionId 会话ID
+     * @param error 异常对象
      */
     private void handleDeploymentError(String sessionId, Exception error) {
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
@@ -668,36 +740,40 @@ public class InteractiveDeploymentService {
 
     /**
      * 请求错误处理
+     *
+     * @param sessionId 会话ID
+     * @param step 当前步骤
+     * @param error 异常对象
      */
     private void requestErrorHandling(String sessionId, InteractiveDeploymentDto.StepDto step, Exception error) {
         InteractiveDeploymentDto.ConfirmationRequestDto confirmationRequest =
-            InteractiveDeploymentDto.ConfirmationRequestDto.builder()
-                .stepId(step.getStepId())
-                .stepName(step.getStepName())
-                .message("步骤执行失败: " + error.getMessage() + "\n您希望如何处理?")
-                .options(Arrays.asList(
-                    InteractiveDeploymentDto.ConfirmationOptionDto.builder()
-                        .key("retry")
-                        .label("重试")
-                        .description("重新执行此步骤")
-                        .isRecommended(true)
-                        .build(),
-                    InteractiveDeploymentDto.ConfirmationOptionDto.builder()
-                        .key("skip")
-                        .label("跳过")
-                        .description("跳过此步骤继续")
-                        .build(),
-                    InteractiveDeploymentDto.ConfirmationOptionDto.builder()
-                        .key("cancel")
-                        .label("取消")
-                        .description("取消整个部署")
-                        .isRisky(true)
-                        .build()
-                ))
-                .defaultChoice("retry")
-                .timeoutSeconds(300)
-                .additionalData(Map.of("error", error.getMessage()))
-                .build();
+                InteractiveDeploymentDto.ConfirmationRequestDto.builder()
+                        .stepId(step.getStepId())
+                        .stepName(step.getStepName())
+                        .message("步骤执行失败: " + error.getMessage() + "\n您希望如何处理?")
+                        .options(Arrays.asList(
+                                InteractiveDeploymentDto.ConfirmationOptionDto.builder()
+                                        .key("retry")
+                                        .label("重试")
+                                        .description("重新执行此步骤")
+                                        .isRecommended(true)
+                                        .build(),
+                                InteractiveDeploymentDto.ConfirmationOptionDto.builder()
+                                        .key("skip")
+                                        .label("跳过")
+                                        .description("跳过此步骤继续")
+                                        .build(),
+                                InteractiveDeploymentDto.ConfirmationOptionDto.builder()
+                                        .key("cancel")
+                                        .label("取消")
+                                        .description("取消整个部署")
+                                        .isRisky(true)
+                                        .build()
+                        ))
+                        .defaultChoice("retry")
+                        .timeoutSeconds(300)
+                        .additionalData(Map.of("error", error.getMessage()))
+                        .build();
 
         pendingConfirmations.put(sessionId, confirmationRequest);
         sendConfirmationRequest(sessionId, confirmationRequest);
@@ -705,6 +781,9 @@ public class InteractiveDeploymentService {
 
     /**
      * 发送部署状态
+     *
+     * @param sessionId 会话ID
+     * @param status 部署状态
      */
     private void sendDeploymentStatus(String sessionId, InteractiveDeploymentDto.StatusDto status) {
         messagingTemplate.convertAndSend("/queue/sillytavern/interactive-deployment-status-user" + sessionId, status);
@@ -712,6 +791,8 @@ public class InteractiveDeploymentService {
 
     /**
      * 发送部署进度
+     *
+     * @param sessionId 会话ID
      */
     private void sendDeploymentProgress(String sessionId) {
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
@@ -720,7 +801,7 @@ public class InteractiveDeploymentService {
         InteractiveDeploymentDto.ProgressDto progress = InteractiveDeploymentDto.ProgressDto.builder()
                 .sessionId(sessionId)
                 .currentStep(status.getCurrentStepIndex() < status.getSteps().size() ?
-                           status.getSteps().get(status.getCurrentStepIndex()) : null)
+                        status.getSteps().get(status.getCurrentStepIndex()) : null)
                 .totalSteps(status.getSteps().size())
                 .completedSteps((int) status.getSteps().stream().filter(s -> "completed".equals(s.getStatus())).count())
                 .overallProgress((int) ((double) status.getCurrentStepIndex() / status.getSteps().size() * 100))
@@ -733,6 +814,9 @@ public class InteractiveDeploymentService {
 
     /**
      * 发送确认请求
+     *
+     * @param sessionId 会话ID
+     * @param request 确认请求对象
      */
     private void sendConfirmationRequest(String sessionId, InteractiveDeploymentDto.ConfirmationRequestDto request) {
         messagingTemplate.convertAndSend("/queue/sillytavern/interactive-deployment-confirmation-user" + sessionId, request);
@@ -740,6 +824,8 @@ public class InteractiveDeploymentService {
 
     /**
      * 清理部署会话
+     *
+     * @param sessionId 会话ID
      */
     private void cleanupDeploymentSession(String sessionId) {
         deploymentStates.remove(sessionId);
@@ -749,30 +835,36 @@ public class InteractiveDeploymentService {
 
     /**
      * 获取步骤显示名称
+     *
+     * @param stepId 步骤ID
+     * @return 步骤显示名称
      */
     private String getStepDisplayName(String stepId) {
         Map<String, String> stepNames = Map.of(
-            "geolocation_detection", "地理位置检测",
-            "system_detection", "系统环境检测",
-            "package_manager_config", "包管理器配置",
-            "docker_installation", "Docker安装",
-            "docker_mirror_config", "Docker镜像源配置",
-            "sillytavern_deployment", "SillyTavern部署",
-            "external_access_config", "外网访问配置",
-            "service_validation", "服务验证",
-            "deployment_complete", "部署完成"
+                "geolocation_detection", "地理位置检测",
+                "system_detection", "系统环境检测",
+                "package_manager_config", "包管理器配置",
+                "docker_installation", "Docker安装",
+                "docker_mirror_config", "Docker镜像源配置",
+                "sillytavern_deployment", "SillyTavern部署",
+                "external_access_config", "外网访问配置",
+                "service_validation", "服务验证",
+                "deployment_complete", "部署完成"
         );
         return stepNames.getOrDefault(stepId, stepId);
     }
 
     /**
      * 添加步骤日志
+     *
+     * @param step 步骤对象
+     * @param message 日志消息
      */
     private void addStepLog(InteractiveDeploymentDto.StepDto step, String message) {
         if (step.getLogs() == null) {
             step.setLogs(new ArrayList<>());
         }
         step.getLogs().add(String.format("[%s] %s",
-            new Date().toString(), message));
+                new Date().toString(), message));
     }
 }

@@ -10,15 +10,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 系统检测服务，负责检测目标主机的操作系统、Docker、资源等环境信息，
  * 并判断是否满足SillyTavern容器部署的基本要求。
+ *
+ * @author
  */
 @Slf4j
 @Service
@@ -55,10 +53,12 @@ public class SystemDetectionService {
             } else {
                 systemInfo.setDockerInstalled(false);
                 checks.add("✗ 未检测到Docker");
-                warnings.add("Docker需要安装。请运行以下命令安装Docker:");
-                warnings.add("curl -fsSL https://get.docker.com -o get-docker.sh");
-                warnings.add("sudo sh get-docker.sh");
-                warnings.add("或访问 https://docs.docker.com/engine/install/ 查看安装指南");
+                warnings.addAll(List.of(
+                        "Docker需要安装。请运行以下命令安装Docker:",
+                        "curl -fsSL https://get.docker.com -o get-docker.sh",
+                        "sudo sh get-docker.sh",
+                        "或访问 https://docs.docker.com/engine/install/ 查看安装指南"
+                ));
             }
 
             // 检查sudo权限
@@ -76,7 +76,7 @@ public class SystemDetectionService {
             if (diskSpace != null && diskSpace >= MIN_DISK_SPACE_MB) {
                 checks.add("✓ 磁盘空间充足: " + formatDiskSpace(diskSpace));
             } else {
-                checks.add("✗ 磁盘空间不足: " + formatDiskSpace(diskSpace) + "，至少需要 " + formatDiskSpace(MIN_DISK_SPACE_MB) );
+                checks.add("✗ 磁盘空间不足: " + formatDiskSpace(diskSpace) + "，至少需要 " + formatDiskSpace(MIN_DISK_SPACE_MB));
             }
 
             // 检查内存
@@ -132,7 +132,7 @@ public class SystemDetectionService {
      */
     public Map<Integer, Boolean> checkPortAvailability(SshConnection connection, List<Integer> ports) {
         if (ports == null || ports.isEmpty()) {
-            return Collections.emptyMap(); // 更安全的空Map
+            return Collections.emptyMap();
         }
         Map<Integer, Boolean> availability = new HashMap<>();
         for (Integer port : ports) {
@@ -147,7 +147,6 @@ public class SystemDetectionService {
         }
         return availability;
     }
-
 
     /**
      * 检测系统环境详细信息，包括操作系统、发行版、资源等。
@@ -184,7 +183,6 @@ public class SystemDetectionService {
         }
     }
 
-
     /**
      * 检测Linux发行版详细信息，优先解析 /etc/os-release。
      *
@@ -193,17 +191,13 @@ public class SystemDetectionService {
      */
     private void detectDistributionInfo(SshConnection connection, SystemInfo.SystemInfoBuilder builder) {
         try {
-            // 1. /etc/os-release（保留原实现）
             String osRelease = executeCommand(connection, "cat /etc/os-release 2>/dev/null || echo ''");
             if (!osRelease.isBlank()) {
                 parseOsRelease(osRelease, builder);
                 return;
             }
-
-            // 2. /etc/lsb-release
             String lsb = executeCommand(connection, "cat /etc/lsb-release 2>/dev/null || echo ''");
             if (!lsb.isBlank()) {
-                // 载入环境变量
                 for (String line : lsb.split("\\R")) {
                     if (line.startsWith("DISTRIB_ID=")) {
                         builder.osId(line.split("=",2)[1].replaceAll("\"","").toLowerCase());
@@ -217,11 +211,8 @@ public class SystemDetectionService {
                 }
                 return;
             }
-
-            // 3. apt/yum/dnf 保留原实现——Ubuntu/CentOS/Fedora
             if (executeCommand(connection, "which apt-get").contains("apt-get")) {
                 builder.osId("ubuntu").distro("Ubuntu");
-                // 取代lsb_release 做fallback
                 try { builder.osVersionCodename(
                         executeCommand(connection, "lsb_release -cs 2>/dev/null").trim());
                 } catch (Exception ignore) {}
@@ -233,31 +224,23 @@ public class SystemDetectionService {
                 builder.osId("fedora").distro("Fedora");
                 return;
             }
-
-            // 4. /etc/redhat-release
             String redhat = executeCommand(connection, "cat /etc/redhat-release 2>/dev/null || echo ''").trim();
             if (!redhat.isEmpty()) {
                 builder.distro(redhat);
                 String name = redhat.split("\\s+")[0];
                 builder.osId(name.toLowerCase());
-                // version 数字
                 String ver = redhat.replaceAll("^.*?([0-9]+(\\.[0-9]+)*).*$","$1");
                 builder.osVersionId(ver);
                 return;
             }
-
-            // 5. /etc/SuSE-release
             String suse = executeCommand(connection, "cat /etc/SuSE-release 2>/dev/null || echo ''").trim();
             if (!suse.isEmpty()) {
                 builder.osId("suse").distro("SUSE");
-                // grep VERSION
                 String vid = executeCommand(connection,
                         "grep VERSION /etc/SuSE-release | head -1 | awk '{print $3}'").trim();
                 builder.osVersionId(vid);
                 return;
             }
-
-            // 6. /etc/alpine-release
             String alpine = executeCommand(connection, "cat /etc/alpine-release 2>/dev/null || echo ''").trim();
             if (!alpine.isEmpty()) {
                 builder.osId("alpine")
@@ -265,8 +248,6 @@ public class SystemDetectionService {
                         .osVersionId(alpine);
                 return;
             }
-
-            // 7. /etc/issue 兜底
             String issue = executeCommand(connection, "head -1 /etc/issue 2>/dev/null || echo ''").trim();
             if (!issue.isEmpty()) {
                 String name = issue.split("\\s+")[0];
@@ -274,8 +255,6 @@ public class SystemDetectionService {
                 builder.distro(issue.replaceAll("\\\\l",""));
                 return;
             }
-
-            // 8. uname 终极兜底
             String unameS = executeCommand(connection, "uname -s").trim();
             builder.osId(unameS.toLowerCase())
                     .distro(unameS)
@@ -284,7 +263,6 @@ public class SystemDetectionService {
             log.warn("检测发行版信息失败: {}", e.getMessage());
         }
     }
-
 
     /**
      * 解析 /etc/os-release 文件内容，填充系统信息构建器。
@@ -337,7 +315,6 @@ public class SystemDetectionService {
      */
     private boolean checkDockerAvailability(SshConnection connection) {
         try {
-            // 先尝试直接执行docker命令
             try {
                 String result = executeCommand(connection, "docker --version");
                 if (result.toLowerCase().contains("docker version")) {
@@ -347,7 +324,6 @@ public class SystemDetectionService {
             } catch (Exception e) {
                 log.debug("Docker（无需sudo）不可用: {}", e.getMessage());
             }
-            // 再尝试sudo
             try {
                 String result = executeCommand(connection, "sudo docker --version");
                 if (result.toLowerCase().contains("docker version")) {
@@ -357,15 +333,13 @@ public class SystemDetectionService {
             } catch (Exception e) {
                 log.debug("Docker（需sudo）不可用: {}", e.getMessage());
             }
-            // 检查docker命令是否存在且为可执行文件
             try {
                 String result = executeCommand(connection, "command -v docker");
                 if (!result.trim().isEmpty()) {
-                    // 检查是否为可执行文件
                     String checkExec = executeCommand(connection, "[ -x \"" + result.trim() + "\" ] && echo 'yes' || echo 'no'");
                     if ("yes".equals(checkExec.trim())) {
                         log.info("检测到docker命令路径: {}", result.trim());
-                        return false; // 存在但不可用
+                        return false;
                     }
                 }
             } catch (Exception e) {
@@ -442,7 +416,6 @@ public class SystemDetectionService {
                 log.debug("磁盘空间检测命令失败: {} - {}", cmd, e.getMessage());
             }
         }
-        // 尝试解析 df -h . 的输出
         try {
             String debugDf = executeCommand(connection, "df -h .");
             log.info("df -h . 输出: {}", debugDf);
@@ -451,7 +424,6 @@ public class SystemDetectionService {
                 String[] fields = lines[1].trim().split("\\s+");
                 if (fields.length >= 4) {
                     String avail = fields[3];
-                    // 解析单位
                     if (avail.endsWith("G")) {
                         double gb = Double.parseDouble(avail.replace("G", ""));
                         return (long) (gb * 1024);
@@ -467,7 +439,6 @@ public class SystemDetectionService {
         return null;
     }
 
-
     /**
      * 获取内存信息（单位：MB），优先使用 free -m，失败则解析 /proc/meminfo。
      *
@@ -475,7 +446,6 @@ public class SystemDetectionService {
      * @return Map，包含total和available，获取失败返回null
      */
     private Map<String, Long> getMemoryInfo(SshConnection connection) {
-        // 优先尝试 free -m
         try {
             String result = executeCommand(connection, "free -m | grep '^Mem:' | awk '{print $2 \" \" $7}'").trim();
             String[] parts = result.split("\\s+");
@@ -488,7 +458,6 @@ public class SystemDetectionService {
         } catch (Exception e) {
             log.warn("获取内存信息失败（free -m）: {}", e.getMessage());
         }
-        // 备用方案，解析 /proc/meminfo
         try {
             String meminfo = executeCommand(connection, "cat /proc/meminfo");
             long total = 0L, available = 0L;
@@ -501,7 +470,6 @@ public class SystemDetectionService {
                 }
             }
             if (total > 0 && available > 0) {
-                // /proc/meminfo 单位为KB，需转为MB
                 return Map.of(
                         "total", total / 1024,
                         "available", available / 1024
@@ -512,7 +480,6 @@ public class SystemDetectionService {
         }
         return null;
     }
-
 
     /**
      * 获取CPU核心数。
@@ -569,30 +536,95 @@ public class SystemDetectionService {
         return mb + " MB";
     }
 
-
-
     /**
      * 系统信息数据对象，用于服务间传递系统检测结果。
      */
     @Data
     @Builder
     public static class SystemInfo {
+        /**
+         * 操作系统类型（如 Linux、macOS、Unknown）
+         */
         private String osType;
+
+        /**
+         * 操作系统发行版名称（如 Ubuntu、CentOS、Alpine Linux 3.18.0 等）
+         */
         private String distro;
+
+        /**
+         * 操作系统版本号（如 22.04、7.9.2009 等）
+         */
         private String version;
+
+        /**
+         * 系统架构（如 x86_64、arm64 等）
+         */
         private String architecture;
+
+        /**
+         * 操作系统ID（如 ubuntu、centos、alpine 等，通常来自 /etc/os-release 的 ID 字段）
+         */
         private String osId;
+
+        /**
+         * 操作系统版本ID（如 22.04、7、3.18.0 等，通常来自 /etc/os-release 的 VERSION_ID 字段）
+         */
         private String osVersionId;
+
+        /**
+         * 操作系统版本代号（如 jammy、bionic、focal，通常来自 /etc/os-release 的 VERSION_CODENAME 字段）
+         */
         private String osVersionCodename;
+
+        /**
+         * 是否已安装Docker
+         */
         private boolean dockerInstalled;
+
+        /**
+         * Docker版本描述（如 Docker version 20.10.24, build 297e128）
+         */
         private String dockerVersion;
+
+        /**
+         * 是否拥有root（sudo）权限
+         */
         private boolean hasRootAccess;
+
+        /**
+         * CPU核心数
+         */
         private Integer cpuCores;
+
+        /**
+         * 总内存（单位：MB）
+         */
         private Long totalMemoryMB;
+
+        /**
+         * 可用内存（单位：MB）
+         */
         private Long availableMemoryMB;
+
+        /**
+         * 可用磁盘空间（单位：MB）
+         */
         private Long availableDiskSpaceMB;
+
+        /**
+         * 环境变量（可选，key为变量名，value为变量值）
+         */
         private Map<String, String> environmentVariables;
+
+        /**
+         * 已安装的软件包列表（可选）
+         */
         private List<String> installedPackages;
+
+        /**
+         * 端口可用性映射（key为端口号，value为true表示可用）
+         */
         private Map<Integer, Boolean> portAvailability;
 
         /**
@@ -605,7 +637,6 @@ public class SystemDetectionService {
                     (availableDiskSpaceMB != null && availableDiskSpaceMB >= MIN_DISK_SPACE_MB) &&
                     (availableMemoryMB != null && availableMemoryMB >= MIN_MEMORY_MB);
         }
-
 
         /**
          * 获取系统摘要信息。
@@ -621,4 +652,5 @@ public class SystemDetectionService {
                     totalMemoryMB != null ? totalMemoryMB : 0);
         }
     }
+
 }

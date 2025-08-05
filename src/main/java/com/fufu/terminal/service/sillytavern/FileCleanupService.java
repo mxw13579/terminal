@@ -15,10 +15,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 文件清理服务，用于管理临时文件的自动清理。
- * 包括导出数据文件和上传文件的定时清理与强制清理。
+ * 文件清理服务，负责临时文件的自动与手动清理。
  * <p>
- * 支持定时任务与手动触发，自动维护最大文件数和最大存活时间。
+ * 支持定时任务、手动触发、最大文件数与最大存活时间的自动维护。
  * </p>
  *
  * @author lizelin
@@ -116,6 +115,7 @@ public class FileCleanupService {
 
     /**
      * 定时任务：每 15 分钟清理超时文件，并维护最大文件数。
+     * <p>由Spring定时任务自动触发。</p>
      */
     @Scheduled(fixedRate = 900_000)
     public void periodicCleanup() {
@@ -209,7 +209,7 @@ public class FileCleanupService {
     /**
      * 获取当前临时目录的文件统计信息。
      *
-     * @return 文件统计信息
+     * @return 文件统计信息对象
      */
     public FileCleanupStats getCleanupStats() {
         File tempDir = new File(tempDirectory);
@@ -287,14 +287,26 @@ public class FileCleanupService {
             this.scheduledCleanupCount = scheduledCleanupCount;
         }
 
+        /**
+         * 获取当前文件数
+         * @return 当前文件数
+         */
         public int getCurrentFileCount() {
             return currentFileCount;
         }
 
+        /**
+         * 获取当前总文件大小（字节）
+         * @return 当前总大小
+         */
         public long getCurrentTotalSizeBytes() {
             return currentTotalSizeBytes;
         }
 
+        /**
+         * 获取已调度清理的文件数
+         * @return 已调度清理数
+         */
         public int getScheduledCleanupCount() {
             return scheduledCleanupCount;
         }

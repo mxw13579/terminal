@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
 /**
  * 实时日志查看服务。
  * <p>
- * 该服务通过SSH连接远程服务器，使用docker logs -f命令实现真正的实时日志推送，避免轮询带来的性能问题。
+ * 该服务通过SSH连接远程服务器，使用docker logs -f命令实现实时日志推送，避免轮询带来的性能问题。
  * 支持日志级别过滤、历史日志获取、内存缓存和多会话并发管理。
  * </p>
  *
@@ -35,14 +35,23 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class RealTimeLogService {
 
+    /** SSH命令服务 */
     private final SshCommandService sshCommandService;
+    /** WebSocket消息推送模板 */
     private final SimpMessagingTemplate messagingTemplate;
+    /** 会话管理器 */
     private final StompSessionManager sessionManager;
 
     /** 活跃会话日志流管理器映射 */
     private final Map<String, LogStreamManager> activeStreams = new ConcurrentHashMap<>();
-    /** 日志流线程池 */
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
+
+    /** 日志流线程池，线程命名便于排查 */
+    private final ExecutorService executorService = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r);
+        t.setName("RealTimeLogService-LogStream-" + t.getId());
+        t.setDaemon(true);
+        return t;
+    });
 
     /** 默认最大日志行数 */
     private static final int DEFAULT_MAX_LINES = 1000;
@@ -54,9 +63,9 @@ public class RealTimeLogService {
     /**
      * 启动指定会话的实时日志流。
      *
-     * @param sessionId    会话ID
+     * @param sessionId     会话ID
      * @param containerName 容器名
-     * @param maxLines     最大缓存行数
+     * @param maxLines      最大缓存行数
      */
     public void startLogStream(String sessionId, String containerName, int maxLines) {
         log.info("开始实时日志流，会话: {} 容器: {} 最大行数: {}", sessionId, containerName, maxLines);
@@ -109,7 +118,7 @@ public class RealTimeLogService {
         List<String> logLines = Arrays.asList(result.split("\n"));
 
         // 按级别过滤
-        if (level != null && !level.equalsIgnoreCase("all")) {
+        if (level != null && !"all".equalsIgnoreCase(level)) {
             logLines = filterLogsByLevel(logLines, level);
         }
 
@@ -383,9 +392,9 @@ public class RealTimeLogService {
         }
         List<String> filtered = new ArrayList<>();
         String levelPattern = level.toUpperCase();
+        Pattern pattern = Pattern.compile("\\b" + levelPattern + "\\b|\\[" + levelPattern + "\\]");
         for (String line : logLines) {
-            if (line.toUpperCase().contains(levelPattern) ||
-                    line.toUpperCase().contains("[" + levelPattern + "]")) {
+            if (pattern.matcher(line.toUpperCase()).find()) {
                 filtered.add(line);
             }
         }

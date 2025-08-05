@@ -12,7 +12,11 @@ import java.util.List;
 
 /**
  * SillyTavern 管理核心服务类。
- * 提供部署、状态检查、生命周期管理等高阶操作。
+ * <p>
+ * 提供 SillyTavern 的部署、状态检查、生命周期管理与升级等操作。
+ * </p>
+ *
+ * @author
  */
 @Slf4j
 @Service
@@ -22,7 +26,9 @@ public class SillyTavernService {
     private final DockerContainerService dockerService;
     private final SystemDetectionService systemDetectionService;
 
+    /** 默认容器名称 */
     private static final String DEFAULT_CONTAINER_NAME = "sillytavern";
+    /** 默认镜像地址 */
     private static final String DEFAULT_IMAGE = "ghcr.io/sillytavern/sillytavern:latest";
 
     /**
@@ -32,7 +38,7 @@ public class SillyTavernService {
      * @return 系统信息 DTO，包含校验结果
      */
     public SystemInfoDto validateSystemRequirements(SshConnection connection) {
-        log.info("正在校验 SillyTavern 部署的系统要求");
+        log.info("校验 SillyTavern 部署的系统要求");
         return systemDetectionService.validateSystemRequirements(connection);
     }
 
@@ -120,12 +126,12 @@ public class SillyTavernService {
 
                 dockerService.pullImage(connection, request.getDockerImage(), (pullProgress) -> {
                     progressCallback.accept(DeploymentProgressDto.success("pull-image", 50, pullProgress));
-                }).get(); // 等待镜像拉取完成
+                }).get();
 
                 // 阶段 4：创建容器
                 progressCallback.accept(DeploymentProgressDto.success("create-container", 70, "创建容器..."));
 
-                String containerId = dockerService.createContainer(
+                dockerService.createContainer(
                         connection,
                         request.getContainerName(),
                         request.getDockerImage(),
@@ -136,7 +142,6 @@ public class SillyTavernService {
                 // 阶段 5：验证部署
                 progressCallback.accept(DeploymentProgressDto.success("verify", 90, "验证部署..."));
 
-                // 等待容器启动
                 Thread.sleep(2000);
 
                 ContainerStatusDto finalStatus = getContainerStatus(connection, request.getContainerName());
@@ -181,7 +186,6 @@ public class SillyTavernService {
         if (!status.getExists()) {
             throw new IllegalStateException("容器 '" + containerName + "' 不存在");
         }
-
         if (status.getRunning()) {
             throw new IllegalStateException("容器 '" + containerName + "' 已经在运行");
         }
@@ -213,7 +217,6 @@ public class SillyTavernService {
         if (!status.getExists()) {
             throw new IllegalStateException("容器 '" + containerName + "' 不存在");
         }
-
         if (!status.getRunning()) {
             throw new IllegalStateException("容器 '" + containerName + "' 未在运行");
         }

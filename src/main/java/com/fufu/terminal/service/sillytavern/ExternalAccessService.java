@@ -8,15 +8,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
  * 外网访问配置服务
- * 负责配置SillyTavern的外网访问和用户认证
- * 基于linux-silly-tavern-docker-deploy.sh脚本的外网访问配置功能
+ * <p>
+ * 负责配置SillyTavern的外网访问和用户认证，基于linux-silly-tavern-docker-deploy.sh脚本的外网访问配置功能。
+ * </p>
+ * <p>
+ * 支持自动生成配置文件、凭据、并进行格式验证。
+ * </p>
  *
  * @author Claude
  */
@@ -28,29 +30,32 @@ public class ExternalAccessService {
     private final SshCommandService sshCommandService;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String RANDOM_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final String CONFIG_DIR = "/data/docker/sillytavern/config";
+    private static final String CONFIG_FILE = CONFIG_DIR + "/config.yaml";
 
     /**
      * 配置SillyTavern外网访问
      *
-     * @param connection SSH连接
-     * @param accessConfig 访问配置
-     * @param progressCallback 进度回调函数
-     * @return 配置结果
+     * @param connection        SSH连接信息
+     * @param accessConfig      外网访问配置参数
+     * @param progressCallback  进度回调（用于前端进度提示）
+     * @return 配置结果的CompletableFuture
      */
-    public CompletableFuture<ExternalAccessConfigResult> configureExternalAccess(SshConnection connection,
-                                                                                ExternalAccessConfig accessConfig,
-                                                                                Consumer<String> progressCallback) {
+    public CompletableFuture<ExternalAccessConfigResult> configureExternalAccess(
+            SshConnection connection,
+            ExternalAccessConfig accessConfig,
+            Consumer<String> progressCallback) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 if (!accessConfig.isEnableExternalAccess()) {
                     progressCallback.accept("跳过外网访问配置");
                     return ExternalAccessConfigResult.builder()
-                        .success(true)
-                        .message("未开启外网访问，使用默认配置")
-                        .username("")
-                        .password("")
-                        .configPath("")
-                        .build();
+                            .success(true)
+                            .message("未开启外网访问，使用默认配置")
+                            .username("")
+                            .password("")
+                            .configPath("")
+                            .build();
                 }
 
                 progressCallback.accept("配置SillyTavern外网访问...");
@@ -68,36 +73,40 @@ public class ExternalAccessService {
                 boolean configValid = validateConfigFile(connection, progressCallback);
 
                 return ExternalAccessConfigResult.builder()
-                    .success(configValid)
-                    .message(configValid ? "外网访问配置成功" : "配置文件生成失败")
-                    .username(credentials.getUsername())
-                    .password(credentials.getPassword())
-                    .configPath("/data/docker/sillytavem/config/config.yaml")
-                    .port(accessConfig.getPort())
-                    .build();
+                        .success(configValid)
+                        .message(configValid ? "外网访问配置成功" : "配置文件生成失败")
+                        .username(credentials.getUsername())
+                        .password(credentials.getPassword())
+                        .configPath(CONFIG_FILE)
+                        .port(accessConfig.getPort())
+                        .build();
 
             } catch (Exception e) {
                 log.error("配置外网访问失败", e);
                 progressCallback.accept("配置外网访问失败: " + e.getMessage());
                 return ExternalAccessConfigResult.builder()
-                    .success(false)
-                    .message("配置失败: " + e.getMessage())
-                    .username("")
-                    .password("")
-                    .configPath("")
-                    .build();
+                        .success(false)
+                        .message("配置失败: " + e.getMessage())
+                        .username("")
+                        .password("")
+                        .configPath("")
+                        .build();
             }
         });
     }
 
     /**
      * 创建配置目录
+     *
+     * @param connection       SSH连接
+     * @param progressCallback 进度回调
+     * @throws Exception 创建目录失败时抛出异常
      */
     private void createConfigDirectory(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("创建配置目录...");
-
-        CommandResult mkdirResult = sshCommandService.executeCommand(connection.getJschSession(),
-            "sudo mkdir -p /data/docker/sillytavem/config");
+        CommandResult mkdirResult = sshCommandService.executeCommand(
+                connection.getJschSession(),
+                "sudo mkdir -p " + CONFIG_DIR);
 
         if (mkdirResult.exitStatus() != 0) {
             throw new RuntimeException("创建配置目录失败: " + mkdirResult.stderr());
@@ -106,9 +115,14 @@ public class ExternalAccessService {
 
     /**
      * 处理用户凭据
+     *
+     * @param accessConfig     外网访问配置
+     * @param progressCallback 进度回调
+     * @return 外网访问凭据
      */
-    private ExternalAccessCredentials processCredentials(ExternalAccessConfig accessConfig,
-                                                       Consumer<String> progressCallback) {
+    private ExternalAccessCredentials processCredentials(
+            ExternalAccessConfig accessConfig,
+            Consumer<String> progressCallback) {
 
         String username, password;
 
@@ -125,32 +139,38 @@ public class ExternalAccessService {
 
             // 验证用户名密码格式
             if (!isValidCredentials(username, password)) {
-                throw new RuntimeException("用户名或密码格式不正确（不能为纯数字）");
+                throw new RuntimeException("用户名或密码格式不正确（不能为纯数字且不能为空）");
             }
         }
 
         return ExternalAccessCredentials.builder()
-            .username(username)
-            .password(password)
-            .build();
+                .username(username)
+                .password(password)
+                .build();
     }
 
     /**
      * 验证用户名密码格式
+     *
+     * @param username 用户名
+     * @param password 密码
+     * @return 是否有效
      */
     private boolean isValidCredentials(String username, String password) {
         // 检查不能为空
         if (username == null || username.trim().isEmpty() ||
-            password == null || password.trim().isEmpty()) {
+                password == null || password.trim().isEmpty()) {
             return false;
         }
-
         // 检查不能为纯数字
         return !username.matches("^\\d+$") && !password.matches("^\\d+$");
     }
 
     /**
-     * 生成随机字符串
+     * 生成指定长度的随机字符串
+     *
+     * @param length 字符串长度
+     * @return 随机字符串
      */
     private String generateRandomString(int length) {
         StringBuilder sb = new StringBuilder(length);
@@ -162,19 +182,26 @@ public class ExternalAccessService {
 
     /**
      * 生成config.yaml配置文件
+     *
+     * @param connection       SSH连接
+     * @param credentials      外网访问凭据
+     * @param accessConfig     外网访问配置
+     * @param progressCallback 进度回调
+     * @throws Exception 写入或权限设置失败时抛出异常
      */
-    private void generateConfigFile(SshConnection connection,
-                                  ExternalAccessCredentials credentials,
-                                  ExternalAccessConfig accessConfig,
-                                  Consumer<String> progressCallback) throws Exception {
+    private void generateConfigFile(
+            SshConnection connection,
+            ExternalAccessCredentials credentials,
+            ExternalAccessConfig accessConfig,
+            Consumer<String> progressCallback) throws Exception {
 
         progressCallback.accept("生成SillyTavern配置文件...");
 
         String configContent = generateConfigContent(credentials, accessConfig);
 
         String writeCommand = String.format(
-            "sudo tee /data/docker/sillytavem/config/config.yaml > /dev/null <<'EOF'\n%s\nEOF",
-            configContent);
+                "sudo tee %s > /dev/null <<'EOF'\n%s\nEOF",
+                CONFIG_FILE, configContent);
 
         CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeCommand);
 
@@ -184,114 +211,128 @@ public class ExternalAccessService {
 
         // 设置配置文件权限
         sshCommandService.executeCommand(connection.getJschSession(),
-            "sudo chmod 644 /data/docker/sillytavem/config/config.yaml");
+                "sudo chmod 644 " + CONFIG_FILE);
     }
 
     /**
      * 生成config.yaml文件内容
+     *
+     * @param credentials  外网访问凭据
+     * @param accessConfig 外网访问配置
+     * @return YAML配置内容字符串
      */
     private String generateConfigContent(ExternalAccessCredentials credentials, ExternalAccessConfig accessConfig) {
         String cookieSecret = generateRandomString(64);
 
+        // 端口号优先使用accessConfig中的port，否则默认8000
+        String port = (accessConfig.getPort() != null && !accessConfig.getPort().isBlank())
+                ? accessConfig.getPort()
+                : "8000";
+
         return "dataRoot: ./data\n" +
-               "cardsCacheCapacity: 100\n" +
-               "listen: true\n" +
-               "protocol:\n" +
-               "  ipv4: true\n" +
-               "  ipv6: false\n" +
-               "dnsPreferIPv6: false\n" +
-               "autorunHostname: auto\n" +
-               "port: 8000\n" +
-               "autorunPortOverride: -1\n" +
-               "whitelistMode: false\n" +
-               "enableForwardedWhitelist: true\n" +
-               "whitelist:\n" +
-               "  - ::1\n" +
-               "  - 127.0.0.1\n" +
-               "  - 0.0.0.0\n" +
-               "basicAuthMode: true\n" +
-               "basicAuthUser:\n" +
-               "  username: " + credentials.getUsername() + "\n" +
-               "  password: " + credentials.getPassword() + "\n" +
-               "enableCorsProxy: false\n" +
-               "requestProxy:\n" +
-               "  enabled: false\n" +
-               "  url: socks5://username:password@example.com:1080\n" +
-               "  bypass:\n" +
-               "    - localhost\n" +
-               "    - 127.0.0.1\n" +
-               "enableUserAccounts: false\n" +
-               "enableDiscreetLogin: false\n" +
-               "autheliaAuth: false\n" +
-               "perUserBasicAuth: false\n" +
-               "sessionTimeout: 86400\n" +
-               "cookieSecret: " + cookieSecret + "\n" +
-               "disableCsrfProtection: false\n" +
-               "securityOverride: false\n" +
-               "autorun: true\n" +
-               "avoidLocalhost: false\n" +
-               "backups:\n" +
-               "  common:\n" +
-               "    numberOfBackups: 50\n" +
-               "  chat:\n" +
-               "    enabled: true\n" +
-               "    maxTotalBackups: -1\n" +
-               "    throttleInterval: 10000\n" +
-               "thumbnails:\n" +
-               "  enabled: true\n" +
-               "  format: jpg\n" +
-               "  quality: 95\n" +
-               "  dimensions:\n" +
-               "    bg:\n" +
-               "      - 160\n" +
-               "      - 90\n" +
-               "    avatar:\n" +
-               "      - 96\n" +
-               "      - 144\n" +
-               "allowKeysExposure: false\n" +
-               "skipContentCheck: false\n" +
-               "whitelistImportDomains:\n" +
-               "  - localhost\n" +
-               "  - cdn.discordapp.com\n" +
-               "  - files.catbox.moe\n" +
-               "  - raw.githubusercontent.com\n" +
-               "requestOverrides: []\n" +
-               "enableExtensions: true\n" +
-               "enableExtensionsAutoUpdate: true\n" +
-               "enableDownloadableTokenizers: true\n" +
-               "extras:\n" +
-               "  disableAutoDownload: false\n" +
-               "  classificationModel: Cohee/distilbert-base-uncased-go-emotions-onnx\n" +
-               "  captioningModel: Xenova/vit-gpt2-image-captioning\n" +
-               "  embeddingModel: Cohee/jina-embeddings-v2-base-en\n" +
-               "  speechToTextModel: Xenova/whisper-small\n" +
-               "  textToSpeechModel: Xenova/speecht5_tts\n" +
-               "promptPlaceholder: \"[Start a new chat]\"\n" +
-               "openai:\n" +
-               "  randomizeUserId: false\n" +
-               "  captionSystemPrompt: \"\"\n" +
-               "deepl:\n" +
-               "  formality: default\n" +
-               "mistral:\n" +
-               "  enablePrefix: false\n" +
-               "ollama:\n" +
-               "  keepAlive: -1\n" +
-               "claude:\n" +
-               "  enableSystemPromptCache: false\n" +
-               "  cachingAtDepth: -1\n" +
-               "enableServerPlugins: false\n";
+                "cardsCacheCapacity: 100\n" +
+                "listen: true\n" +
+                "protocol:\n" +
+                "  ipv4: true\n" +
+                "  ipv6: false\n" +
+                "dnsPreferIPv6: false\n" +
+                "autorunHostname: auto\n" +
+                "port: " + port + "\n" +
+                "autorunPortOverride: -1\n" +
+                "whitelistMode: false\n" +
+                "enableForwardedWhitelist: true\n" +
+                "whitelist:\n" +
+                "  - ::1\n" +
+                "  - 127.0.0.1\n" +
+                "  - 0.0.0.0\n" +
+                "basicAuthMode: true\n" +
+                "basicAuthUser:\n" +
+                "  username: " + credentials.getUsername() + "\n" +
+                "  password: " + credentials.getPassword() + "\n" +
+                "enableCorsProxy: false\n" +
+                "requestProxy:\n" +
+                "  enabled: false\n" +
+                "  url: socks5://username:password@example.com:1080\n" +
+                "  bypass:\n" +
+                "    - localhost\n" +
+                "    - 127.0.0.1\n" +
+                "enableUserAccounts: false\n" +
+                "enableDiscreetLogin: false\n" +
+                "autheliaAuth: false\n" +
+                "perUserBasicAuth: false\n" +
+                "sessionTimeout: 86400\n" +
+                "cookieSecret: " + cookieSecret + "\n" +
+                "disableCsrfProtection: false\n" +
+                "securityOverride: false\n" +
+                "autorun: true\n" +
+                "avoidLocalhost: false\n" +
+                "backups:\n" +
+                "  common:\n" +
+                "    numberOfBackups: 50\n" +
+                "  chat:\n" +
+                "    enabled: true\n" +
+                "    maxTotalBackups: -1\n" +
+                "    throttleInterval: 10000\n" +
+                "thumbnails:\n" +
+                "  enabled: true\n" +
+                "  format: jpg\n" +
+                "  quality: 95\n" +
+                "  dimensions:\n" +
+                "    bg:\n" +
+                "      - 160\n" +
+                "      - 90\n" +
+                "    avatar:\n" +
+                "      - 96\n" +
+                "      - 144\n" +
+                "allowKeysExposure: false\n" +
+                "skipContentCheck: false\n" +
+                "whitelistImportDomains:\n" +
+                "  - localhost\n" +
+                "  - cdn.discordapp.com\n" +
+                "  - files.catbox.moe\n" +
+                "  - raw.githubusercontent.com\n" +
+                "requestOverrides: []\n" +
+                "enableExtensions: true\n" +
+                "enableExtensionsAutoUpdate: true\n" +
+                "enableDownloadableTokenizers: true\n" +
+                "extras:\n" +
+                "  disableAutoDownload: false\n" +
+                "  classificationModel: Cohee/distilbert-base-uncased-go-emotions-onnx\n" +
+                "  captioningModel: Xenova/vit-gpt2-image-captioning\n" +
+                "  embeddingModel: Cohee/jina-embeddings-v2-base-en\n" +
+                "  speechToTextModel: Xenova/whisper-small\n" +
+                "  textToSpeechModel: Xenova/speecht5_tts\n" +
+                "promptPlaceholder: \"[Start a new chat]\"\n" +
+                "openai:\n" +
+                "  randomizeUserId: false\n" +
+                "  captionSystemPrompt: \"\"\n" +
+                "deepl:\n" +
+                "  formality: default\n" +
+                "mistral:\n" +
+                "  enablePrefix: false\n" +
+                "ollama:\n" +
+                "  keepAlive: -1\n" +
+                "claude:\n" +
+                "  enableSystemPromptCache: false\n" +
+                "  cachingAtDepth: -1\n" +
+                "enableServerPlugins: false\n";
     }
 
     /**
      * 验证配置文件格式
+     *
+     * @param connection       SSH连接
+     * @param progressCallback 进度回调
+     * @return 配置文件格式是否有效
      */
     private boolean validateConfigFile(SshConnection connection, Consumer<String> progressCallback) {
         try {
             progressCallback.accept("验证配置文件格式...");
 
             // 检查配置文件是否存在
-            CommandResult existsResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo test -f /data/docker/sillytavem/config/config.yaml");
+            CommandResult existsResult = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    "sudo test -f " + CONFIG_FILE);
 
             if (existsResult.exitStatus() != 0) {
                 progressCallback.accept("配置文件不存在");
@@ -299,8 +340,9 @@ public class ExternalAccessService {
             }
 
             // 验证YAML格式（使用python验证）
-            CommandResult validateResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo python3 -c \"import yaml; yaml.safe_load(open('/data/docker/sillytavem/config/config.yaml'))\"");
+            CommandResult validateResult = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    "sudo python3 -c \"import yaml; yaml.safe_load(open('" + CONFIG_FILE + "'))\"");
 
             if (validateResult.exitStatus() == 0) {
                 progressCallback.accept("配置文件格式验证通过");
@@ -324,28 +366,30 @@ public class ExternalAccessService {
      */
     public ExternalAccessCredentials generateRandomCredentials() {
         return ExternalAccessCredentials.builder()
-            .username(generateRandomString(16))
-            .password(generateRandomString(16))
-            .build();
+                .username(generateRandomString(16))
+                .password(generateRandomString(16))
+                .build();
     }
 
     /**
      * 验证外网访问配置
      *
      * @param connection SSH连接
-     * @param port 端口号
-     * @return 配置是否有效
+     * @param port       端口号
+     * @return 配置是否有效的CompletableFuture
      */
     public CompletableFuture<Boolean> validateExternalAccessConfig(SshConnection connection, String port) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 // 检查端口是否被正确映射
-                CommandResult portResult = sshCommandService.executeCommand(connection.getJschSession(),
-                    String.format("sudo docker port sillytavern 8000 | grep '%s'", port));
+                CommandResult portResult = sshCommandService.executeCommand(
+                        connection.getJschSession(),
+                        String.format("sudo docker port sillytavern 8000 | grep '%s'", port));
 
                 // 检查配置文件是否存在且有效
-                CommandResult configResult = sshCommandService.executeCommand(connection.getJschSession(),
-                    "sudo test -f /data/docker/sillytavem/config/config.yaml");
+                CommandResult configResult = sshCommandService.executeCommand(
+                        connection.getJschSession(),
+                        "sudo test -f " + CONFIG_FILE);
 
                 return portResult.exitStatus() == 0 && configResult.exitStatus() == 0;
 
@@ -362,10 +406,25 @@ public class ExternalAccessService {
     @lombok.Data
     @lombok.Builder
     public static class ExternalAccessConfig {
+        /**
+         * 是否启用外网访问
+         */
         private boolean enableExternalAccess;
+        /**
+         * 是否使用随机凭据
+         */
         private boolean useRandomCredentials;
+        /**
+         * 用户名
+         */
         private String username;
+        /**
+         * 密码
+         */
         private String password;
+        /**
+         * 端口号
+         */
         private String port;
     }
 
@@ -375,7 +434,13 @@ public class ExternalAccessService {
     @lombok.Data
     @lombok.Builder
     public static class ExternalAccessCredentials {
+        /**
+         * 用户名
+         */
         private String username;
+        /**
+         * 密码
+         */
         private String password;
     }
 
@@ -385,14 +450,32 @@ public class ExternalAccessService {
     @lombok.Data
     @lombok.Builder
     public static class ExternalAccessConfigResult {
+        /**
+         * 配置是否成功
+         */
         private boolean success;
+        /**
+         * 配置结果描述信息
+         */
         private String message;
+        /**
+         * 用户名
+         */
         @lombok.Builder.Default
         private String username = "";
+        /**
+         * 密码
+         */
         @lombok.Builder.Default
         private String password = "";
+        /**
+         * 配置文件路径
+         */
         @lombok.Builder.Default
         private String configPath = "";
+        /**
+         * 端口号
+         */
         @lombok.Builder.Default
         private String port = "";
     }
