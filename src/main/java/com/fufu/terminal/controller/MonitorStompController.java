@@ -14,10 +14,13 @@ import org.springframework.stereotype.Controller;
 import jakarta.validation.Valid;
 
 /**
- * <p>STOMP 控制器：用于处理系统监控相关的 WebSocket 消息。</p>
+ * <p>STOMP 控制器：处理系统监控相关的 WebSocket 消息。</p>
  * <p>包括启动和停止监控的请求处理。</p>
  *
+ * <p>该控制器通过 WebSocket STOMP 协议与前端进行交互，管理 SSH 监控任务的启动与停止。</p>
+ *
  * @author lizelin
+ * @since 1.0
  */
 @Slf4j
 @Controller
@@ -38,7 +41,7 @@ public class MonitorStompController {
             @Valid MonitorStartDto message,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        String sessionId = headerAccessor.getSessionId();
+        String sessionId = getSessionId(headerAccessor);
         log.info("收到启动监控请求，sessionId: {}，频率: {}s", sessionId, message.getFrequencySeconds());
 
         SshConnection connection = getConnectionOrNotifyError(sessionId);
@@ -67,7 +70,7 @@ public class MonitorStompController {
             @Valid MonitorStopDto message,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        String sessionId = headerAccessor.getSessionId();
+        String sessionId = getSessionId(headerAccessor);
         log.info("收到停止监控请求，sessionId: {}", sessionId);
 
         SshConnection connection = getConnectionOrNotifyError(sessionId);
@@ -99,5 +102,15 @@ public class MonitorStompController {
             return null;
         }
         return connection;
+    }
+
+    /**
+     * 从消息头访问器中获取 sessionId。
+     *
+     * @param headerAccessor WebSocket 消息头访问器
+     * @return sessionId 字符串
+     */
+    private String getSessionId(SimpMessageHeaderAccessor headerAccessor) {
+        return headerAccessor.getSessionId();
     }
 }

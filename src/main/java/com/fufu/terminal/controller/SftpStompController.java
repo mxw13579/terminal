@@ -16,14 +16,15 @@ import org.springframework.stereotype.Controller;
 import jakarta.validation.Valid;
 
 /**
- * STOMP 控制器，处理 SFTP 相关操作，包括目录列表、文件上传和下载。
  * <p>
- * 通过 WebSocket STOMP 协议与前端进行交互，调用 SftpService 完成具体业务逻辑。
+ * SftpStompController 负责处理通过 WebSocket STOMP 协议传递的 SFTP 相关操作请求，
+ * 包括目录列表、文件下载和分片上传。所有操作均通过 SftpService 实现具体业务逻辑，
+ * 并通过 StompSessionManager 管理会话和错误消息推送。
  * </p>
  * <ul>
- *     <li>/sftp/list - 目录列表</li>
- *     <li>/sftp/download - 文件下载</li>
- *     <li>/sftp/upload - 文件分片上传</li>
+ *     <li>/sftp/list - 获取目录列表</li>
+ *     <li>/sftp/download - 下载文件</li>
+ *     <li>/sftp/upload - 分片上传文件</li>
  * </ul>
  *
  * @author lizelin
@@ -40,8 +41,8 @@ public class SftpStompController {
     /**
      * 处理 SFTP 目录列表请求。
      *
-     * @param request        目录列表请求参数
-     * @param headerAccessor STOMP 消息头访问器
+     * @param request        目录列表请求参数，包含目标路径
+     * @param headerAccessor STOMP 消息头访问器，用于获取会话ID
      */
     @MessageMapping("/sftp/list")
     public void handleSftpList(
@@ -68,8 +69,8 @@ public class SftpStompController {
     /**
      * 处理 SFTP 文件下载请求。
      *
-     * @param request        文件下载请求参数
-     * @param headerAccessor STOMP 消息头访问器
+     * @param request        文件下载请求参数，包含文件路径列表
+     * @param headerAccessor STOMP 消息头访问器，用于获取会话ID
      */
     @MessageMapping("/sftp/download")
     public void handleSftpDownload(
@@ -96,8 +97,8 @@ public class SftpStompController {
     /**
      * 处理 SFTP 文件分片上传请求。
      *
-     * @param request        文件上传请求参数
-     * @param headerAccessor STOMP 消息头访问器
+     * @param request        文件上传请求参数，包含文件路径、文件名、分片索引等
+     * @param headerAccessor STOMP 消息头访问器，用于获取会话ID
      */
     @MessageMapping("/sftp/upload")
     public void handleSftpUpload(
@@ -130,7 +131,7 @@ public class SftpStompController {
      * 获取 SSH 连接，如果不存在则通知前端错误信息。
      *
      * @param sessionId 会话 ID
-     * @return SshConnection 实例或 null
+     * @return SshConnection 实例，如果不存在则返回 null 并通知前端
      */
     private SshConnection getConnectionOrNotify(String sessionId) {
         SshConnection connection = sessionManager.getConnection(sessionId);
@@ -142,7 +143,7 @@ public class SftpStompController {
     }
 
     /**
-     * 创建 WebSocket 会话适配器。
+     * 创建 WebSocket 会话适配器，用于消息推送。
      *
      * @param sessionId 会话 ID
      * @return StompWebSocketSessionAdapter 实例

@@ -20,13 +20,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ * <p>
  * STOMP WebSocket 会话适配器，将 STOMP 消息功能包装为 WebSocketSession 接口。
  * 该适配器用于复用现有 SFTP 服务方法，无需修改其对 WebSocketSession 的依赖。
- * <p>
  * 通过将 WebSocket 消息适配为 STOMP 消息，实现终端与后端的透明通信。
  * </p>
  *
+ * <p>
+ * 本类线程安全，适用于多线程环境。
+ * </p>
+ *
  * @author lizelin
+ * @since 2024-06
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -152,8 +157,6 @@ public class StompWebSocketSessionAdapter implements WebSocketSession {
         open = false;
         log.debug("STOMP WebSocket 适配器关闭，sessionId={}, status={}", sessionId, status);
     }
-
-    // 以下为 WebSocketSession 接口的最小实现，部分方法返回默认值或空实现
 
     /**
      * 获取 URI。

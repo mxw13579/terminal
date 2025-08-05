@@ -15,12 +15,12 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 /**
- * STOMP 控制器，用于处理 SSH 终端相关操作。
- * 包括终端数据输入、终端尺寸调整和输出转发启动。
+ * <p>STOMP 控制器：处理 SSH 终端相关的 WebSocket 消息，包括终端数据输入、终端尺寸调整和输出转发。</p>
  *
  * <p>所有方法均通过 STOMP 消息映射进行调用。</p>
  *
  * @author lizelin
+ * @since 1.0
  */
 @Slf4j
 @Controller
@@ -30,7 +30,7 @@ public class SshTerminalStompController {
     private final StompSessionManager sessionManager;
 
     /**
-     * 处理来自客户端的终端数据输入。
+     * 处理来自客户端的终端数据输入，将数据写入 SSH 连接的输出流。
      *
      * @param message        终端数据传输对象，包含输入的数据
      * @param headerAccessor 消息头访问器，用于获取会话ID
@@ -68,7 +68,7 @@ public class SshTerminalStompController {
     }
 
     /**
-     * 处理终端尺寸调整请求。
+     * 处理终端尺寸调整请求，设置 SSH 终端的行列数。
      *
      * @param message        终端尺寸调整数据对象，包含行列数
      * @param headerAccessor 消息头访问器，用于获取会话ID
@@ -88,6 +88,7 @@ public class SshTerminalStompController {
 
         try {
             if (connection.getChannelShell() != null) {
+                // 设置终端尺寸，宽高以像素为单位（假设每个字符宽高为8像素）
                 connection.getChannelShell().setPtySize(
                         message.getCols(),
                         message.getRows(),
@@ -106,7 +107,7 @@ public class SshTerminalStompController {
     }
 
     /**
-     * 启动终端输出转发（在 SSH 连接建立后调用）。
+     * 启动终端输出转发（在 SSH 连接建立后调用），将 SSH 输出通过 WebSocket 推送给前端。
      *
      * @param headerAccessor 消息头访问器，用于获取会话ID
      */

@@ -12,11 +12,19 @@ import org.springframework.validation.BindException;
 
 import jakarta.validation.ConstraintViolationException;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 /**
- * <p>WebSocket全局异常处理器（STOMP消息）</p>
- * <p>负责捕获STOMP消息处理过程中的各类异常，并将其转换为标准化的错误消息对象，推送给前端用户。</p>
- * <p>所有错误信息均为中文，便于终端用户理解。</p>
+ * WebSocket全局异常处理器（STOMP消息）
+ * <p>
+ * 负责捕获STOMP消息处理过程中的各类异常，并将其转换为标准化的错误消息对象，推送给前端用户。
+ * 所有错误信息均为中文，便于终端用户理解。
+ * </p>
+ * <p>
+ * 支持的异常类型包括：通用异常、SSH/SFTP异常、I/O异常、参数校验异常、绑定异常、非法参数异常、
+ * SillyTavern业务异常、安全异常、中断异常等。
+ * </p>
  *
  * @author lizelin
  */
@@ -304,11 +312,10 @@ public class StompGlobalExceptionHandler {
      */
     private String getStackTraceAsString(Exception e) {
         if (log.isDebugEnabled()) {
-            StringBuilder sb = new StringBuilder();
-            for (StackTraceElement element : e.getStackTrace()) {
-                sb.append(element).append("\n");
-            }
-            return sb.toString();
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+            return sw.toString();
         }
         return null;
     }
