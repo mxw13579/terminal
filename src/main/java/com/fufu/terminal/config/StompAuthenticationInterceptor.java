@@ -13,19 +13,24 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
- * STOMP认证拦截器
- * 在STOMP连接过程中处理SSH连接建立和会话管理
- * 
+ * STOMP认证拦截器。
+ * <p>
+ * 该拦截器负责在STOMP连接建立和断开时，自动管理SSH连接的创建与销毁。
+ * 每个STOMP会话对应一个SSH连接，便于后续Web终端操作。
+ * </p>
+ * <ul>
+ *     <li>CONNECT命令：建立SSH连接并保存到会话映射表</li>
+ *     <li>DISCONNECT命令：清理SSH连接，释放资源</li>
+ * </ul>
+ *
  * @author lizelin
  */
 @Slf4j
@@ -34,15 +39,19 @@ import java.util.stream.Collectors;
 public class StompAuthenticationInterceptor implements ChannelInterceptor {
 
     /**
-     * SSH连接映射表
-     * 根据STOMP会话ID存储对应的SSH连接
+     * SSH连接映射表。
+     * <p>
+     * 键为STOMP会话ID，值为对应的SSH连接对象。
+     * </p>
      */
     private final Map<String, SshConnection> connections = new ConcurrentHashMap<>();
 
     /**
-     * 拦截STOMP消息发送前的处理
-     * 处理认证和SSH连接建立
-     * 
+     * 拦截STOMP消息发送前的处理逻辑。
+     * <p>
+     * CONNECT命令时建立SSH连接，DISCONNECT命令时清理SSH连接。
+     * </p>
+     *
      * @param message STOMP消息
      * @param channel 消息通道
      * @return 处理后的消息
@@ -50,88 +59,80 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-        
+
         if (accessor != null) {
             String sessionId = accessor.getSessionId();
-            
-            // Handle CONNECT command - establish SSH connection
+
             if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                 handleConnect(accessor, sessionId);
-            }
-            // Handle DISCONNECT command - cleanup SSH connection
-            else if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
+            } else if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
                 handleDisconnect(sessionId);
             }
         }
-        
         return message;
     }
 
     /**
-     * 处理STOMP CONNECT命令
-     * 通过建立SSH连接来处理STOMP连接请求
-     * 
-     * @param accessor STOMP头访问器
+     * 处理STOMP CONNECT命令，建立SSH连接。
+     *
+     * @param accessor  STOMP头访问器
      * @param sessionId 会话ID
      */
     private void handleConnect(StompHeaderAccessor accessor, String sessionId) {
         try {
-            // Extract SSH connection parameters from STOMP headers
+            // 从STOMP头部获取SSH连接参数
             String host = accessor.getFirstNativeHeader("host");
             String portStr = accessor.getFirstNativeHeader("port");
             String user = accessor.getFirstNativeHeader("user");
             String password = accessor.getFirstNativeHeader("password");
-            
-            // Validate required parameters
+
+            // 校验参数
             if (host == null || user == null || password == null) {
-                log.error("Missing required SSH connection parameters for session: {}", sessionId);
-                throw new IllegalArgumentException("Missing required SSH connection parameters");
+                log.error("会话{}缺少必要的SSH连接参数", sessionId);
+                throw new IllegalArgumentException("缺少必要的SSH连接参数");
             }
-            
+
             int port = portStr != null ? Integer.parseInt(portStr) : 22;
-            
-            // Establish SSH connection
+
+            // 建立SSH连接
             JSch jsch = new JSch();
             Session jschSession = jsch.getSession(user, host, port);
             jschSession.setPassword(password);
             jschSession.setConfig("StrictHostKeyChecking", "no");
             jschSession.setConfig("PreferredAuthentications", "password");
-            jschSession.setServerAliveInterval(30000); // Keep connection alive
+            jschSession.setServerAliveInterval(30000);
             jschSession.setServerAliveCountMax(3);
             jschSession.connect(30000);
 
-            // Create shell channel
+            // 创建Shell通道
             ChannelShell channel = (ChannelShell) jschSession.openChannel("shell");
             channel.setPtyType("xterm-256color");
-            channel.setPtySize(80, 24, 640, 480); // Set initial size
+            channel.setPtySize(80, 24, 640, 480);
             InputStream inputStream = channel.getInputStream();
             OutputStream outputStream = channel.getOutputStream();
             channel.connect(10000);
 
-            // Store SSH connection
+            // 保存SSH连接
             SshConnection sshConnection = new SshConnection(jsch, jschSession, channel, inputStream, outputStream);
             connections.put(sessionId, sshConnection);
-            
-            // Store connection in session attributes for easy access in controllers
+
+            // 存入会话属性，便于后续控制器访问
             accessor.getSessionAttributes().put("sshConnection", sshConnection);
-            
-            log.info("SSH connection established for STOMP session: {} ({}@{}:{})", 
-                    sessionId, user, host, port);
-            
+
+            log.info("为STOMP会话{}建立SSH连接 ({}@{}:{})", sessionId, user, host, port);
+
         } catch (Exception e) {
-            log.error("Failed to establish SSH connection for session {}: {}", sessionId, e.getMessage(), e);
-            // Remove any partially created connection
+            log.error("为会话{}建立SSH连接失败: {}", sessionId, e.getMessage(), e);
+            // 清理部分建立的连接
             handleDisconnect(sessionId);
-            // Don't throw exception here as it prevents STOMP connection
-            // Instead, we'll send an error message after connection is established
-            log.warn("SSH connection failed for session {}, STOMP connection will proceed but SSH functionality will be unavailable", sessionId);
+            // 不抛出异常，允许STOMP连接继续建立
+            log.warn("会话{} SSH连接失败，STOMP连接继续，但SSH功能不可用", sessionId);
         }
     }
 
     /**
-     * 处理STOMP DISCONNECT命令
-     * 通过清理SSH连接来处理STOMP断开请求
-     * 
+     * 处理STOMP DISCONNECT命令，清理SSH连接。
+     *
      * @param sessionId 会话ID
      */
     private void handleDisconnect(String sessionId) {
@@ -140,46 +141,30 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
             if (connection != null) {
                 try {
                     connection.disconnect();
-                    log.info("SSH connection cleaned up for session: {}", sessionId);
+                    log.info("已清理会话{}对应的SSH连接", sessionId);
                 } catch (Exception e) {
-                    log.error("Error cleaning up SSH connection for session {}: {}", sessionId, e.getMessage());
+                    log.error("清理会话{}的SSH连接时出错: {}", sessionId, e.getMessage());
                 }
             }
         }
     }
 
     /**
-     * 根据会话ID获取SSH连接
-     * 
+     * 根据会话ID获取SSH连接。
+     *
      * @param sessionId 会话ID
-     * @return 对应的SSH连接，如果不存在则返回null
+     * @return 对应的SSH连接对象，若不存在则返回null
      */
     public SshConnection getConnection(String sessionId) {
         return connections.get(sessionId);
     }
 
     /**
-     * 获取所有活动的SSH连接
-     * 用于监控和调试目的
-     * 
-     * @return 所有活动连接的不可修改映射
+     * 获取所有活动的SSH连接映射（只读）。
+     *
+     * @return 当前所有活动连接的不可修改映射
      */
     public Map<String, SshConnection> getAllConnections() {
         return Collections.unmodifiableMap(connections);
-    }
-
-    /**
-     * 解析查询字符串为参数映射
-     * 用于从各种来源提取连接参数的工具方法
-     * 
-     * @param query 查询字符串
-     * @return 解析后的参数映射
-     */
-    private Map<String, String> parseQuery(String query) {
-        if (query == null || query.trim().isEmpty()) {
-            return Collections.emptyMap();
-        }
-        return UriComponentsBuilder.fromUriString("?" + query).build().getQueryParams().entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(0)));
     }
 }

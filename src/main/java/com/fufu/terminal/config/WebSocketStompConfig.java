@@ -12,9 +12,12 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 /**
- * STOMP WebSocket配置
- * 配置WebSocket消息代理和STOMP端点
- * 
+ * WebSocket STOMP 配置类。
+ * <p>
+ * 配置 STOMP 端点、消息代理以及客户端入站通道拦截器。
+ * 仅在非 test 环境下生效。
+ * </p>
+ *
  * @author lizelin
  */
 @Slf4j
@@ -28,52 +31,47 @@ public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
     private final StompAuthenticationInterceptor authInterceptor;
 
     /**
-     * 配置消息代理
-     * 启用简单消息代理，设置应用程序目标前缀和用户目标前缀
-     * @param config 消息代理注册配置
-     */
-    @Override
-    public void configureMessageBroker(MessageBrokerRegistry config) {
-        // 启用简单消息代理，用于处理订阅前缀
-        config.enableSimpleBroker("/queue", "/topic");
-        
-        // 设置应用程序目标前缀，客户端发送到以/app开头的目标
-        config.setApplicationDestinationPrefixes("/app");
-        
-        // 设置用户目标前缀，用于点对点消息
-        config.setUserDestinationPrefix("/user");
-        
-        log.info("STOMP message broker configured with /queue, /topic brokers and /app application prefix");
-    }
-
-    /**
-     * 配置客户端入站通道
-     * 注册认证拦截器用于处理SSH连接
-     * @param registration 通道注册配置
-     */
-    @Override
-    public void configureClientInboundChannel(ChannelRegistration registration) {
-        // 注册认证拦截器
-        registration.interceptors(authInterceptor);
-        log.info("STOMP authentication interceptor registered");
-    }
-
-    /**
-     * 注册STOMP端点
-     * 配置WebSocket端点，支持SockJS和原生WebSocket
-     * @param registry STOMP端点注册配置
+     * 注册 STOMP 端点，支持 SockJS 和原生 WebSocket。
+     *
+     * @param registry STOMP 端点注册器
      */
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // 注册STOMP端点，客户端连接时使用
+        // 注册支持 SockJS 的端点
         registry.addEndpoint("/ws/terminal")
                 .setAllowedOriginPatterns("*")
                 .withSockJS();
-        
-        // 同时注册原生WebSocket端点，用于不支持SockJS的客户端
+        // 注册原生 WebSocket 端点
         registry.addEndpoint("/ws/terminal-native")
                 .setAllowedOriginPatterns("*");
-        
-        log.info("STOMP endpoints registered: /ws/terminal (with SockJS), /ws/terminal-native (native)");
+        log.info("已注册 STOMP 端点: /ws/terminal (SockJS), /ws/terminal-native (原生)");
+    }
+
+    /**
+     * 配置消息代理，设置应用前缀和用户前缀。
+     *
+     * @param config 消息代理注册器
+     */
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // 启用简单消息代理，处理 /queue 和 /topic 前缀的消息
+        config.enableSimpleBroker("/queue", "/topic");
+        // 设置应用消息前缀，客户端发送消息需以 /app 开头
+        config.setApplicationDestinationPrefixes("/app");
+        // 设置用户点对点消息前缀
+        config.setUserDestinationPrefix("/user");
+        log.info("消息代理已配置：/queue, /topic, 应用前缀 /app, 用户前缀 /user");
+    }
+
+    /**
+     * 配置客户端入站通道，添加认证拦截器。
+     *
+     * @param registration 通道注册器
+     */
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        // 添加认证拦截器
+        registration.interceptors(authInterceptor);
+        log.info("已注册 STOMP 认证拦截器");
     }
 }

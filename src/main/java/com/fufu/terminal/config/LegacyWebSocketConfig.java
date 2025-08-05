@@ -12,55 +12,54 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
- * 传统WebSocket配置类
- * 为SSH终端应用提供WebSocket配置支持
- * 
- * 此配置保留用于STOMP迁移过程中的向后兼容性
- * 可以通过设置profile为'legacy-websocket'或移除WebSocketStompConfig类来激活
- * 
+ * 传统 WebSocket 配置类，支持 SSH 终端 WebSocket 通信。
+ * <p>
+ * 此配置用于向后兼容，在 STOMP 迁移期间可通过 profile 'legacy-websocket' 或 'test' 激活。
+ * 推荐使用 {@link WebSocketStompConfig} 进行新的基于 STOMP 的实现。
+ * </p>
+ *
  * @author lizelin
- * @deprecated 请使用WebSocketStompConfig进行新的基于STOMP的实现
+ * @deprecated 建议使用 WebSocketStompConfig 替代。
  */
 @Configuration
 @EnableWebSocket
 @RequiredArgsConstructor
 @ConditionalOnWebApplication
-@Profile({"legacy-websocket", "test"})  // Enable for legacy profile or tests
+@Profile({"legacy-websocket", "test"})
+@Deprecated
 public class LegacyWebSocketConfig implements WebSocketConfigurer {
-    
+
     /**
-     * SSH终端WebSocket处理器
-     * 用于处理WebSocket连接和SSH终端数据传输
+     * SSH 终端 WebSocket 处理器，用于管理 WebSocket 连接和数据传输。
      */
     private final SshTerminalWebSocketHandler sshTerminalWebSocketHandler;
 
     /**
-     * 注册WebSocket处理器
-     * 配置WebSocket终端处理器的映射路径和跨域设置
-     * 
-     * @param registry WebSocket处理器注册器
+     * 注册 WebSocket 处理器，配置终端处理器的映射路径和跨域设置。
+     *
+     * @param registry WebSocket 处理器注册器
      */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // 直接使用注入的handler实例，它已经包含了所有必要的依赖
+        // 允许所有来源，便于开发调试。生产环境建议配置具体来源。
         registry.addHandler(sshTerminalWebSocketHandler, "/ws/terminal")
-                // 允许所有来源的连接，方便本地开发，生产环境需要配置具体的来源
                 .setAllowedOriginPatterns("*");
     }
 
     /**
-     * 配置 WebSocket 消息大小限制
-     * 这个 Bean 会自动被 Spring Boot 用来配置内嵌的 WebSocket 服务器（如 Tomcat）
+     * 配置 WebSocket 消息大小限制。
+     * <p>
+     * 该 Bean 会被 Spring Boot 自动用于配置内嵌 WebSocket 服务器（如 Tomcat）。
+     * </p>
+     *
+     * @return ServletServerContainerFactoryBean 配置消息缓冲区大小
      */
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-        // 设置文本消息的最大缓冲区大小为 2MB
+        // 设置文本和二进制消息的最大缓冲区为 2MB
         container.setMaxTextMessageBufferSize(2 * 1024 * 1024);
-        // 设置二进制消息的最大缓冲区大小为 2MB
         container.setMaxBinaryMessageBufferSize(2 * 1024 * 1024);
         return container;
     }
-
-
 }
