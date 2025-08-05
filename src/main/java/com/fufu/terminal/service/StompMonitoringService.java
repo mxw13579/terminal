@@ -1,7 +1,6 @@
 package com.fufu.terminal.service;
 
 import com.fufu.terminal.model.SshConnection;
-import com.fufu.terminal.dto.MonitorUpdateDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -11,9 +10,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * STOMP-compatible monitoring service that integrates with the existing SshMonitorService
- * and sends monitoring updates via STOMP messaging.
- * 
+ * 基于STOMP协议的监控服务，集成SshMonitorService并通过STOMP消息推送监控数据。
+ * <p>
+ * 该服务负责管理会话的监控状态，并将监控数据实时推送到前端。
+ * </p>
+ *
  * @author lizelin
  */
 @Slf4j
@@ -23,105 +24,121 @@ public class StompMonitoringService {
 
     private final SshMonitorService sshMonitorService;
     private final SimpMessagingTemplate messagingTemplate;
-    
-    // Track which sessions are receiving monitoring updates
+
+    // 记录当前处于监控状态的会话
     private final Map<String, Boolean> activeMonitoringSessions = new ConcurrentHashMap<>();
 
     /**
-     * Start monitoring for a STOMP session.
-     * This adapts the original monitoring service to work with STOMP messaging.
+     * 启动指定会话的监控，并通过STOMP推送监控数据。
+     *
+     * @param sessionId  STOMP会话ID
+     * @param connection SSH连接对象
+     * @throws RuntimeException 启动监控过程中发生异常时抛出
      */
     public void startMonitoring(String sessionId, SshConnection connection) {
-        log.info("Starting STOMP monitoring for session: {}", sessionId);
-        
+        log.info("启动STOMP监控，sessionId: {}", sessionId);
+
         try {
-            // Mark session as actively monitoring
+            // 标记会话为活跃监控状态
             activeMonitoringSessions.put(sessionId, true);
-            
-            // Create a custom session adapter that sends monitoring updates via STOMP
+
+            // 创建会话适配器，通过STOMP推送监控数据
             StompMonitoringSessionAdapter sessionAdapter = new StompMonitoringSessionAdapter(
-                sessionId, messagingTemplate, this);
-            
-            // Start monitoring using the existing service with a separate SSH connection
+                    sessionId, messagingTemplate, this);
+
+            // 使用独立SSH连接启动监控
             sshMonitorService.handleMonitorStartWithSeparateConnection(sessionAdapter, connection);
-            
+
         } catch (Exception e) {
-            log.error("Error starting STOMP monitoring for session {}: {}", sessionId, e.getMessage(), e);
+            log.error("启动STOMP监控失败，sessionId: {}，原因: {}", sessionId, e.getMessage(), e);
             activeMonitoringSessions.remove(sessionId);
             throw e;
         }
     }
 
     /**
-     * Stop monitoring for a STOMP session.
+     * 停止指定会话的监控。
+     *
+     * @param sessionId  STOMP会话ID
+     * @param connection SSH连接对象
      */
     public void stopMonitoring(String sessionId, SshConnection connection) {
-        log.info("Stopping STOMP monitoring for session: {}", sessionId);
-        
+        log.info("停止STOMP监控，sessionId: {}", sessionId);
+
         try {
-            // Remove from active sessions
+            // 移除活跃监控会话
             activeMonitoringSessions.remove(sessionId);
-            
-            // Stop monitoring using the existing service
+
+            // 停止监控
             sshMonitorService.handleMonitorStop(connection);
-            
+
         } catch (Exception e) {
-            log.error("Error stopping STOMP monitoring for session {}: {}", sessionId, e.getMessage(), e);
+            log.error("停止STOMP监控失败，sessionId: {}，原因: {}", sessionId, e.getMessage(), e);
             throw e;
         }
     }
 
     /**
-     * Send monitoring update to a specific session.
-     * This method is called by the session adapter to send updates via STOMP.
+     * 通过STOMP向指定会话推送监控数据。
+     * 该方法由会话适配器调用。
+     *
+     * @param sessionId      STOMP会话ID
+     * @param monitoringData 监控数据内容
      */
     public void sendMonitoringUpdate(String sessionId, Map<String, Object> monitoringData) {
         if (!activeMonitoringSessions.getOrDefault(sessionId, false)) {
-            log.debug("Session {} is no longer actively monitoring, skipping update", sessionId);
+            log.debug("会话{}已不处于监控状态，跳过数据推送", sessionId);
             return;
         }
-        
+
         try {
-            // Create monitoring update message with expected format
+            // 构建监控数据消息体
             Map<String, Object> updateMessage = Map.of(
-                "type", "monitor_update",
-                "payload", monitoringData
+                    "type", "monitor_update",
+                    "payload", monitoringData
             );
-            
-            // Send to user-specific monitoring queue - 修复队列路径
+
+            // 通过STOMP推送到指定用户队列，队列路径建议加斜杠分隔
             messagingTemplate.convertAndSend(
-                "/queue/monitor/data-user" + sessionId, 
-                updateMessage
+                    "/queue/monitor/data-user/" + sessionId,
+                    updateMessage
             );
-            
-            log.debug("Sent monitoring update to session: {}", sessionId);
-            
+
+            log.debug("已向会话{}推送监控数据", sessionId);
+
         } catch (Exception e) {
-            log.error("Error sending monitoring update to session {}: {}", sessionId, e.getMessage(), e);
-            // Remove session from active monitoring if there's a persistent error
+            log.error("向会话{}推送监控数据失败，原因: {}", sessionId, e.getMessage(), e);
+            // 若发生异常则移除监控状态，防止死循环推送
             activeMonitoringSessions.remove(sessionId);
         }
     }
 
     /**
-     * Check if a session is actively monitoring.
+     * 判断指定会话是否处于监控状态。
+     *
+     * @param sessionId STOMP会话ID
+     * @return true表示正在监控，false表示未监控
      */
     public boolean isActivelyMonitoring(String sessionId) {
         return activeMonitoringSessions.getOrDefault(sessionId, false);
     }
 
     /**
-     * Get count of active monitoring sessions.
+     * 获取当前活跃监控会话的数量。
+     *
+     * @return 活跃会话数
      */
     public int getActiveMonitoringSessionCount() {
         return activeMonitoringSessions.size();
     }
 
     /**
-     * Cleanup monitoring for a session (called when session disconnects).
+     * 清理指定会话的监控状态（通常在会话断开时调用）。
+     *
+     * @param sessionId STOMP会话ID
      */
     public void cleanupMonitoring(String sessionId) {
         activeMonitoringSessions.remove(sessionId);
-        log.debug("Cleaned up monitoring for session: {}", sessionId);
+        log.debug("已清理会话{}的监控状态", sessionId);
     }
 }

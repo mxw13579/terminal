@@ -13,38 +13,42 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 通用的SSH命令执行服务.
+ * 通用SSH命令执行服务，支持在远程主机上执行Shell命令并获取结果。
+ * <p>
+ * 该服务封装了命令执行、超时控制、输出捕获及异常处理等功能。
+ * </p>
+ *
  * @author lizelin
+ * @since 1.0
  */
 @Slf4j
 @Service
 public class SshCommandService {
 
     /**
-     * 命令连接超时时间（毫秒）
-     * SSH命令执行连接的超时时间设置为5秒
+     * SSH命令连接超时时间（毫秒），默认5秒。
      */
     private static final int COMMAND_CONNECT_TIMEOUT_MS = 5000;
-    
+
     /**
-     * 命令轮询间隔时间（毫秒）
-     * 在等待命令完成时的轮询检查间隔，设置为50毫秒
+     * 命令执行状态轮询间隔（毫秒），默认50毫秒。
      */
     private static final int COMMAND_POLL_INTERVAL_MS = 50;
 
     /**
-     * 在远程主机上执行一条shell命令.
+     * 在远程主机上通过SSH执行一条Shell命令，并返回执行结果。
      * <p>
      * 该方法会处理中断异常，允许上层任务（如ScheduledFuture）被正确取消。
+     * </p>
      *
-     * @param session JSch会话对象
-     * @param command 要执行的命令
-     * @return 包含退出码、标准输出和标准错误的CommandResult对象
-     * @throws InterruptedException 如果在等待命令完成时线程被中断
+     * @param session 已建立连接的JSch会话对象，不能为空且必须已连接
+     * @param command 待执行的Shell命令字符串
+     * @return {@link CommandResult} 包含命令的退出码、标准输出和标准错误
+     * @throws InterruptedException 如果在等待命令完成期间线程被中断
      */
     public CommandResult executeCommand(Session session, String command) throws InterruptedException {
         if (session == null || !session.isConnected()) {
-            log.warn("SSH session 未连接，无法执行命令：{}", command);
+            log.warn("SSH session未连接，无法执行命令：{}", command);
             return new CommandResult(-1, "", "Session not connected");
         }
 
@@ -53,7 +57,7 @@ public class SshCommandService {
              ByteArrayOutputStream stderr = new ByteArrayOutputStream()) {
 
             channel = (ChannelExec) session.openChannel("exec");
-            // 使用 sh -c "..." 来确保复杂命令（含引号、管道等）的正确执行
+            // 使用 sh -c "..." 包裹命令，保证复杂命令（如含引号、管道等）能被正确解析
             String wrappedCmd = String.format("sh -c \"%s\"", command.replace("\"", "\\\""));
             channel.setCommand(wrappedCmd);
             channel.setInputStream(null);
@@ -61,30 +65,35 @@ public class SshCommandService {
             channel.setErrStream(stderr);
 
             channel.connect(COMMAND_CONNECT_TIMEOUT_MS);
+            log.debug("已连接exec通道，主机：{}，命令：{}", session.getHost(), command);
 
-            // 等待命令执行完成，同时周期性检查线程中断状态
+            // 轮询等待命令执行完成，同时检测线程中断
             while (!channel.isClosed()) {
                 if (Thread.currentThread().isInterrupted()) {
-                    throw new InterruptedException("命令执行在等待时被中断: " + command);
+                    throw new InterruptedException("命令执行期间线程被中断: " + command);
                 }
-                // 使用短暂休眠避免CPU空转
                 TimeUnit.MILLISECONDS.sleep(COMMAND_POLL_INTERVAL_MS);
             }
 
             String outStr = stdout.toString(StandardCharsets.UTF_8).trim();
             String errStr = stderr.toString(StandardCharsets.UTF_8).trim();
-            return new CommandResult(channel.getExitStatus(), outStr, errStr);
+            int exitStatus = channel.getExitStatus();
+
+            log.debug("命令执行完成，主机：{}，命令：{}，退出码：{}", session.getHost(), command, exitStatus);
+
+            return new CommandResult(exitStatus, outStr, errStr);
 
         } catch (JSchException e) {
-            // 如果JSch异常的根本原因是中断，则将其转换为InterruptedException并抛出
+            // 若JSch异常的根本原因为中断，转换为InterruptedException抛出
             if (e.getCause() instanceof InterruptedException) {
-                Thread.currentThread().interrupt(); // 重新设置中断状态
-                throw new InterruptedException("JSch 操作被中断。");
+                Thread.currentThread().interrupt();
+                throw new InterruptedException("JSch操作被中断。");
             }
-            log.warn("打开或连接 exec 通道失败 cmd={}：{}", command, e.getMessage());
+            log.warn("打开或连接exec通道失败，主机：{}，命令：{}，异常：{}",
+                    session.getHost(), command, e.getMessage());
             return new CommandResult(-1, "", e.getMessage());
         } catch (IOException e) {
-            log.error("读取命令输出流时发生I/O错误", e);
+            log.error("读取命令输出流时发生I/O错误，主机：{}，命令：{}", session.getHost(), command, e);
             return new CommandResult(-1, "", "IO Error: " + e.getMessage());
         } finally {
             if (channel != null) {
