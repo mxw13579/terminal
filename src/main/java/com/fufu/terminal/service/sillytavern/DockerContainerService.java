@@ -17,7 +17,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
- * Docker容器管理服务，负责通过SSH远程执行Docker命令、容器生命周期管理及状态查询。
+ * Docker容器管理服务。负责通过SSH远程执行Docker命令，实现容器生命周期管理及状态查询。
+ * <p>
+ * 主要功能包括：容器状态查询、镜像拉取、容器创建/启动/停止/重启/删除、日志获取、资源监控等。
+ * </p>
+ *
+ * @author
  */
 @Slf4j
 @Service
@@ -29,6 +34,9 @@ public class DockerContainerService {
     private static final String DOCKER_COMMAND_PREFIX = "sudo docker";
     private static final String DOCKER_PORT_SPLITTER = "->";
     private static final int CONTAINER_ID_LENGTH = 12;
+    private static final String DOCKER_VERSION_CMD = "docker --version";
+    private static final String SUDO_DOCKER_VERSION_CMD = "sudo docker --version";
+    private static final String DOCKER_VERSION_KEYWORD = "docker version";
 
     /**
      * 获取指定容器的详细状态信息。
@@ -97,7 +105,7 @@ public class DockerContainerService {
     }
 
     /**
-     * 通过回调异步拉取Docker镜像。
+     * 异步拉取Docker镜像，并通过回调返回进度信息。
      *
      * @param connection       SSH连接信息
      * @param image            镜像名
@@ -317,12 +325,12 @@ public class DockerContainerService {
     private boolean isDockerAvailable(SshConnection connection) {
         try {
             try {
-                String result = executeCommand(connection, "docker --version");
-                return result.toLowerCase().contains("docker version");
+                String result = executeCommand(connection, DOCKER_VERSION_CMD);
+                return result.toLowerCase().contains(DOCKER_VERSION_KEYWORD);
             } catch (Exception e) {
                 try {
-                    String result = executeCommand(connection, "sudo docker --version");
-                    return result.toLowerCase().contains("docker version");
+                    String result = executeCommand(connection, SUDO_DOCKER_VERSION_CMD);
+                    return result.toLowerCase().contains(DOCKER_VERSION_KEYWORD);
                 } catch (Exception e2) {
                     return false;
                 }

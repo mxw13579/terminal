@@ -26,6 +26,14 @@ import java.util.function.Consumer;
  * <p>
  * 支持并发控制，防止同一容器重复升级。
  * </p>
+ * <p>
+ * 主要功能包括：
+ * <ul>
+ *     <li>获取容器当前及可用的版本信息</li>
+ *     <li>异步升级容器镜像并清理旧镜像</li>
+ *     <li>清理未使用的镜像</li>
+ * </ul>
+ * </p>
  *
  * @author
  */
@@ -38,11 +46,13 @@ public class DockerVersionService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    // 并发控制：每个容器独立锁，防止重复升级
+    /** 并发控制：每个容器独立锁，防止重复升级 */
     private final Map<String, ReentrantLock> upgradeLocks = new ConcurrentHashMap<>();
 
     private static final String SILLYTAVERN_IMAGE_REPO = "ghcr.io/sillytavern/sillytavern";
     private static final String GITHUB_API_URL = "https://api.github.com/repos/sillytavern/sillytavern/releases";
+    private static final int MAX_VERSION_COUNT = 3;
+    private static final String DEFAULT_VERSION = "latest";
 
     /**
      * 获取指定容器的升级锁。
@@ -80,7 +90,7 @@ public class DockerVersionService {
                 versionInfo.setHasUpdate(!currentVersion.equals(availableVersions.get(0)));
             }
         } catch (Exception e) {
-            log.error("获取版本信息失败: {}", e.getMessage());
+            log.error("获取版本信息失败: {}", e.getMessage(), e);
             versionInfo.setError("获取版本信息失败: " + e.getMessage());
         }
 
@@ -93,9 +103,8 @@ public class DockerVersionService {
      * @param connection    SSH 连接
      * @param containerName 容器名称
      * @return 镜像版本号
-     * @throws Exception 获取失败时抛出
      */
-    private String getCurrentContainerVersion(SshConnection connection, String containerName) throws Exception {
+    private String getCurrentContainerVersion(SshConnection connection, String containerName) {
         try {
             String result = executeCommand(connection,
                     String.format("sudo docker inspect %s --format='{{.Config.Image}}'", containerName));
@@ -103,7 +112,7 @@ public class DockerVersionService {
                 String[] parts = result.trim().split(":");
                 return parts[parts.length - 1];
             }
-            return "latest";
+            return DEFAULT_VERSION;
         } catch (Exception e) {
             log.warn("无法获取容器版本信息: {}", e.getMessage());
             return "unknown";
@@ -125,7 +134,7 @@ public class DockerVersionService {
 
             int count = 0;
             for (JsonNode release : releases) {
-                if (count >= 3) break;
+                if (count >= MAX_VERSION_COUNT) break;
                 boolean prerelease = release.get("prerelease").asBoolean();
                 boolean draft = release.get("draft").asBoolean();
                 if (!prerelease && !draft) {
@@ -138,12 +147,12 @@ public class DockerVersionService {
                 }
             }
             if (versions.isEmpty()) {
-                versions.add("latest");
+                versions.add(DEFAULT_VERSION);
             }
             log.info("成功获取到 {} 个可用版本", versions.size());
         } catch (Exception e) {
-            log.error("获取可用版本失败: {}", e.getMessage());
-            versions.add("latest");
+            log.error("获取可用版本失败: {}", e.getMessage(), e);
+            versions.add(DEFAULT_VERSION);
             versions.add("staging");
             versions.add("release");
         }
@@ -260,14 +269,14 @@ public class DockerVersionService {
      * @param connection    SSH 连接
      * @param containerName 容器名称
      * @return 存在返回 true，否则 false
-     * @throws Exception 查询失败时抛出
      */
-    private boolean checkContainerExists(SshConnection connection, String containerName) throws Exception {
+    private boolean checkContainerExists(SshConnection connection, String containerName) {
         try {
             String result = executeCommand(connection,
                     String.format("sudo docker ps -a --filter name=%s --format '{{.ID}}'", containerName));
             return !result.trim().isEmpty();
         } catch (Exception e) {
+            log.warn("检查容器是否存在时出错: {}", e.getMessage());
             return false;
         }
     }
@@ -278,9 +287,8 @@ public class DockerVersionService {
      * @param connection    SSH 连接
      * @param containerName 容器名称
      * @return 镜像名:标签
-     * @throws Exception 获取失败时抛出
      */
-    private String getCurrentImage(SshConnection connection, String containerName) throws Exception {
+    private String getCurrentImage(SshConnection connection, String containerName) {
         try {
             return executeCommand(connection,
                     String.format("sudo docker inspect %s --format='{{.Config.Image}}'", containerName)).trim();
@@ -297,9 +305,8 @@ public class DockerVersionService {
      * @param containerName 容器名称
      * @param image         镜像名:标签
      * @return docker create 命令字符串
-     * @throws Exception 获取配置失败时抛出
      */
-    private String buildCreateCommand(SshConnection connection, String containerName, String image) throws Exception {
+    private String buildCreateCommand(SshConnection connection, String containerName, String image) {
         try {
             String portInfo = executeCommand(connection,
                     String.format("sudo docker inspect %s --format='{{range $p, $conf := .NetworkSettings.Ports}} -p {{(index $conf 0).HostPort}}:{{$p}} {{end}}'", containerName));
@@ -335,14 +342,14 @@ public class DockerVersionService {
      * @param connection SSH 连接
      * @param imageId    镜像 ID
      * @return 被使用返回 true，否则 false
-     * @throws Exception 查询失败时抛出
      */
-    private boolean isImageInUse(SshConnection connection, String imageId) throws Exception {
+    private boolean isImageInUse(SshConnection connection, String imageId) {
         try {
             String result = executeCommand(connection,
                     String.format("sudo docker ps -a --filter ancestor=%s --format '{{.ID}}'", imageId));
             return !result.trim().isEmpty();
         } catch (Exception e) {
+            log.warn("检查镜像是否被使用时出错: {}", e.getMessage());
             return true; // 出错时保守处理，认为镜像在使用中
         }
     }

@@ -18,8 +18,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * SillyTavern 配置文件管理服务，提供配置的读取、写入、备份、恢复、校验等功能。
- * 支持多容器并发操作的线程安全控制。
+ * SillyTavern 配置文件管理服务。
+ * 提供配置的读取、写入、备份、恢复、校验等功能，支持多容器并发操作的线程安全控制。
+ * <p>
+ * Service for managing SillyTavern configuration files, including reading, writing, backup, restore, and validation.
+ * Thread-safe for concurrent multi-container operations.
  *
  * @author
  */
@@ -32,6 +35,7 @@ public class ConfigurationService {
 
     /**
      * 针对每个容器维护独立锁，实现并发安全。
+     * Thread-safe lock for each container.
      */
     private final Map<String, ReentrantLock> containerLocks = new ConcurrentHashMap<>();
 
@@ -40,9 +44,10 @@ public class ConfigurationService {
 
     /**
      * 获取指定容器的独占锁。
+     * Get the exclusive lock for a container.
      *
-     * @param containerName 容器名称
-     * @return 对应的 ReentrantLock
+     * @param containerName 容器名称 Container name
+     * @return 对应的 ReentrantLock The corresponding lock
      */
     private ReentrantLock getContainerLock(String containerName) {
         return containerLocks.computeIfAbsent(containerName, k -> new ReentrantLock());
@@ -50,11 +55,12 @@ public class ConfigurationService {
 
     /**
      * 读取指定容器中的配置文件内容并解析为 ConfigurationDto。
+     * Read and parse configuration file from the specified container.
      *
-     * @param connection    SSH 连接信息
-     * @param containerName 容器名称
-     * @return 配置 DTO
-     * @throws Exception 读取或解析失败时抛出
+     * @param connection    SSH 连接信息 SSH connection info
+     * @param containerName 容器名称 Container name
+     * @return 配置 DTO Configuration DTO
+     * @throws Exception 读取或解析失败时抛出 Thrown if reading or parsing fails
      */
     public ConfigurationDto readConfiguration(SshConnection connection, String containerName) throws Exception {
         log.debug("读取容器配置: {}", containerName);
@@ -67,7 +73,7 @@ public class ConfigurationService {
             return config;
         } catch (Exception e) {
             log.error("读取配置失败: {} - {}", containerName, e.getMessage());
-            // 返回默认配置
+            // 返回默认配置 Return default config
             ConfigurationDto defaultConfig = new ConfigurationDto();
             defaultConfig.setContainerName(containerName);
             defaultConfig.setUsername("admin");
@@ -79,12 +85,13 @@ public class ConfigurationService {
 
     /**
      * 更新配置并在必要时自动重启容器，线程安全。
+     * Update configuration and restart container if necessary (thread-safe).
      *
-     * @param connection    SSH 连接
-     * @param containerName 容器名称
-     * @param config        新配置
-     * @return 是否更新成功
-     * @throws Exception 更新或重启失败时抛出
+     * @param connection    SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @param config        新配置 New configuration
+     * @return 是否更新成功 Whether update succeeded
+     * @throws Exception 更新或重启失败时抛出 Thrown if update or restart fails
      */
     public boolean updateConfigurationWithRestart(SshConnection connection, String containerName,
                                                   ConfigurationDto config) throws Exception {
@@ -99,18 +106,13 @@ public class ConfigurationService {
 
             if (updated && needsRestart) {
                 log.info("配置更新需要重启容器: {}", containerName);
-                try {
-                    if (isContainerRunning(connection, containerName)) {
-                        log.info("正在重启容器...");
-                        restartContainer(connection, containerName);
-                        log.info("容器重启完成");
-                        Thread.sleep(3000); // 等待容器启动
-                    } else {
-                        log.info("容器未运行，配置将在下次启动时生效");
-                    }
-                } catch (Exception e) {
-                    log.error("重启容器失败: {}", e.getMessage());
-                    throw new RuntimeException("配置更新成功但重启容器失败: " + e.getMessage(), e);
+                if (isContainerRunning(connection, containerName)) {
+                    log.info("正在重启容器...");
+                    restartContainer(connection, containerName);
+                    log.info("容器重启完成");
+                    Thread.sleep(3000); // 等待容器启动 Wait for container to start
+                } else {
+                    log.info("容器未运行，配置将在下次启动时生效");
                 }
             }
 
@@ -123,11 +125,12 @@ public class ConfigurationService {
 
     /**
      * 检查容器是否正在运行。
+     * Check if the container is running.
      *
-     * @param connection    SSH 连接
-     * @param containerName 容器名称
-     * @return true=运行中，false=未运行
-     * @throws Exception SSH 命令执行异常
+     * @param connection    SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @return true=运行中 running, false=未运行 not running
+     * @throws Exception SSH 命令执行异常 SSH command execution exception
      */
     private boolean isContainerRunning(SshConnection connection, String containerName) throws Exception {
         try {
@@ -142,10 +145,11 @@ public class ConfigurationService {
 
     /**
      * 重启指定容器。
+     * Restart the specified container.
      *
-     * @param connection    SSH 连接
-     * @param containerName 容器名称
-     * @throws Exception SSH 命令执行异常
+     * @param connection    SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @throws Exception SSH 命令执行异常 SSH command execution exception
      */
     private void restartContainer(SshConnection connection, String containerName) throws Exception {
         executeCommand(connection, String.format("sudo docker restart %s", containerName));
@@ -153,10 +157,11 @@ public class ConfigurationService {
 
     /**
      * 判断配置变更是否需要重启容器。
+     * Determine if a restart is required after configuration change.
      *
-     * @param currentConfig 当前配置
-     * @param newConfig     新配置
-     * @return true=需要重启
+     * @param currentConfig 当前配置 Current config
+     * @param newConfig     新配置 New config
+     * @return true=需要重启 restart required
      */
     private boolean isRestartRequired(ConfigurationDto currentConfig, ConfigurationDto newConfig) {
         // 用户名、密码、端口、关键设置变更需重启
@@ -178,12 +183,13 @@ public class ConfigurationService {
 
     /**
      * 更新配置文件，线程安全，失败时自动恢复备份。
+     * Update configuration file (thread-safe), restore backup on failure.
      *
-     * @param connection    SSH 连接
-     * @param containerName 容器名称
-     * @param config        新配置
-     * @return 是否更新成功
-     * @throws Exception 更新或恢复失败时抛出
+     * @param connection    SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @param config        新配置 New config
+     * @return 是否更新成功 Whether update succeeded
+     * @throws Exception 更新或恢复失败时抛出 Thrown if update or restore fails
      */
     public boolean updateConfiguration(SshConnection connection, String containerName,
                                        ConfigurationDto config) throws Exception {
@@ -212,7 +218,7 @@ public class ConfigurationService {
                 } catch (Exception restoreError) {
                     log.error("恢复配置备份失败: {}", restoreError.getMessage());
                 }
-                throw new RuntimeException("配置更新失败: " + e.getMessage(), e);
+                throw new Exception("配置更新失败: " + e.getMessage(), e);
             }
         } finally {
             lock.unlock();
@@ -221,15 +227,15 @@ public class ConfigurationService {
 
     /**
      * 校验配置参数的结构和取值。
-     * 用户名不含数字，密码强度检测，端口范围及冲突检测。
+     * Validate configuration parameters.
      *
-     * @param config 配置 DTO
-     * @return 校验错误信息，key=字段名，value=错误描述
+     * @param config 配置 DTO Configuration DTO
+     * @return 校验错误信息 Map of field name to error message
      */
     public Map<String, String> validateConfiguration(ConfigurationDto config) {
         Map<String, String> errors = new HashMap<>();
 
-        // 用户名校验
+        // 用户名校验 Username validation
         if (config.getUsername() == null || config.getUsername().trim().isEmpty()) {
             errors.put("username", "用户名不能为空");
         } else if (config.getUsername().length() < 3) {
@@ -242,7 +248,7 @@ public class ConfigurationService {
             errors.put("username", "用户名只能包含字母、下划线和短横线");
         }
 
-        // 密码校验
+        // 密码校验 Password validation
         if (config.getPassword() != null && !config.getPassword().isEmpty()) {
             if (config.getPassword().length() < 6) {
                 errors.put("password", "密码长度不能少于6个字符");
@@ -253,7 +259,7 @@ public class ConfigurationService {
             }
         }
 
-        // 端口校验
+        // 端口校验 Port validation
         if (config.getPort() != null) {
             if (config.getPort() < 1024 || config.getPort() > 65535) {
                 errors.put("port", "端口必须在1024-65535之间");
@@ -272,9 +278,10 @@ public class ConfigurationService {
 
     /**
      * 密码强度检测：至少包含大小写字母和数字中的两种，且长度>=8。
+     * Password strength check: at least two of upper/lowercase letters and digits, length >= 8.
      *
-     * @param password 密码
-     * @return true=强密码
+     * @param password 密码 Password
+     * @return true=强密码 Strong password
      */
     private boolean isPasswordStrong(String password) {
         boolean hasLower = password.matches(".*[a-z].*");
@@ -289,11 +296,12 @@ public class ConfigurationService {
 
     /**
      * 创建配置文件备份，返回备份路径。
+     * Create a backup of the configuration file, return backup path.
      *
-     * @param connection    SSH 连接
-     * @param containerName 容器名称
-     * @return 备份文件路径
-     * @throws Exception 备份失败时抛出
+     * @param connection    SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @return 备份文件路径 Backup file path
+     * @throws Exception 备份失败时抛出 Thrown if backup fails
      */
     public String createBackup(SshConnection connection, String containerName) throws Exception {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -311,15 +319,16 @@ public class ConfigurationService {
 
     /**
      * 恢复配置文件备份。
+     * Restore configuration file from backup.
      *
-     * @param connection    SSH 连接
-     * @param containerName 容器名称
-     * @param backupPath    备份文件路径
-     * @throws Exception 恢复失败时抛出
+     * @param connection    SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @param backupPath    备份文件路径 Backup file path
+     * @throws Exception 恢复失败时抛出 Thrown if restore fails
      */
-    private void restoreBackup(SshConnection connection, String containerName, String backupPath) throws Exception {
+    public void restoreBackup(SshConnection connection, String containerName, String backupPath) throws Exception {
         if (backupPath == null) {
-            throw new RuntimeException("未提供备份路径，无法恢复");
+            throw new Exception("未提供备份路径，无法恢复");
         }
         executeCommand(connection,
                 String.format("sudo docker exec %s cp %s %s", containerName, backupPath, DEFAULT_CONFIG_PATH));
@@ -327,21 +336,22 @@ public class ConfigurationService {
 
     /**
      * 解析配置文件内容为 ConfigurationDto。
+     * Parse configuration file content to ConfigurationDto.
      *
-     * @param configContent 配置文件内容
-     * @return 配置 DTO
+     * @param configContent 配置文件内容 Config file content
+     * @return 配置 DTO Configuration DTO
      */
     private ConfigurationDto parseConfiguration(String configContent) {
         ConfigurationDto config = new ConfigurationDto();
 
-        // 解析用户名
+        // 解析用户名 Parse username
         Pattern usernamePattern = Pattern.compile("username:\\s*['\"]?([^'\"\\n]+)['\"]?", Pattern.CASE_INSENSITIVE);
         Matcher usernameMatcher = usernamePattern.matcher(configContent);
         if (usernameMatcher.find()) {
             config.setUsername(usernameMatcher.group(1).trim());
         }
 
-        // 检查密码是否设置
+        // 检查密码是否设置 Check if password is set
         Pattern passwordPattern = Pattern.compile("password:\\s*['\"]?([^'\"\\n]*)['\"]?", Pattern.CASE_INSENSITIVE);
         Matcher passwordMatcher = passwordPattern.matcher(configContent);
         if (passwordMatcher.find()) {
@@ -349,14 +359,14 @@ public class ConfigurationService {
             config.setHasPassword(!password.isEmpty());
         }
 
-        // 解析端口
+        // 解析端口 Parse port
         Pattern portPattern = Pattern.compile("port:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
         Matcher portMatcher = portPattern.matcher(configContent);
         if (portMatcher.find()) {
             config.setPort(Integer.parseInt(portMatcher.group(1)));
         }
 
-        // 解析其他设置
+        // 解析其他设置 Parse other settings
         Map<String, String> otherSettings = new HashMap<>();
         String[] settingsToCheck = {"theme", "language", "autoSave", "enableLogging", "maxHistory"};
         for (String setting : settingsToCheck) {
@@ -373,9 +383,10 @@ public class ConfigurationService {
 
     /**
      * 根据配置 DTO 生成配置文件内容。
+     * Generate configuration file content from DTO.
      *
-     * @param config 配置 DTO
-     * @return 配置文件内容字符串
+     * @param config 配置 DTO Configuration DTO
+     * @return 配置文件内容字符串 Config file content string
      */
     private String generateConfigurationContent(ConfigurationDto config) {
         StringBuilder content = new StringBuilder();
@@ -383,29 +394,28 @@ public class ConfigurationService {
         content.append("# SillyTavern Configuration\n");
         content.append("# Generated on: ").append(LocalDateTime.now()).append("\n\n");
 
-        // 认证设置
+        // 认证设置 Authentication settings
         content.append("# Authentication Settings\n");
-        content.append("username: \"").append(config.getUsername()).append("\"\n");
+        content.append(String.format("username: \"%s\"\n", config.getUsername()));
         if (config.getPassword() != null && !config.getPassword().isEmpty()) {
-            content.append("password: \"").append(config.getPassword()).append("\"\n");
+            content.append(String.format("password: \"%s\"\n", config.getPassword()));
         } else {
             content.append("password: \"\"\n");
         }
 
-        // 服务器设置
+        // 服务器设置 Server settings
         content.append("\n# Server Settings\n");
         if (config.getPort() != null) {
-            content.append("port: ").append(config.getPort()).append("\n");
+            content.append(String.format("port: %d\n", config.getPort()));
         } else {
             content.append("port: 8000\n");
         }
 
-        // 其他设置
+        // 其他设置 Other settings
         if (config.getOtherSettings() != null && !config.getOtherSettings().isEmpty()) {
             content.append("\n# Additional Settings\n");
-            for (Map.Entry<String, String> entry : config.getOtherSettings().entrySet()) {
-                content.append(entry.getKey()).append(": \"").append(entry.getValue()).append("\"\n");
-            }
+            config.getOtherSettings().forEach((key, value) ->
+                    content.append(String.format("%s: \"%s\"\n", key, value)));
         }
 
         return content.toString();
@@ -413,11 +423,12 @@ public class ConfigurationService {
 
     /**
      * 通过 SSH 执行命令并返回标准输出内容。
+     * Execute command via SSH and return stdout.
      *
-     * @param connection SSH 连接
-     * @param command    执行命令
-     * @return 命令标准输出
-     * @throws Exception 命令执行失败时抛出
+     * @param connection SSH 连接 SSH connection
+     * @param command    执行命令 Command to execute
+     * @return 命令标准输出 Command stdout
+     * @throws Exception 命令执行失败时抛出 Thrown if command fails
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
@@ -426,7 +437,7 @@ public class ConfigurationService {
                 String errorMsg = "命令执行失败，退出码 " + result.exitStatus() +
                         ": " + result.stderr();
                 log.debug("命令执行失败: {} - {}", command, errorMsg);
-                throw new RuntimeException(errorMsg);
+                throw new Exception(errorMsg);
             }
             return result.stdout();
         } catch (InterruptedException e) {

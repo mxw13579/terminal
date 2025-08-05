@@ -24,8 +24,10 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /**
- * 数据管理服务，负责SillyTavern数据的导入导出、备份、校验等操作。
- * 增强安全性，使用ProcessBuilder和命令白名单机制。
+ * SillyTavern 数据管理服务，负责数据的导入导出、备份、校验等操作。
+ * 增强安全性，使用 ProcessBuilder 和命令白名单机制。
+ *
+ * @author
  */
 @Slf4j
 @Service
@@ -44,14 +46,16 @@ public class DataManagementService {
     private static final String CONTAINER_DATA_PATH = "/app/data";
     private static final String TEMP_EXPORT_PATH = "/tmp/sillytavern_export";
     private static final String TEMP_IMPORT_PATH = "/tmp/sillytavern_import";
+    private static final Set<String> ALLOWED_COMMANDS = Set.of("unzip", "file", "du", "ls");
+    private static final Pattern SAFE_PATH_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
 
     /**
-     * 导出容器内数据目录为ZIP文件。
+     * 导出容器内数据目录为 ZIP 文件。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @param progressCallback 进度回调
-     * @return 异步返回导出数据DTO
+     * @return 异步返回导出数据 DTO
      */
     public CompletableFuture<DataExportDto> exportData(SshConnection connection, String containerName,
                                                        Consumer<String> progressCallback) {
@@ -73,7 +77,7 @@ public class DataManagementService {
 
                 progressCallback.accept("正在容器内创建数据归档...");
 
-                // 容器内创建ZIP归档
+                // 容器内创建 ZIP 归档
                 String containerZipPath = String.format("%s_%s.zip", TEMP_EXPORT_PATH, timestamp);
                 executeCommand(connection, String.format(
                         "sudo docker exec %s sh -c 'cd / && zip -r %s app/data/'",
@@ -81,12 +85,12 @@ public class DataManagementService {
 
                 progressCallback.accept("正在复制归档到主机...");
 
-                // 从容器复制ZIP到主机
+                // 从容器复制 ZIP 到主机
                 String hostZipPath = String.format("/tmp/sillytavern_export_%s.zip", timestamp);
                 executeCommand(connection, String.format(
                         "sudo docker cp %s:%s %s", containerName, containerZipPath, hostZipPath));
 
-                progressCallback.accept("正在传输文件到Web服务器...");
+                progressCallback.accept("正在传输文件到 Web 服务器...");
 
                 // 创建本地临时目录
                 new File(tempDirectory).mkdirs();
@@ -103,7 +107,7 @@ public class DataManagementService {
                 File exportFile = new File(localExportPath);
                 long fileSizeBytes = exportFile.length();
 
-                // 构建导出DTO
+                // 构建导出 DTO
                 DataExportDto exportDto = new DataExportDto();
                 exportDto.setFileName(exportFileName);
                 exportDto.setDownloadUrl("/api/sillytavern/download/" + exportFileName);
@@ -127,9 +131,9 @@ public class DataManagementService {
     }
 
     /**
-     * 导入上传的ZIP文件到容器。
+     * 导入上传的 ZIP 文件到容器。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @param uploadedFileName 上传文件名
      * @param progressCallback 进度回调
@@ -148,9 +152,9 @@ public class DataManagementService {
 
                 progressCallback.accept("正在验证上传文件...");
 
-                // 验证ZIP文件
+                // 验证 ZIP 文件
                 if (!isValidDataZip(localZipPath)) {
-                    throw new RuntimeException("数据ZIP文件格式无效");
+                    throw new RuntimeException("数据 ZIP 文件格式无效");
                 }
 
                 progressCallback.accept("正在上传文件到远程服务器...");
@@ -162,7 +166,7 @@ public class DataManagementService {
 
                 progressCallback.accept("正在复制文件到容器...");
 
-                // 复制ZIP到容器
+                // 复制 ZIP 到容器
                 String containerZipPath = String.format("%s_%s.zip", TEMP_IMPORT_PATH, timestamp);
                 executeCommand(connection, String.format(
                         "sudo docker cp %s %s:%s", remoteZipPath, containerName, containerZipPath));
@@ -215,7 +219,7 @@ public class DataManagementService {
                 executeCommand(connection, String.format("sudo docker exec %s rm -f %s", containerName, containerZipPath));
                 executeCommand(connection, String.format("rm -f %s", remoteZipPath));
 
-                // 清理旧备份，仅保留最近3个
+                // 清理旧备份，仅保留最近 3 个
                 cleanupOldBackups(connection, containerName);
 
                 // 安排本地上传文件清理
@@ -234,7 +238,7 @@ public class DataManagementService {
     /**
      * 获取容器内数据目录大小（字节）。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @return 数据目录大小（字节）
      * @throws Exception 命令执行异常
@@ -251,23 +255,23 @@ public class DataManagementService {
     }
 
     /**
-     * 验证ZIP文件结构和内容。
+     * 验证 ZIP 文件结构和内容。
      *
-     * @param zipPath ZIP文件路径
+     * @param zipPath ZIP 文件路径
      * @return 是否有效
      */
     private boolean isValidDataZip(String zipPath) {
         try {
-            log.debug("验证ZIP文件: {}", zipPath);
+            log.debug("验证 ZIP 文件: {}", zipPath);
 
-            // 1. 检查ZIP文件完整性
+            // 1. 检查 ZIP 文件完整性
             String integrityCheck = executeLocalCommand(String.format("unzip -t '%s'", zipPath));
             if (!integrityCheck.contains("No errors detected")) {
-                log.warn("ZIP文件完整性检查失败: {}", integrityCheck);
+                log.warn("ZIP 文件完整性检查失败: {}", integrityCheck);
                 return false;
             }
 
-            // 2. 检查ZIP文件内容结构
+            // 2. 检查 ZIP 文件内容结构
             String listContents = executeLocalCommand(String.format("unzip -l '%s'", zipPath));
             String[] requiredPaths = {
                     "app/data/",
@@ -277,7 +281,7 @@ public class DataManagementService {
             };
             for (String requiredPath : requiredPaths) {
                 if (!listContents.contains(requiredPath)) {
-                    log.warn("ZIP文件缺少必要路径: {}", requiredPath);
+                    log.warn("ZIP 文件缺少必要路径: {}", requiredPath);
                     return false;
                 }
             }
@@ -286,29 +290,29 @@ public class DataManagementService {
             File zipFile = new File(zipPath);
             long fileSizeBytes = zipFile.length();
             if (fileSizeBytes > maxExportSizeBytes) {
-                log.warn("ZIP文件过大: {} bytes (限制: {} bytes)", fileSizeBytes, maxExportSizeBytes);
+                log.warn("ZIP 文件过大: {} bytes (限制: {} bytes)", fileSizeBytes, maxExportSizeBytes);
                 return false;
             }
 
             // 4. 检查压缩包内的可疑文件
             if (containsSuspiciousFiles(listContents)) {
-                log.warn("ZIP文件包含可疑文件");
+                log.warn("ZIP 文件包含可疑文件");
                 return false;
             }
 
-            log.info("ZIP文件验证通过: {}", zipPath);
+            log.info("ZIP 文件验证通过: {}", zipPath);
             return true;
 
         } catch (Exception e) {
-            log.error("ZIP文件验证失败: {}", e.getMessage());
+            log.error("ZIP 文件验证失败: {}", e.getMessage());
             return false;
         }
     }
 
     /**
-     * 检查ZIP内容是否包含可疑文件。
+     * 检查 ZIP 内容是否包含可疑文件。
      *
-     * @param zipContents ZIP内容列表
+     * @param zipContents ZIP 内容列表
      * @return 是否包含可疑文件
      */
     private boolean containsSuspiciousFiles(String zipContents) {
@@ -331,7 +335,7 @@ public class DataManagementService {
     /**
      * 创建增强的数据备份。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @param timestamp 时间戳
      * @return 备份路径
@@ -369,7 +373,7 @@ public class DataManagementService {
     /**
      * 验证备份完整性。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @param backupPath 备份路径
      * @return 是否完整
@@ -403,7 +407,7 @@ public class DataManagementService {
     /**
      * 执行自动回滚。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @param backupPath 备份路径
      */
@@ -433,9 +437,9 @@ public class DataManagementService {
     }
 
     /**
-     * 清理旧备份，仅保留最近3个。
+     * 清理旧备份，仅保留最近 3 个。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      */
     private void cleanupOldBackups(SshConnection connection, String containerName) {
@@ -466,7 +470,7 @@ public class DataManagementService {
     /**
      * 获取备份大小。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param containerName 容器名称
      * @param backupPath 备份路径
      * @return 备份大小字符串
@@ -482,12 +486,12 @@ public class DataManagementService {
     }
 
     /**
-     * 通过SFTP从远程主机下载文件到本地。
+     * 通过 SFTP 从远程主机下载文件到本地。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param remotePath 远程路径
      * @param localPath 本地路径
-     * @throws Exception SFTP异常
+     * @throws Exception SFTP 异常
      */
     private void downloadFileFromRemote(SshConnection connection, String remotePath, String localPath) throws Exception {
         log.debug("下载文件: {} -> {}", remotePath, localPath);
@@ -502,12 +506,12 @@ public class DataManagementService {
     }
 
     /**
-     * 通过SFTP上传文件到远程主机。
+     * 通过 SFTP 上传文件到远程主机。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param localPath 本地路径
      * @param remotePath 远程路径
-     * @throws Exception SFTP异常
+     * @throws Exception SFTP 异常
      */
     private void uploadFileToRemote(SshConnection connection, String localPath, String remotePath) throws Exception {
         log.debug("上传文件: {} -> {}", localPath, remotePath);
@@ -522,9 +526,9 @@ public class DataManagementService {
     }
 
     /**
-     * 通过SSH连接执行命令。
+     * 通过 SSH 连接执行命令。
      *
-     * @param connection SSH连接
+     * @param connection SSH 连接
      * @param command 命令字符串
      * @return 命令标准输出
      * @throws Exception 命令执行异常
@@ -543,10 +547,6 @@ public class DataManagementService {
             throw new Exception("命令执行被中断: " + command, e);
         }
     }
-
-    // 本地命令白名单
-    private static final Set<String> ALLOWED_COMMANDS = Set.of("unzip", "file", "du", "ls");
-    private static final Pattern SAFE_PATH_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
 
     /**
      * 安全执行本地命令（白名单与路径校验）。
@@ -608,7 +608,7 @@ public class DataManagementService {
             Thread.currentThread().interrupt();
             throw new Exception("命令执行被中断: " + command, e);
         } catch (IOException e) {
-            throw new Exception("命令执行IO错误: " + e.getMessage(), e);
+            throw new Exception("命令执行 IO 错误: " + e.getMessage(), e);
         }
     }
 }
