@@ -132,8 +132,8 @@ public class SillyTavernDeploymentService {
 
         // 确定镜像地址
         String sillyTavernImage = useChineseMirror ?
-                "ghcr.nju.edu.cn/sillytavern/sillytavern:" + config.getSelectedVersion() :
-                "ghcr.io/sillytavern/sillytavern:" + config.getSelectedVersion();
+                "goolashe/sillytavern:" + config.getSelectedVersion() :
+                "goolashe/sillytavern:" + config.getSelectedVersion();
 
         String watchtowerImage = useChineseMirror ?
                 "ghcr.nju.edu.cn/containrrr/watchtower" :

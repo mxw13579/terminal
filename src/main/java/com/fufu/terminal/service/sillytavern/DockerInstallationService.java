@@ -3,6 +3,8 @@ package com.fufu.terminal.service.sillytavern;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
+import lombok.Builder;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,13 @@ import java.util.function.Consumer;
 public class DockerInstallationService {
 
     private final SshCommandService sshCommandService;
+
+    /** docker-compose 包名常量 */
+    private static final String DOCKER_COMPOSE_PACKAGE = "docker-compose";
+    /** Docker CE 相关包名常量 */
+    private static final String DOCKER_CE_PACKAGES = "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin";
+    /** 检查 Docker 版本命令 */
+    private static final String DOCKER_VERSION_COMMAND = "docker --version";
 
     /**
      * 检查目标主机是否已安装 Docker。
@@ -55,7 +64,7 @@ public class DockerInstallationService {
                 // 获取 Docker 版本信息
                 CommandResult versionResult = sshCommandService.executeCommand(
                         connection.getJschSession(),
-                        "docker --version"
+                        DOCKER_VERSION_COMMAND
                 );
                 String version = versionResult.exitStatus() == 0
                         ? versionResult.stdout().trim()
@@ -92,9 +101,9 @@ public class DockerInstallationService {
      * 安装 Docker，根据操作系统类型选择合适的安装方法。
      *
      * @param connection        SSH 连接信息
-     * @param osInfo           操作系统信息
-     * @param useChineseMirror 是否使用国内镜像源
-     * @param progressCallback 安装进度回调
+     * @param osInfo            操作系统信息
+     * @param useChineseMirror  是否使用国内镜像源
+     * @param progressCallback  安装进度回调
      * @return 异步返回 Docker 安装结果
      */
     public CompletableFuture<DockerInstallationResult> installDocker(
@@ -106,41 +115,32 @@ public class DockerInstallationService {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 progressCallback.accept("开始安装 Docker...");
-
                 String osId = osInfo.getOsId().toLowerCase();
-                DockerInstallationResult result;
 
-                switch (osId) {
-                    case "debian":
-                    case "ubuntu":
-                        result = installDockerOnDebianBased(connection, osId, useChineseMirror, progressCallback);
-                        break;
-                    case "centos":
-                    case "rhel":
-                    case "fedora":
-                        result = installDockerOnRedHatBased(connection, osId, useChineseMirror, progressCallback);
-                        break;
-                    case "arch":
-                        result = installDockerOnArch(connection, progressCallback);
-                        break;
-                    case "alpine":
-                        result = installDockerOnAlpine(connection, progressCallback);
-                        break;
-                    case "suse":
-                    case "opensuse-leap":
-                    case "opensuse-tumbleweed":
-                        result = installDockerOnSuse(connection, progressCallback);
-                        break;
-                    default:
+                // 根据不同操作系统分发安装逻辑
+                DockerInstallationResult result = switch (osId) {
+                    case "debian", "ubuntu" ->
+                            installDockerOnDebianBased(connection, osId, useChineseMirror, progressCallback);
+                    case "centos", "rhel", "fedora" ->
+                            installDockerOnRedHatBased(connection, osId, useChineseMirror, progressCallback);
+                    case "arch" -> installWithPackageManager(connection, progressCallback, "pacman",
+                            "sudo pacman -S --noconfirm docker " + DOCKER_COMPOSE_PACKAGE, "Pacman 官方仓库");
+                    case "alpine" -> installWithPackageManager(connection, progressCallback, "apk",
+                            "sudo apk add docker " + DOCKER_COMPOSE_PACKAGE, "APK 官方仓库");
+                    case "suse", "opensuse-leap", "opensuse-tumbleweed" ->
+                            installWithPackageManager(connection, progressCallback, "zypper",
+                                    "sudo zypper install -y docker " + DOCKER_COMPOSE_PACKAGE, "Zypper 官方仓库");
+                    default -> {
                         progressCallback.accept(String.format("不支持的操作系统: %s", osId));
-                        return DockerInstallationResult.builder()
+                        yield DockerInstallationResult.builder()
                                 .success(false)
                                 .message("不支持的操作系统")
                                 .installedVersion("未安装")
-                                .installationMethod(null)
                                 .build();
-                }
+                    }
+                };
 
+                // 安装成功后启动并启用 Docker 服务
                 if (result.isSuccess()) {
                     progressCallback.accept("启动并启用 Docker 服务...");
                     startAndEnableDockerService(connection, osId, progressCallback);
@@ -154,82 +154,59 @@ public class DockerInstallationService {
                 return DockerInstallationResult.builder()
                         .success(false)
                         .message("安装过程中发生异常: " + e.getMessage())
-                        .installedVersion("未安装")
-                        .installationMethod(null)
                         .build();
             }
         });
     }
 
     /**
+     * 执行一个 SSH 命令，如果失败则抛出异常。
+     *
+     * @param connection  SSH 连接信息
+     * @param command     待执行命令
+     * @param errorPrefix 错误信息前缀
+     * @throws Exception  命令执行失败时抛出异常
+     */
+    private void executeCommandOrThrow(SshConnection connection, String command, String errorPrefix) throws Exception {
+        CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+        if (result.exitStatus() != 0) {
+            throw new RuntimeException(errorPrefix + ": " + result.stderr());
+        }
+    }
+
+    /**
      * 在 Debian/Ubuntu 系统上安装 Docker。
      *
-     * @param connection        SSH 连接信息
-     * @param osName            操作系统名称
-     * @param useChineseMirror  是否使用国内镜像
-     * @param progressCallback  进度回调
-     * @return Docker 安装结果
-     * @throws Exception 安装过程异常
+     * @param connection       SSH 连接信息
+     * @param osName           操作系统名称
+     * @param useChineseMirror 是否使用国内镜像
+     * @param progressCallback 进度回调
+     * @return 安装结果
+     * @throws Exception 安装失败时抛出异常
      */
     private DockerInstallationResult installDockerOnDebianBased(
-            SshConnection connection,
-            String osName,
-            boolean useChineseMirror,
-            Consumer<String> progressCallback) throws Exception {
+            SshConnection connection, String osName, boolean useChineseMirror, Consumer<String> progressCallback) throws Exception {
 
         progressCallback.accept(String.format("在 %s 系统上安装 Docker...", osName));
-
-        // 选择 Docker 仓库 URL
-        String dockerRepoUrl = useChineseMirror
-                ? "https://mirrors.aliyun.com/docker-ce"
-                : "https://download.docker.com";
-
+        String dockerRepoUrl = useChineseMirror ? "https://mirrors.aliyun.com/docker-ce" : "https://download.docker.com";
         progressCallback.accept("使用 Docker 安装源: " + dockerRepoUrl);
 
-        // 移除旧版本 Docker
-        progressCallback.accept("移除旧版本 Docker...");
-        sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo apt-get remove -y docker docker-engine docker.io containerd runc || true");
+        String installCommands = String.join(" && ",
+                "sudo apt-get remove -y docker docker-engine docker.io containerd runc || true",
+                "sudo apt-get update",
+                "sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release",
+                "sudo install -m 0755 -d /etc/apt/keyrings",
+                String.format("curl -fsSL \"%s/linux/%s/gpg\" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg", dockerRepoUrl, osName),
+                "sudo chmod a+r /etc/apt/keyrings/docker.gpg",
+                String.format("echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] %s/linux/%s $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null", dockerRepoUrl, osName),
+                "sudo apt-get update",
+                "sudo apt-get install -y " + DOCKER_CE_PACKAGES
+        );
 
-        // 安装依赖
-        progressCallback.accept("安装必要依赖...");
-        CommandResult depsResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release");
-        if (depsResult.exitStatus() != 0) {
-            throw new RuntimeException("安装依赖失败: " + depsResult.stderr());
-        }
+        progressCallback.accept("正在执行安装脚本...");
+        executeCommandOrThrow(connection, installCommands, "Docker 安装失败");
 
-        // 添加 Docker 官方 GPG 密钥
-        progressCallback.accept("添加 Docker GPG 密钥...");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo install -m 0755 -d /etc/apt/keyrings");
-        sshCommandService.executeCommand(connection.getJschSession(),
-                String.format("curl -fsSL \"%s/linux/%s/gpg\" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg", dockerRepoUrl, osName));
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo chmod a+r /etc/apt/keyrings/docker.gpg");
-
-        // 添加 Docker 仓库
-        progressCallback.accept("添加 Docker 软件仓库...");
-        String repoCommand = String.format(
-                "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] %s/linux/%s $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
-                dockerRepoUrl, osName);
-        sshCommandService.executeCommand(connection.getJschSession(), repoCommand);
-
-        // 更新软件包索引
-        progressCallback.accept("更新软件包索引...");
-        CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo apt-get update");
-        if (updateResult.exitStatus() != 0) {
-            throw new RuntimeException("更新软件包索引失败: " + updateResult.stderr());
-        }
-
-        // 安装 Docker
-        progressCallback.accept("安装 Docker CE...");
-        CommandResult installResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin");
-        if (installResult.exitStatus() != 0) {
-            throw new RuntimeException("Docker 安装失败: " + installResult.stderr());
-        }
-
-        // 验证安装
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), "docker --version");
+        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
         String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
 
         return DockerInstallationResult.builder()
@@ -241,67 +218,36 @@ public class DockerInstallationService {
     }
 
     /**
-     * 在 RedHat 系统上安装 Docker。
+     * 在 RedHat/CentOS/Fedora 系统上安装 Docker。
      *
-     * @param connection        SSH 连接信息
-     * @param osName            操作系统名称
-     * @param useChineseMirror  是否使用国内镜像
-     * @param progressCallback  进度回调
-     * @return Docker 安装结果
-     * @throws Exception 安装过程异常
+     * @param connection       SSH 连接信息
+     * @param osName           操作系统名称
+     * @param useChineseMirror 是否使用国内镜像
+     * @param progressCallback 进度回调
+     * @return 安装结果
+     * @throws Exception 安装失败时抛出异常
      */
     private DockerInstallationResult installDockerOnRedHatBased(
-            SshConnection connection,
-            String osName,
-            boolean useChineseMirror,
-            Consumer<String> progressCallback) throws Exception {
+            SshConnection connection, String osName, boolean useChineseMirror, Consumer<String> progressCallback) throws Exception {
 
         progressCallback.accept(String.format("在 %s 系统上安装 Docker...", osName));
-
         String pkgManager = "fedora".equals(osName) ? "dnf" : "yum";
-
-        // 移除旧版本 Docker
-        progressCallback.accept("移除旧版本 Docker...");
-        sshCommandService.executeCommand(connection.getJschSession(),
-                String.format("sudo %s remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine || true", pkgManager));
-
-        // 安装依赖
-        progressCallback.accept("安装 yum-utils...");
-        CommandResult depsResult = sshCommandService.executeCommand(connection.getJschSession(),
-                String.format("sudo %s install -y %s-utils", pkgManager, pkgManager));
-        if (depsResult.exitStatus() != 0) {
-            throw new RuntimeException("安装依赖失败: " + depsResult.stderr());
-        }
-
-        // 添加 Docker 仓库
-        String repoUrl;
-        if ("fedora".equals(osName)) {
-            repoUrl = useChineseMirror
-                    ? "https://mirrors.aliyun.com/docker-ce/linux/fedora/docker-ce.repo"
-                    : "https://download.docker.com/linux/fedora/docker-ce.repo";
-        } else {
-            repoUrl = useChineseMirror
-                    ? "http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo"
-                    : "https://download.docker.com/linux/centos/docker-ce.repo";
-        }
-
+        String repoUrl = useChineseMirror
+                ? ("fedora".equals(osName) ? "https://mirrors.aliyun.com/docker-ce/linux/fedora/docker-ce.repo" : "http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo")
+                : ("fedora".equals(osName) ? "https://download.docker.com/linux/fedora/docker-ce.repo" : "https://download.docker.com/linux/centos/docker-ce.repo");
         progressCallback.accept("添加 Docker 仓库: " + repoUrl);
-        CommandResult repoResult = sshCommandService.executeCommand(connection.getJschSession(),
-                String.format("sudo %s-config-manager --add-repo %s", pkgManager, repoUrl));
-        if (repoResult.exitStatus() != 0) {
-            throw new RuntimeException("添加 Docker 仓库失败: " + repoResult.stderr());
-        }
 
-        // 安装 Docker
-        progressCallback.accept("安装 Docker CE...");
-        CommandResult installResult = sshCommandService.executeCommand(connection.getJschSession(),
-                String.format("sudo %s install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin", pkgManager));
-        if (installResult.exitStatus() != 0) {
-            throw new RuntimeException("Docker 安装失败: " + installResult.stderr());
-        }
+        String installCommands = String.join(" && ",
+                String.format("sudo %s remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine || true", pkgManager),
+                String.format("sudo %s install -y %s-utils", pkgManager, pkgManager),
+                String.format("sudo %s-config-manager --add-repo %s", pkgManager, repoUrl),
+                String.format("sudo %s install -y %s", pkgManager, DOCKER_CE_PACKAGES)
+        );
 
-        // 验证安装
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), "docker --version");
+        progressCallback.accept("正在执行安装脚本...");
+        executeCommandOrThrow(connection, installCommands, "Docker 安装失败");
+
+        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
         String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
 
         return DockerInstallationResult.builder()
@@ -313,95 +259,30 @@ public class DockerInstallationService {
     }
 
     /**
-     * 在 Arch Linux 上安装 Docker。
+     * 使用指定包管理器安装 Docker。
      *
-     * @param connection       SSH 连接信息
-     * @param progressCallback 进度回调
-     * @return Docker 安装结果
-     * @throws Exception 安装过程异常
+     * @param connection        SSH 连接信息
+     * @param progressCallback  进度回调
+     * @param pkgManager        包管理器名称
+     * @param installCommand    安装命令
+     * @param methodDescription 安装方式描述
+     * @return 安装结果
+     * @throws Exception 安装失败时抛出异常
      */
-    private DockerInstallationResult installDockerOnArch(
-            SshConnection connection,
-            Consumer<String> progressCallback) throws Exception {
+    private DockerInstallationResult installWithPackageManager(
+            SshConnection connection, Consumer<String> progressCallback, String pkgManager, String installCommand, String methodDescription) throws Exception {
 
-        progressCallback.accept("在 Arch Linux 上安装 Docker...");
+        progressCallback.accept(String.format("在 %s 系统上安装 Docker...", methodDescription));
+        executeCommandOrThrow(connection, installCommand, "Docker 安装失败");
 
-        CommandResult installResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo pacman -S --noconfirm docker docker-compose");
-        if (installResult.exitStatus() != 0) {
-            throw new RuntimeException("Docker 安装失败: " + installResult.stderr());
-        }
-
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), "docker --version");
+        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
         String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
 
         return DockerInstallationResult.builder()
                 .success(versionResult.exitStatus() == 0)
                 .message("Docker 安装成功")
                 .installedVersion(installedVersion)
-                .installationMethod("Pacman 官方仓库")
-                .build();
-    }
-
-    /**
-     * 在 Alpine Linux 上安装 Docker。
-     *
-     * @param connection       SSH 连接信息
-     * @param progressCallback 进度回调
-     * @return Docker 安装结果
-     * @throws Exception 安装过程异常
-     */
-    private DockerInstallationResult installDockerOnAlpine(
-            SshConnection connection,
-            Consumer<String> progressCallback) throws Exception {
-
-        progressCallback.accept("在 Alpine Linux 上安装 Docker...");
-
-        CommandResult installResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo apk add docker docker-compose");
-        if (installResult.exitStatus() != 0) {
-            throw new RuntimeException("Docker 安装失败: " + installResult.stderr());
-        }
-
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), "docker --version");
-        String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
-
-        return DockerInstallationResult.builder()
-                .success(versionResult.exitStatus() == 0)
-                .message("Docker 安装成功")
-                .installedVersion(installedVersion)
-                .installationMethod("APK 官方仓库")
-                .build();
-    }
-
-    /**
-     * 在 SUSE 系统上安装 Docker。
-     *
-     * @param connection       SSH 连接信息
-     * @param progressCallback 进度回调
-     * @return Docker 安装结果
-     * @throws Exception 安装过程异常
-     */
-    private DockerInstallationResult installDockerOnSuse(
-            SshConnection connection,
-            Consumer<String> progressCallback) throws Exception {
-
-        progressCallback.accept("在 SUSE 系统上安装 Docker...");
-
-        CommandResult installResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo zypper install -y docker docker-compose");
-        if (installResult.exitStatus() != 0) {
-            throw new RuntimeException("Docker 安装失败: " + installResult.stderr());
-        }
-
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), "docker --version");
-        String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
-
-        return DockerInstallationResult.builder()
-                .success(versionResult.exitStatus() == 0)
-                .message("Docker 安装成功")
-                .installedVersion(installedVersion)
-                .installationMethod("Zypper 官方仓库")
+                .installationMethod(methodDescription)
                 .build();
     }
 
@@ -411,25 +292,20 @@ public class DockerInstallationService {
      * @param connection       SSH 连接信息
      * @param osName           操作系统名称
      * @param progressCallback 进度回调
-     * @throws Exception 启动过程异常
+     * @throws Exception 启动失败时抛出异常
      */
     private void startAndEnableDockerService(
-            SshConnection connection,
-            String osName,
-            Consumer<String> progressCallback) throws Exception {
+            SshConnection connection, String osName, Consumer<String> progressCallback) throws Exception {
 
         if ("alpine".equals(osName)) {
-            // Alpine 使用 OpenRC
             progressCallback.accept("启动 Docker 服务 (OpenRC)...");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo rc-update add docker boot");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo service docker start");
+            executeCommandOrThrow(connection, "sudo rc-update add docker boot && sudo service docker start", "启动 Docker 服务失败");
         } else {
-            // 其他发行版使用 systemd
-            progressCallback.accept("启动并启用 Docker 服务...");
+            progressCallback.accept("启动并启用 Docker 服务 (systemd)...");
             CommandResult startResult = sshCommandService.executeCommand(connection.getJschSession(),
                     "sudo systemctl start docker && sudo systemctl enable docker");
             if (startResult.exitStatus() != 0) {
-                log.warn("Docker 服务启动可能有问题: {}", startResult.stderr());
+                log.warn("Docker 服务启动或启用可能存在问题: {}", startResult.stderr());
             }
         }
     }
@@ -437,96 +313,32 @@ public class DockerInstallationService {
     /**
      * Docker 安装状态数据类。
      */
-    @lombok.Data
-    @lombok.Builder
+    @Data
+    @Builder
     public static class DockerInstallationStatus {
-        /** 是否已安装 Docker */
+        /** 是否已安装 */
         private boolean installed;
-        /** Docker 版本信息 */
+        /** Docker 版本 */
         private String version;
-        /** Docker 服务是否运行中 */
+        /** 服务是否运行中 */
         private boolean serviceRunning;
-        /** 状态描述信息 */
+        /** 状态消息 */
         private String message;
-
-        /**
-         * 获取Docker是否已安装
-         * @return 是否已安装
-         */
-        public boolean isInstalled() {
-            return installed;
-        }
-
-        /**
-         * 获取Docker版本信息
-         * @return 版本信息
-         */
-        public String getVersion() {
-            return version;
-        }
-
-        /**
-         * 获取Docker服务是否运行中
-         * @return 是否运行中
-         */
-        public boolean isServiceRunning() {
-            return serviceRunning;
-        }
-
-        /**
-         * 获取状态描述信息
-         * @return 状态描述
-         */
-        public String getMessage() {
-            return message;
-        }
     }
 
     /**
      * Docker 安装结果数据类。
      */
-    @lombok.Data
-    @lombok.Builder
+    @Data
+    @Builder
     public static class DockerInstallationResult {
-        /** 安装是否成功 */
+        /** 是否安装成功 */
         private boolean success;
-        /** 安装结果描述 */
+        /** 结果消息 */
         private String message;
-        /** 已安装的 Docker 版本 */
+        /** 已安装版本 */
         private String installedVersion;
         /** 安装方式描述 */
         private String installationMethod;
-
-        /**
-         * 获取安装是否成功
-         * @return 是否成功
-         */
-        public boolean isSuccess() {
-            return success;
-        }
-
-        /**
-         * 获取安装结果描述
-         * @return 结果描述
-         */
-        public String getMessage() {
-            return message;
-        }
-
-        /**
-         * 获取已安装的Docker版本
-         * @return 安装版本
-         */
-        public String getInstalledVersion() {
-            return installedVersion;
-        }
-
-        /**
-         * 获取安装方式描述
-         * @return 安装方式
-         */
-        public String getInstallationMethod() {
-            return installationMethod;
-        }
     }
 }

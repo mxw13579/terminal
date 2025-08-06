@@ -25,14 +25,20 @@ import java.util.function.Consumer;
 public class DockerMirrorService {
 
     private final SshCommandService sshCommandService;
+    private final GeolocationDetectionService geolocationDetectionService;
+
 
     /**
-     * 配置 Docker 镜像加速器。
+     * 异步配置 Docker 镜像加速器。
+     * <p>
+     * 根据 {@code useChineseMirror} 参数决定是否配置国内镜像源。
+     * 如果选择不配置，将直接返回成功。
+     * 如果已存在镜像配置，则会跳过，避免重复操作。
      *
      * @param connection        SSH 连接信息
-     * @param useChineseMirror  是否使用国内镜像加速器
-     * @param progressCallback  进度回调函数（用于实时反馈进度消息）
-     * @return 配置结果的异步任务，返回 {@link DockerMirrorConfigResult}
+     * @param useChineseMirror  如果为 true，则配置国内镜像加速器；否则跳过。
+     * @param progressCallback  用于实时反馈操作进度的回调函数。
+     * @return 一个 CompletableFuture，包含配置结果 {@link DockerMirrorConfigResult}。
      */
     public CompletableFuture<DockerMirrorConfigResult> configureDockerMirror(SshConnection connection,
                                                                              boolean useChineseMirror,
@@ -50,34 +56,20 @@ public class DockerMirrorService {
 
                 progressCallback.accept("正在配置Docker国内镜像加速器...");
 
-                // 检查是否已经配置了镜像加速器
                 if (isDockerMirrorAlreadyConfigured(connection)) {
                     progressCallback.accept("检测到Docker已配置镜像加速器，跳过配置");
+                    String currentMirrors = getCurrentDockerMirrors(connection).join();
                     return DockerMirrorConfigResult.builder()
                             .success(true)
                             .message("Docker镜像加速器已配置")
-                            .configuredMirrors("已存在的配置")
+                            .configuredMirrors(currentMirrors)
                             .build();
                 }
 
-                // 创建Docker配置目录
-                progressCallback.accept("创建Docker配置目录...");
-                sshCommandService.executeCommand(connection.getJschSession(), "sudo mkdir -p /etc/docker");
+                // 创建并写入 Docker 配置文件
+                writeDockerConfig(connection, progressCallback);
 
-                // 生成daemon.json配置文件
-                String daemonJsonContent = generateDaemonJsonContent();
-                progressCallback.accept("写入Docker镜像加速器配置...");
-
-                String writeConfigCommand = String.format(
-                        "sudo tee /etc/docker/daemon.json <<-'EOF'\n%s\nEOF", daemonJsonContent);
-
-                CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeConfigCommand);
-
-                if (writeResult.exitStatus() != 0) {
-                    throw new RuntimeException("写入Docker配置文件失败: " + writeResult.stderr());
-                }
-
-                // 重启Docker服务以应用配置
+                // 重启 Docker 服务以应用配置
                 progressCallback.accept("重启Docker服务以应用镜像加速配置...");
                 restartDockerService(connection);
 
@@ -97,7 +89,6 @@ public class DockerMirrorService {
                 return DockerMirrorConfigResult.builder()
                         .success(false)
                         .message("配置失败: " + e.getMessage())
-                        .configuredMirrors("")
                         .build();
             }
         });
@@ -122,17 +113,20 @@ public class DockerMirrorService {
 
     /**
      * 生成 daemon.json 配置文件内容。
+     * 使用 JDK 17 文本块以提高可读性。
      *
-     * @return 标准的 Docker 国内镜像加速器配置内容
+     * @return 标准的 Docker 国内镜像加速器配置内容的字符串。
      */
     private String generateDaemonJsonContent() {
-        return "{\n" +
-                "  \"registry-mirrors\": [\n" +
-                "    \"https://hub-mirror.c.163.com\",\n" +
-                "    \"https://mirror.baidubce.com\",\n" +
-                "    \"https://registry.docker-cn.com\"\n" +
-                "  ]\n" +
-                "}";
+        return """
+               {
+                 "registry-mirrors": [
+                   "https://hub-mirror.c.163.com",
+                   "https://mirror.baidubce.com",
+                   "https://registry.docker-cn.com"
+                 ]
+               }
+               """;
     }
 
     /**
@@ -167,18 +161,19 @@ public class DockerMirrorService {
 
     /**
      * 验证 Docker 镜像加速器配置是否生效。
+     * 使用 'docker info --format' 命令精确获取镜像源信息，比 grep 更健壮。
      *
      * @param connection SSH 连接信息
-     * @return 如果配置生效返回 true，否则返回 false
+     * @return 如果配置的镜像源已生效，返回 true，否则返回 false。
      */
     private boolean verifyDockerMirrorConfig(SshConnection connection) {
         try {
-            // 使用docker info命令检查镜像源配置
-            CommandResult infoResult = sshCommandService.executeCommand(connection.getJschSession(),
-                    "sudo docker info | grep -A 5 'Registry Mirrors'");
+            // 使用 docker info --format 精确获取镜像配置，避免因版本更新导致输出格式变化
+            String command = "sudo docker info --format '{{.RegistryConfig.Mirrors}}'";
+            CommandResult infoResult = sshCommandService.executeCommand(connection.getJschSession(), command);
 
-            return infoResult.exitStatus() == 0 &&
-                    infoResult.stdout().contains("hub-mirror.c.163.com");
+            // 检查命令是否成功执行，并且输出中是否包含我们配置的镜像之一
+            return infoResult.exitStatus() == 0 && infoResult.stdout().contains("hub-mirror.c.163.com");
 
         } catch (Exception e) {
             log.warn("验证Docker镜像配置时出错: {}", e.getMessage());
@@ -187,14 +182,15 @@ public class DockerMirrorService {
     }
 
     /**
-     * 检查并修复 Docker 配置文件。
+     * 异步检查并修复可能损坏的 Docker 配置文件 (daemon.json)。
      * <p>
-     * 如果配置文件格式有问题，尝试自动修复。
-     * </p>
+     * 此方法首先会验证 {@code /etc/docker/daemon.json} 是否为有效的 JSON 格式。
+     * 如果文件不存在或格式不正确，它将备份旧文件（如果存在），
+     * 然后使用标准镜像源配置重新生成该文件。
      *
-     * @param connection       SSH 连接信息
-     * @param progressCallback 进度回调函数
-     * @return 异步任务，返回修复是否成功
+     * @param connection       SSH 连接信息。
+     * @param progressCallback 用于实时反馈操作进度的回调函数。
+     * @return 一个 CompletableFuture，其结果为布尔值，表示修复操作是否成功。
      */
     public CompletableFuture<Boolean> checkAndRepairDockerConfig(SshConnection connection,
                                                                  Consumer<String> progressCallback) {
@@ -202,7 +198,7 @@ public class DockerMirrorService {
             try {
                 progressCallback.accept("检查Docker配置文件格式...");
 
-                // 检查daemon.json是否存在且格式正确
+                // 使用 python 检查 json 格式是一种常见且有效的技巧
                 CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
                         "sudo python3 -m json.tool /etc/docker/daemon.json > /dev/null 2>&1");
 
@@ -211,23 +207,14 @@ public class DockerMirrorService {
                     return true;
                 }
 
-                progressCallback.accept("检测到Docker配置文件格式错误，尝试修复...");
+                progressCallback.accept("检测到Docker配置文件格式错误或文件不存在，尝试修复...");
 
-                // 备份原配置文件
+                // 备份可能已损坏的配置文件
                 sshCommandService.executeCommand(connection.getJschSession(),
-                        "sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup 2>/dev/null || true");
+                        "sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup_$(date +%s) 2>/dev/null || true");
 
-                // 重新生成配置文件
-                String daemonJsonContent = generateDaemonJsonContent();
-                String writeConfigCommand = String.format(
-                        "sudo tee /etc/docker/daemon.json <<-'EOF'\n%s\nEOF", daemonJsonContent);
-
-                CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeConfigCommand);
-
-                if (writeResult.exitStatus() != 0) {
-                    progressCallback.accept("修复Docker配置文件失败");
-                    return false;
-                }
+                // 重新生成并写入配置文件
+                writeDockerConfig(connection, progressCallback);
 
                 progressCallback.accept("Docker配置文件修复成功");
                 return true;
@@ -241,19 +228,22 @@ public class DockerMirrorService {
     }
 
     /**
-     * 获取当前 Docker 镜像源配置。
+     * 异步获取当前 Docker 配置的镜像源列表。
      *
-     * @param connection SSH 连接信息
-     * @return 异步任务，返回当前配置的镜像源列表（字符串形式）
+     * @param connection SSH 连接信息。
+     * @return 一个 CompletableFuture，包含当前配置的镜像源列表的字符串表示。
+     *         如果无法获取或未配置，则返回相应的提示信息。
      */
     public CompletableFuture<String> getCurrentDockerMirrors(SshConnection connection) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                CommandResult result = sshCommandService.executeCommand(connection.getJschSession(),
-                        "sudo docker info | grep -A 10 'Registry Mirrors' | tail -n +2");
+                // 使用 --format 精确提取镜像列表，比 grep 更稳定
+                String command = "sudo docker info --format '{{json .RegistryConfig.Mirrors}}'";
+                CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
 
                 if (result.exitStatus() == 0 && !result.stdout().trim().isEmpty()) {
-                    return result.stdout().trim();
+                    // 对输出进行清理，去除可能存在的方括号和引号
+                    return result.stdout().trim().replaceAll("[\\[\\]\"]", "").replace(",", ", ");
                 } else {
                     return "未配置镜像源或使用默认配置";
                 }
@@ -264,7 +254,6 @@ public class DockerMirrorService {
             }
         });
     }
-
     /**
      * 测试 Docker 镜像拉取速度。
      * <p>
@@ -275,8 +264,9 @@ public class DockerMirrorService {
      * @param progressCallback 进度回调函数
      * @return 异步任务，返回 {@link DockerMirrorTestResult}
      */
-    public CompletableFuture<DockerMirrorTestResult> testDockerMirrorSpeed(SshConnection connection,
-                                                                           Consumer<String> progressCallback) {
+    public CompletableFuture<DockerMirrorTestResult> testDockerMirrorSpeed(
+            SshConnection connection,
+            Consumer<String> progressCallback) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 progressCallback.accept("测试Docker镜像拉取速度...");
@@ -388,36 +378,59 @@ public class DockerMirrorService {
     }
 
     /**
-     * 配置 Docker 镜像加速器（便捷方法）。
+     * 自动配置 Docker 镜像加速器。
      * <p>
-     * 自动检测地理位置并配置合适的镜像加速器。
-     * </p>
+     * 此便捷方法会自动检测服务器的地理位置。如果判定位于中国大陆，
+     * 则会自动配置国内镜像加速器，否则将使用 Docker 官方源。
      *
-     * @param connection SSH 连接信息
-     * @return 异步任务，返回 {@link DockerMirrorConfigResult}
+     * @param connection SSH 连接信息。
+     * @return 一个 CompletableFuture，包含配置结果 {@link DockerMirrorConfigResult}。
      */
     public CompletableFuture<DockerMirrorConfigResult> configureMirror(SshConnection connection) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                // 检测地理位置
-                GeolocationDetectionService geoService = new GeolocationDetectionService(sshCommandService);
-                GeolocationDetectionService.GeolocationInfo geoInfo = geoService.detectGeolocation(connection, (msg) -> {
-                    log.info("地理位置检测: {}", msg);
-                }).join();
+                // 使用注入的 service 进行地理位置检测
+                GeolocationDetectionService.GeolocationInfo geoInfo = geolocationDetectionService.detectGeolocation(connection,
+                        msg -> log.info("地理位置检测: {}", msg)).join();
 
-                // 配置Docker镜像加速器
-                return configureDockerMirror(connection, geoInfo.isUseChineseMirror(), (msg) -> {
-                    log.info("Docker镜像配置: {}", msg);
-                }).join();
+                // 根据检测结果调用主配置方法
+                return configureDockerMirror(connection, geoInfo.isUseChineseMirror(),
+                        msg -> log.info("Docker镜像配置: {}", msg)).join();
 
             } catch (Exception e) {
-                log.error("Docker镜像配置失败", e);
+                log.error("自动配置Docker镜像失败", e);
                 return DockerMirrorConfigResult.builder()
                         .success(false)
-                        .message("Docker镜像配置失败: " + e.getMessage())
-                        .configuredMirrors("未配置")
+                        .message("自动配置Docker镜像失败: " + e.getMessage())
                         .build();
             }
         });
+    }
+
+    /**
+     * 将 Docker 配置写入远程服务器的 /etc/docker/daemon.json 文件。
+     *
+     * @param connection       SSH 连接信息。
+     * @param progressCallback 用于进度反馈的回调。
+     * @throws RuntimeException 如果写入文件失败。
+     */
+    private void writeDockerConfig(SshConnection connection, Consumer<String> progressCallback) throws InterruptedException {
+        // 创建Docker配置目录
+        progressCallback.accept("创建Docker配置目录...");
+        sshCommandService.executeCommand(connection.getJschSession(), "sudo mkdir -p /etc/docker");
+
+        // 生成daemon.json配置文件
+        String daemonJsonContent = generateDaemonJsonContent();
+        progressCallback.accept("写入Docker镜像加速器配置...");
+
+        // 使用 tee 和 here document 安全地写入多行文本
+        String writeConfigCommand = String.format(
+                "echo '%s' | sudo tee /etc/docker/daemon.json", daemonJsonContent);
+
+        CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeConfigCommand);
+
+        if (writeResult.exitStatus() != 0) {
+            throw new RuntimeException("写入Docker配置文件失败: " + writeResult.stderr());
+        }
     }
 }

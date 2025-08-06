@@ -12,6 +12,7 @@ import com.fufu.terminal.service.sillytavern.InteractiveDeploymentService;
 import com.fufu.terminal.service.sillytavern.SystemConfigurationService;
 import com.fufu.terminal.service.sillytavern.DockerInstallationService;
 import com.fufu.terminal.service.sillytavern.SystemDetectionService;
+import com.fufu.terminal.service.sillytavern.DockerHubApiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -20,6 +21,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import jakarta.validation.Valid;
+
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -66,6 +69,8 @@ public class SillyTavernStompController {
     private final DockerInstallationService dockerInstallationService;
     /** 系统检测服务 */
     private final SystemDetectionService systemDetectionService;
+    /** Docker Hub API服务 */
+    private final DockerHubApiService dockerHubApiService;
     /** STOMP会话管理器 */
     private final StompSessionManager sessionManager;
     /** 消息模板 */
@@ -863,7 +868,7 @@ public class SillyTavernStompController {
                 sendErrorMessage(sessionId, "SSH连接未建立");
                 return;
             }
-            
+
             // 启动增强版部署流程，包含Docker自动安装
             interactiveDeploymentService.startEnhancedInteractiveDeployment(
                     sessionId,
@@ -988,7 +993,7 @@ public class SillyTavernStompController {
                             return systemDetectionService.detectSystemEnvironment(connection)
                                     .thenCompose(systemInfo -> {
                                         boolean useChineseMirror = (Boolean) request.getOrDefault("useChineseMirror", false);
-                                        
+
                                         return dockerInstallationService.installDocker(
                                                 connection, systemInfo, useChineseMirror, (progressMsg) -> {
                                                     // 发送Docker安装进度
@@ -1024,6 +1029,72 @@ public class SillyTavernStompController {
         } catch (Exception e) {
             log.error("Docker检查启动失败，会话 {}: {}", sessionId, e.getMessage(), e);
             sendErrorMessage(sessionId, "Docker检查启动失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取Docker Hub最新版本信息
+     *
+     * @param headerAccessor STOMP消息头访问器
+     */
+    @MessageMapping("/sillytavern/get-versions")
+    public void getDockerHubVersions(SimpMessageHeaderAccessor headerAccessor) {
+        String sessionId = headerAccessor.getSessionId();
+        log.info("获取Docker Hub版本信息，会话: {}", sessionId);
+
+        try {
+            // 检查sessionId
+            if (sessionId == null || sessionId.isEmpty()) {
+                log.error("Session ID为空，无法发送响应");
+                return;
+            }
+            
+            log.info("收到获取版本信息请求，会话: {}", sessionId);
+
+            // 异步获取版本信息，避免阻塞WebSocket线程
+            CompletableFuture<List<DockerHubVersionDto>> future = CompletableFuture.supplyAsync(() -> {
+                log.debug("开始异步获取版本信息...");
+                try {
+                    List<DockerHubVersionDto> versions = dockerHubApiService.getLatestVersions("goolashe/sillytavern", 5);
+                    log.info("成功获取到 {} 个版本信息", versions.size());
+                    return versions;
+                } catch (Exception e) {
+                    log.error("获取版本信息时发生异常: {}", e.getMessage(), e);
+                    throw new RuntimeException("获取版本信息失败: " + e.getMessage(), e);
+                }
+            });
+
+            future.thenAccept(versions -> {
+                log.debug("准备发送成功响应到前端，Session ID: {}", sessionId);
+                Map<String, Object> response = Map.of(
+                        "success", true,
+                        "versions", versions,
+                        "repository", "goolashe/sillytavern",
+                        "message", "成功获取到 " + versions.size() + " 个版本信息"
+                );
+                
+                log.debug("响应内容大小: {} 版本", versions.size());
+                log.debug("发送到路径: /queue/sillytavern/versions, Session: {}", sessionId);
+                
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/versions", response);
+                log.info("版本信息已发送到前端，会话: {}, 版本数量: {}", sessionId, versions.size());
+            }).exceptionally(throwable -> {
+                log.error("获取Docker Hub版本信息失败，会话 {}: {}", sessionId, throwable.getMessage(), throwable);
+                Map<String, Object> errorResponse = Map.of(
+                        "success", false,
+                        "error", "获取版本信息失败: " + throwable.getMessage(),
+                        "message", "无法连接到Docker Hub API"
+                );
+                
+                log.debug("发送错误响应到路径: /queue/sillytavern/versions, Session: {}", sessionId);
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/versions", errorResponse);
+                log.info("错误响应已发送到前端，会话: {}", sessionId);
+                return null;
+            });
+
+        } catch (Exception e) {
+            log.error("启动版本信息获取失败，会话 {}: {}", sessionId, e.getMessage(), e);
+            sendErrorMessage(sessionId, "启动版本信息获取失败: " + e.getMessage());
         }
     }
 

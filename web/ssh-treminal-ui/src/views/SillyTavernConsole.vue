@@ -195,8 +195,13 @@
                   :system-checking="systemChecking"
                   :is-deploying="isDeploying"
                   :deployment-progress="deploymentProgress"
+                  :available-versions="availableVersions"
+                  :is-loading-versions="isLoadingVersions"
+                  :version-error="versionError"
                   @validate-system="handleValidateSystem"
                   @deploy="handleDeploy"
+                  @deployment-complete="handleDeploymentComplete"
+                  @get-versions="handleGetVersions"
                 />
               </div>
               
@@ -286,11 +291,15 @@ const {
   systemChecking,
   isDeploying,
   deploymentProgress,
+  availableVersions,
+  isLoadingVersions,
+  versionError,
   getContainerStatus,
   performServiceAction,
   validateSystem,
   deployContainer,
   startInteractiveDeployment,
+  getAvailableVersions,
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
 
@@ -404,14 +413,19 @@ const handleDeploy = async (deploymentConfig) => {
     if (deploymentConfig.deploymentMode) {
       console.log('启动交互式部署，模式:', deploymentConfig.deploymentMode)
       await startInteractiveDeployment(deploymentConfig)
+      // 交互式部署会通过 handleDeploymentComplete 处理完成后的导航
     } else {
       // 传统部署方式
       await deployContainer(deploymentConfig)
+      // 传统部署成功后直接切换到服务管理页面
+      activeTab.value = 'services'
+      await refreshStatus()
     }
     
-    activeTab.value = 'services'
+    // 移除了立即切换标签页的逻辑，避免过早跳转
   } catch (error) {
     console.error('部署失败:', error)
+    // 部署失败时保持在当前标签页，让用户查看错误信息
   }
 }
 
@@ -439,16 +453,47 @@ const handleImportCompleted = () => {
   refreshStatus()
 }
 
+const handleDeploymentComplete = (success) => {
+  console.log('部署完成，状态:', success)
+  if (success) {
+    // 部署成功后切换到服务管理页面
+    activeTab.value = 'services'
+    refreshStatus()
+  } else {
+    // 部署失败时保持在部署页面，让用户查看错误信息
+    console.error('部署失败，保持在当前页面')
+  }
+}
+
+// 处理获取版本信息事件
+const handleGetVersions = () => {
+  console.log('收到获取版本信息事件')
+  getAvailableVersions()
+}
+
 // 生命周期
 let statusInterval = null
 
 onMounted(async () => {
+  console.log('SillyTavernConsole onMounted - 连接状态:', connectionState.isConnected)
+  
   if (connectionState.isConnected) {
     // 使用现有连接，初始化SillyTavern订阅
     try {
       // 确保SillyTavern订阅已初始化
+      console.log('初始化SillyTavern订阅...')
       initializeSillyTavernSubscriptions()
+      
+      console.log('刷新状态...')
       await refreshStatus()
+      
+      // 获取可用的Docker版本信息
+      console.log('准备获取版本信息...')
+      setTimeout(() => {
+        console.log('延迟调用getAvailableVersions')
+        getAvailableVersions()
+      }, 1000) // 延迟1秒确保WebSocket完全连接
+      
     } catch (error) {
       console.error('获取SillyTavern状态失败:', error)
     }
@@ -459,6 +504,8 @@ onMounted(async () => {
         refreshStatus()
       }
     }, 30000)
+  } else {
+    console.log('WebSocket未连接，无法获取版本信息')
   }
 })
 

@@ -242,10 +242,10 @@ public class ConfigurationService {
             errors.put("username", "用户名长度不能少于3个字符");
         } else if (config.getUsername().length() > 20) {
             errors.put("username", "用户名长度不能超过20个字符");
-        } else if (config.getUsername().matches(".*\\d.*")) {
-            errors.put("username", "用户名不能包含数字");
-        } else if (!config.getUsername().matches("^[a-zA-Z_-]+$")) {
-            errors.put("username", "用户名只能包含字母、下划线和短横线");
+        } else if (!config.getUsername().matches("^[a-zA-Z0-9_-]+$")) {
+            errors.put("username", "用户名只能包含字母、数字、下划线和短横线");
+        } else if (!config.getUsername().matches("^[a-zA-Z].*")) {
+            errors.put("username", "用户名必须以字母开头");
         }
 
         // 密码校验 Password validation

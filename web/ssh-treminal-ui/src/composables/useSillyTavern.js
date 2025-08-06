@@ -45,6 +45,11 @@ export function useSillyTavern(options = {}) {
     const logs = ref([]);
     const isLoadingLogs = ref(false);
 
+    // Versions
+    const availableVersions = ref([]);
+    const isLoadingVersions = ref(false);
+    const versionError = ref(null);
+
     // Initialize STOMP subscriptions when the composable is used
     const initializeSillyTavernSubscriptions = () => {
         const client = getStompClient();
@@ -304,6 +309,19 @@ export function useSillyTavern(options = {}) {
             }
         });
 
+        // Subscribe to version information responses
+        client.subscribe('/user/queue/sillytavern/versions', (message) => {
+            console.log('收到版本信息WebSocket消息:', message);
+            console.log('消息体:', message.body);
+            try {
+                const data = JSON.parse(message.body);
+                console.log('解析后的数据:', data);
+                handleVersionsResponse(data);
+            } catch (e) {
+                console.error('Error processing versions response:', e);
+            }
+        });
+
         // Subscribe to errors
         client.subscribe('/user/queue/errors', (message) => {
             try {
@@ -424,6 +442,14 @@ export function useSillyTavern(options = {}) {
             interactiveDeployment.value.success = true;
             interactiveDeployment.value.accessInfo = data.accessInfo;
             
+            // 更新 deploymentProgress 以触发组件的watcher
+            deploymentProgress.value = {
+                completed: true,
+                success: true,
+                message: data.message || "交互式部署完成！",
+                accessInfo: data.accessInfo
+            };
+            
             onShowModal(data.message || "交互式部署完成！", "部署成功");
             
             // 刷新容器状态
@@ -431,6 +457,13 @@ export function useSillyTavern(options = {}) {
         } else {
             interactiveDeployment.value.completed = true;
             interactiveDeployment.value.success = false;
+            
+            // 更新 deploymentProgress 以触发组件的watcher
+            deploymentProgress.value = {
+                completed: true,
+                success: false,
+                message: "交互式部署失败: " + (data.error || data.message)
+            };
             
             onShowModal("交互式部署失败: " + (data.error || data.message), "部署失败");
         }
@@ -468,6 +501,28 @@ export function useSillyTavern(options = {}) {
             onShowModal("部署已取消", "部署取消");
         } else {
             onShowModal("取消部署失败: " + (data.error || data.message), "取消失败");
+        }
+    };
+
+    const handleVersionsResponse = (data) => {
+        // 清除超时
+        if (getAvailableVersions.timeoutId) {
+            clearTimeout(getAvailableVersions.timeoutId);
+            getAvailableVersions.timeoutId = null;
+        }
+        
+        isLoadingVersions.value = false;
+        
+        console.log('收到版本信息响应:', data);
+        
+        if (data.success) {
+            availableVersions.value = data.versions || [];
+            versionError.value = null;
+            console.log('成功获取版本信息:', data.versions);
+        } else {
+            availableVersions.value = [];
+            versionError.value = data.error || data.message || '获取版本信息失败';
+            console.error('获取版本信息失败:', data.error);
         }
     };
 
@@ -727,6 +782,50 @@ export function useSillyTavern(options = {}) {
         };
     };
 
+    const getAvailableVersions = () => {
+        console.log('getAvailableVersions 被调用')
+        
+        const client = getStompClient();
+        console.log('STOMP客户端状态:', {
+            client: !!client,
+            connected: client ? client.connected : 'N/A'
+        })
+        
+        if (!client || !client.connected) {
+            console.warn('WebSocket 未连接，无法获取版本信息');
+            versionError.value = 'WebSocket 未连接';
+            return;
+        }
+
+        console.log('开始获取版本信息...');
+        isLoadingVersions.value = true;
+        versionError.value = null;
+
+        // 设置30秒超时
+        const timeoutId = setTimeout(() => {
+            if (isLoadingVersions.value) {
+                console.warn('获取版本信息超时');
+                isLoadingVersions.value = false;
+                versionError.value = '获取版本信息超时，请重试';
+            }
+        }, 30000);
+
+        // 保存timeout ID用于清理
+        if (!getAvailableVersions.timeoutId) {
+            getAvailableVersions.timeoutId = timeoutId;
+        } else {
+            clearTimeout(getAvailableVersions.timeoutId);
+            getAvailableVersions.timeoutId = timeoutId;
+        }
+
+        console.log('发送获取版本信息请求到:', '/app/sillytavern/get-versions');
+        client.publish({
+            destination: '/app/sillytavern/get-versions',
+            body: JSON.stringify({})
+        });
+        console.log('版本信息请求已发送');
+    };
+
     // Initialize subscriptions when composable is first used
     const initialized = ref(false);
     const ensureInitialized = () => {
@@ -751,6 +850,9 @@ export function useSillyTavern(options = {}) {
         currentAction: readonly(currentAction),
         logs: readonly(logs),
         isLoadingLogs: readonly(isLoadingLogs),
+        availableVersions: readonly(availableVersions),
+        isLoadingVersions: readonly(isLoadingVersions),
+        versionError: readonly(versionError),
 
         // Methods
         validateSystem: () => {
@@ -793,6 +895,10 @@ export function useSillyTavern(options = {}) {
         },
         resetInteractiveDeployment: () => {
             return resetInteractiveDeployment();
+        },
+        getAvailableVersions: () => {
+            ensureInitialized();
+            return getAvailableVersions();
         },
         
         // Initialization helper

@@ -14,7 +14,8 @@
       "Bash(.mvnw.cmd compile -q)",
       "Bash(grep:*)",
       "Bash(where mvn)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": []
   }

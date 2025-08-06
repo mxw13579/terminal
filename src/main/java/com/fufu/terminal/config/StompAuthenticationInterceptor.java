@@ -118,6 +118,11 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
 
             // 存入会话属性，便于后续控制器访问
             accessor.getSessionAttributes().put("sshConnection", sshConnection);
+            
+            // 关键修复：设置用户身份，使convertAndSendToUser能正确工作
+            // 使用sessionId作为用户名，确保消息路由正确
+            accessor.setUser(() -> sessionId);
+            log.debug("为会话{}设置用户身份: {}", sessionId, sessionId);
 
             log.info("为STOMP会话{}建立SSH连接 ({}@{}:{})", sessionId, user, host, port);
 

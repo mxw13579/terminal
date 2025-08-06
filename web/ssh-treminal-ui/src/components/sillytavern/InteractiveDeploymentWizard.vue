@@ -85,12 +85,52 @@
         <h4 class="config-title">部署配置</h4>
         <div class="config-form">
           <div class="form-group">
-            <label class="form-label">SillyTavern版本</label>
-            <select v-model="deploymentConfig.selectedVersion" class="form-select">
-              <option value="latest">latest (推荐)</option>
-              <option value="staging">staging (预发布)</option>
-              <option value="release">release (稳定版)</option>
+            <label class="form-label">
+              SillyTavern版本
+              <span v-if="isLoadingVersions" class="version-loading">
+                <i class="fas fa-spinner fa-spin"></i> 获取版本信息中...
+              </span>
+              <span v-else-if="versionError" class="version-error">
+                <i class="fas fa-exclamation-triangle"></i> {{ versionError }}
+              </span>
+            </label>
+            <select v-model="deploymentConfig.selectedVersion" class="form-select version-select">
+              <option 
+                v-for="option in versionOptions" 
+                :key="option.value"
+                :value="option.value"
+                :title="option.description"
+              >
+                {{ option.label }}
+              </option>
             </select>
+            <!-- 显示选中版本的详细信息 -->
+            <div v-if="selectedVersionDetails" class="selected-version-details">
+              <div class="version-detail-item">
+                <span class="detail-label">版本:</span>
+                <span class="detail-value">{{ selectedVersionDetails.tagName }}</span>
+              </div>
+              <div class="version-detail-item">
+                <span class="detail-label">镜像大小:</span>
+                <span class="detail-value">{{ selectedVersionDetails.imageSize }}</span>
+              </div>
+              <div class="version-detail-item">
+                <span class="detail-label">更新时间:</span>
+                <span class="detail-value">{{ selectedVersionDetails.lastPushedFormatted }}</span>
+              </div>
+            </div>
+            <div v-if="!isLoadingVersions && !versionError && availableVersions.length > 0" class="version-info">
+              <small class="text-muted">
+                <i class="fas fa-info-circle"></i>
+                显示最近 {{ availableVersions.length }} 个版本，包含镜像大小和发布时间
+              </small>
+            </div>
+            <div v-else-if="!isLoadingVersions && availableVersions.length === 0" class="version-info">
+              <small class="text-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                未获取到版本信息，使用默认选项
+              </small>
+            </div>
           </div>
           
           <div class="form-group">
@@ -146,7 +186,7 @@
                   type="text" 
                   v-model="deploymentConfig.username" 
                   class="form-input"
-                  placeholder="请输入用户名（不能为纯数字）"
+                  placeholder="请输入用户名（3-20字符，字母开头，可包含数字、下划线、短横线）"
                 />
               </div>
               <div class="form-group">
@@ -155,7 +195,7 @@
                   type="password" 
                   v-model="deploymentConfig.password" 
                   class="form-input"
-                  placeholder="请输入密码（不能为纯数字）"
+                  placeholder="请输入密码（6位以上，不能为纯数字）"
                 />
               </div>
             </div>
@@ -403,7 +443,7 @@
 <script>
 export default {
   name: 'InteractiveDeploymentWizard',
-  emits: ['deployment-complete', 'validate-system', 'deploy'],
+  emits: ['deployment-complete', 'validate-system', 'deploy', 'get-versions'],
   props: {
     systemInfo: {
       type: Object,
@@ -424,6 +464,31 @@ export default {
     deploymentProgress: {
       type: Object,
       default: null
+    },
+    availableVersions: {
+      type: Array,
+      default: () => []
+    },
+    isLoadingVersions: {
+      type: Boolean,
+      default: false
+    },
+    versionError: {
+      type: String,
+      default: null
+    }
+  },
+  
+  mounted() {
+    console.log('InteractiveDeploymentWizard mounted')
+    console.log('当前版本信息:', this.availableVersions)
+    console.log('是否在加载版本:', this.isLoadingVersions)
+    console.log('版本错误:', this.versionError)
+    
+    // 如果没有版本信息且不在加载中，触发获取版本信息事件
+    if (!this.availableVersions.length && !this.isLoadingVersions && !this.versionError) {
+      console.log('未找到版本信息，触发获取版本信息事件')
+      this.$emit('get-versions')
     }
   },
   
@@ -434,7 +499,7 @@ export default {
       
       // 部署配置
       deploymentConfig: {
-        selectedVersion: 'latest',
+        selectedVersion: 'stable', // 默认选择稳定版
         port: '8000',
         enableExternalAccess: false,
         authMode: 'random', // 'manual' | 'random'
@@ -538,6 +603,137 @@ export default {
       }
       
       return true
+    },
+    
+    versionOptions() {
+      // 如果正在加载或有错误，返回默认选项
+      if (this.isLoadingVersions || this.versionError || !this.availableVersions || this.availableVersions.length === 0) {
+        return [
+          { value: 'latest', label: 'latest (抢先版)', description: '最新开发版本' },
+          { value: 'stable', label: 'stable (稳定版)', description: '推荐的稳定版本' },
+          { value: 'release', label: 'release (发布版)', description: '正式发布版本' }
+        ]
+      }
+      
+      // 使用真实的版本信息，添加版本标识
+      return this.availableVersions.map((version, index) => {
+        let label = version.tagName
+        let versionType = ''
+        
+        // 标识版本类型
+        if (version.tagName === 'latest' || index === 0) {
+          versionType = ' (抢先版)'
+        } else if (index === 1) {
+          versionType = ' (稳定版 - 推荐)'
+        }
+        
+        return {
+          value: version.tagName,
+          label: `${label}${versionType}`,
+          description: `${version.tagName} • ${version.imageSize} • ${version.lastPushedFormatted}`,
+          isLatest: version.isLatest,
+          isStable: index === 1 // 第二个版本标记为稳定版
+        }
+      })
+    },
+    
+    // 获取当前选中版本的详细信息
+    selectedVersionDetails() {
+      if (!this.availableVersions || this.availableVersions.length === 0) {
+        return null
+      }
+      
+      return this.availableVersions.find(version => 
+        version.tagName === this.deploymentConfig.selectedVersion
+      )
+    }
+  },
+  
+  watch: {
+    deploymentProgress: {
+      handler(newProgress) {
+        console.log('部署进度更新:', newProgress)
+        
+        if (newProgress) {
+          // 处理进行中的部署进度
+          if (!newProgress.completed) {
+            // 确保显示部署进度界面
+            if (!this.deploymentStarted) {
+              this.deploymentStarted = true
+            }
+            
+            // 更新当前步骤状态（如果有步骤信息）
+            if (newProgress.currentStep) {
+              const step = this.deploymentSteps.find(s => s.id === newProgress.currentStep)
+              if (step) {
+                step.status = 'running'
+                if (newProgress.progress !== undefined) {
+                  step.progress = newProgress.progress
+                }
+                if (newProgress.message) {
+                  this.addStepLog(newProgress.currentStep, newProgress.message, 'info')
+                }
+              }
+            }
+          }
+          
+          // 处理部署完成
+          if (newProgress.completed) {
+            // 部署完成时自动发送完成事件
+            this.$emit('deployment-complete', newProgress.success)
+            
+            if (newProgress.success) {
+              this.deploymentCompleted = true
+              this.deploymentSuccess = true
+              this.accessInfo = newProgress.accessInfo || null
+            } else {
+              this.deploymentCompleted = true
+              this.deploymentSuccess = false
+              this.deploymentMessage = newProgress.message || '部署失败'
+            }
+          }
+        }
+      },
+      deep: true
+    },
+    
+    availableVersions: {
+      handler(newVersions) {
+        console.log('InteractiveDeploymentWizard: 版本信息更新', newVersions)
+        // 当获取到版本信息时，默认选择第二个版本（稳定版）
+        if (newVersions && newVersions.length > 0) {
+          // 如果有多个版本，选择第二个（稳定版）
+          if (newVersions.length >= 2) {
+            console.log('InteractiveDeploymentWizard: 默认选择第二个版本（稳定版）:', newVersions[1].tagName)
+            this.deploymentConfig.selectedVersion = newVersions[1].tagName
+          } 
+          // 如果只有一个版本，选择第一个
+          else if (newVersions.length === 1) {
+            console.log('InteractiveDeploymentWizard: 只有一个版本，选择:', newVersions[0].tagName)
+            this.deploymentConfig.selectedVersion = newVersions[0].tagName
+          }
+        }
+      },
+      immediate: true
+    },
+    
+    // 监听部署状态，确保部署开始时显示进度界面
+    isDeploying: {
+      handler(newIsDeploying) {
+        console.log('部署状态变化:', newIsDeploying)
+        if (newIsDeploying && !this.deploymentStarted && !this.deploymentCompleted) {
+          console.log('检测到部署开始，显示进度界面')
+          this.deploymentStarted = true
+          // 将第一个步骤设为运行状态
+          if (this.deploymentSteps.length > 0) {
+            this.deploymentSteps[0].status = 'running'
+            this.addStepLog(this.deploymentSteps[0].id, '开始部署...', 'info')
+          }
+        } else if (!newIsDeploying && this.deploymentStarted && !this.deploymentCompleted) {
+          console.log('部署停止但未完成，可能出现错误')
+        }
+      },
+      immediate: true
     }
   },
   
@@ -554,13 +750,29 @@ export default {
     },
     
     startDeployment() {
-      // 使用真正的交互式部署API而不是模拟
+      console.log('开始部署，模式:', this.selectedMode)
+      
+      // 立即显示部署进度界面
+      this.deploymentStarted = true
+      this.deploymentCompleted = false
+      this.deploymentSuccess = false
+      
+      // 重置部署步骤状态
+      this.deploymentSteps.forEach(step => {
+        step.status = 'pending'
+        step.progress = 0
+        step.logs = []
+      })
+      
+      // 使用真正的交互式部署API
       const deploymentRequest = {
-        deploymentMode: this.selectedMode, // 修正字段名从 mode 到 deploymentMode
+        deploymentMode: this.selectedMode === 'interactive' ? 'confirmation' : 'trusted', // 将 interactive 转换为 confirmation
         customConfig: this.deploymentConfig, // 修正字段名从 config 到 customConfig
         enableLogging: true,
         timeoutSeconds: 300
       }
+      
+      console.log('部署请求配置:', deploymentRequest)
       
       // 调用父组件的部署方法，传递交互式部署配置
       this.$emit('deploy', deploymentRequest)
@@ -948,6 +1160,75 @@ export default {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+}
+
+/* 版本信息样式 */
+.version-loading {
+  color: #007bff;
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.version-error {
+  color: #dc3545;
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.version-info {
+  margin-top: 6px;
+}
+
+.version-info .text-muted {
+  color: #6c757d;
+  font-size: 12px;
+}
+
+.version-info .text-warning {
+  color: #856404;
+  font-size: 12px;
+}
+
+.version-info .fa-info-circle {
+  margin-right: 4px;
+}
+
+/* 版本选择器样式 */
+.version-select {
+  margin-bottom: 12px;
+}
+
+.selected-version-details {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.version-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.version-detail-item:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: #6b7280;
+  min-width: 80px;
+}
+
+.detail-value {
+  color: #374151;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.85rem;
 }
 
 .start-deployment {

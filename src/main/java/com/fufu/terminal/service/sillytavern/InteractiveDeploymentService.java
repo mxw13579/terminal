@@ -45,6 +45,10 @@ public class InteractiveDeploymentService {
     private final Map<String, InteractiveDeploymentDto.StatusDto> deploymentStates = new ConcurrentHashMap<>();
     /** 存储待确认的请求，key为sessionId */
     private final Map<String, InteractiveDeploymentDto.ConfirmationRequestDto> pendingConfirmations = new ConcurrentHashMap<>();
+    /** 存储SSH连接，key为sessionId */
+    private final Map<String, SshConnection> deploymentConnections = new ConcurrentHashMap<>();
+    /** 存储部署请求，key为sessionId */
+    private final Map<String, InteractiveDeploymentDto.RequestDto> deploymentRequests = new ConcurrentHashMap<>();
 
     /** 定义部署步骤 */
     private static final List<String> DEPLOYMENT_STEPS = Arrays.asList(
@@ -98,6 +102,10 @@ public class InteractiveDeploymentService {
         // 初始化部署状态
         InteractiveDeploymentDto.StatusDto status = initializeDeploymentStatus(sessionId, request);
         deploymentStates.put(sessionId, status);
+        
+        // 保存连接和请求以供恢复使用
+        deploymentConnections.put(sessionId, connection);
+        deploymentRequests.put(sessionId, request);
 
         // 发送初始状态
         sendDeploymentStatus(sessionId, status);
@@ -250,13 +258,16 @@ public class InteractiveDeploymentService {
             InteractiveDeploymentDto.StepDto currentStep = status.getSteps().get(i);
 
             try {
-                executeStep(sessionId, connection, currentStep, request);
-
-                // 检查是否需要等待用户确认
-                if (currentStep.isRequiresConfirmation() && "confirmation".equals(status.getDeploymentMode())) {
+                // 检查是否需要在步骤执行前等待用户确认
+                if (currentStep.isRequiresConfirmation() && "pending".equals(currentStep.getStatus())) {
+                    log.debug("步骤需要用户确认，等待确认中: {}", currentStep.getStepId());
+                    currentStep.setStatus("waiting");
                     waitForUserConfirmation(sessionId, currentStep);
+                    sendDeploymentProgress(sessionId);
                     return; // 等待用户确认，暂停执行
                 }
+                
+                executeStep(sessionId, connection, currentStep, request);
 
                 // 标记步骤完成
                 currentStep.setStatus("completed");
@@ -538,20 +549,50 @@ public class InteractiveDeploymentService {
      * @throws Exception 启动异常
      */
     private void startDockerService(SshConnection connection, Consumer<String> progressCallback) throws Exception {
-        progressCallback.accept("启动Docker服务...");
-        
-        // 尝试使用systemctl启动
         try {
+            progressCallback.accept("正在启动Docker服务...");
+            
+            // 首先检查Docker是否已经在运行
+            CommandResult statusResult = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    "sudo systemctl is-active docker"
+            );
+            
+            if (statusResult.exitStatus() == 0 && "active".equals(statusResult.stdout().trim())) {
+                progressCallback.accept("Docker服务已经在运行");
+                return;
+            }
+            
+            // 尝试使用systemctl启动Docker
             CommandResult result = sshCommandService.executeCommand(
                     connection.getJschSession(),
                     "sudo systemctl start docker && sudo systemctl enable docker"
             );
             
             if (result.exitStatus() != 0) {
-                throw new RuntimeException("Docker服务启动失败: " + result.stderr());
+                // 获取详细错误信息
+                CommandResult detailResult = sshCommandService.executeCommand(
+                        connection.getJschSession(),
+                        "sudo systemctl status docker.service -l --no-pager"
+                );
+                log.warn("systemctl启动Docker失败，详细信息: {}", detailResult.stdout());
+                
+                throw new RuntimeException("systemctl启动Docker失败: " + result.stderr());
             }
             
-            progressCallback.accept("Docker服务启动成功");
+            // 验证Docker是否真正启动
+            Thread.sleep(2000); // 等待服务完全启动
+            CommandResult verifyResult = sshCommandService.executeCommand(
+                    connection.getJschSession(),
+                    "sudo systemctl is-active docker"
+            );
+            
+            if (verifyResult.exitStatus() == 0 && "active".equals(verifyResult.stdout().trim())) {
+                progressCallback.accept("Docker服务启动成功");
+            } else {
+                throw new RuntimeException("Docker服务启动后验证失败");
+            }
+            
         } catch (Exception e) {
             log.error("使用systemctl启动Docker失败", e);
             
@@ -564,13 +605,46 @@ public class InteractiveDeploymentService {
                 );
                 
                 if (serviceResult.exitStatus() != 0) {
-                    throw new RuntimeException("Docker服务启动失败: " + serviceResult.stderr());
+                    // 尝试重新安装或重置Docker
+                    progressCallback.accept("尝试重新初始化Docker...");
+                    CommandResult reinitResult = sshCommandService.executeCommand(
+                            connection.getJschSession(),
+                            "sudo systemctl reset-failed docker && sudo systemctl daemon-reload && sudo systemctl start docker"
+                    );
+                    
+                    if (reinitResult.exitStatus() != 0) {
+                        throw new RuntimeException("Docker服务启动失败，可能需要手动检查Docker安装: " + serviceResult.stderr());
+                    }
                 }
                 
-                progressCallback.accept("Docker服务启动成功");
+                // 验证服务状态
+                Thread.sleep(2000);
+                CommandResult finalVerifyResult = sshCommandService.executeCommand(
+                        connection.getJschSession(),
+                        "docker --version && sudo docker ps"
+                );
+                
+                if (finalVerifyResult.exitStatus() == 0) {
+                    progressCallback.accept("Docker服务启动成功");
+                } else {
+                    throw new RuntimeException("Docker服务验证失败: " + finalVerifyResult.stderr());
+                }
+                
             } catch (Exception serviceException) {
                 log.error("使用service启动Docker也失败", serviceException);
-                throw new RuntimeException("无法启动Docker服务: " + serviceException.getMessage());
+                
+                // 提供详细的错误诊断信息
+                try {
+                    CommandResult diagResult = sshCommandService.executeCommand(
+                            connection.getJschSession(),
+                            "sudo journalctl -xeu docker.service --no-pager -n 20"
+                    );
+                    log.error("Docker启动失败诊断信息: {}", diagResult.stdout());
+                } catch (Exception diagException) {
+                    log.warn("无法获取Docker诊断信息", diagException);
+                }
+                
+                throw new RuntimeException("无法启动Docker服务，请检查系统配置和Docker安装状态。错误信息: " + serviceException.getMessage());
             }
         }
     }
@@ -623,12 +697,12 @@ public class InteractiveDeploymentService {
         Map<String, Object> customConfig = status != null && status.getRequest() != null ? 
             status.getRequest().getCustomConfig() : new HashMap<>();
 
-        // 从customConfig中提取配置，使用默认值作为fallback
-        String selectedVersion = (String) customConfig.getOrDefault("selectedVersion", "latest");
-        String port = String.valueOf(customConfig.getOrDefault("port", "8000"));
-        boolean enableExternalAccess = (Boolean) customConfig.getOrDefault("enableExternalAccess", false);
-        String username = (String) customConfig.getOrDefault("username", "");
-        String password = (String) customConfig.getOrDefault("password", "");
+        // 安全地从customConfig中提取配置，避免ClassCastException
+        String selectedVersion = getStringValue(customConfig, "selectedVersion", "latest");
+        String port = getStringValue(customConfig, "port", "8000");
+        boolean enableExternalAccess = getBooleanValue(customConfig, "enableExternalAccess", false);
+        String username = getStringValue(customConfig, "username", "");
+        String password = getStringValue(customConfig, "password", "");
 
         // 创建部署配置 - 使用用户提供的配置
         SillyTavernDeploymentService.SillyTavernDeploymentConfig deploymentConfig =
@@ -815,11 +889,25 @@ public class InteractiveDeploymentService {
         // 在新线程中恢复部署执行
         CompletableFuture.runAsync(() -> {
             InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
-            if (status == null) return;
+            SshConnection connection = deploymentConnections.get(sessionId);
+            InteractiveDeploymentDto.RequestDto request = deploymentRequests.get(sessionId);
+            
+            if (status == null || connection == null || request == null) {
+                log.error("无法恢复部署，缺少必要数据，会话: {}", sessionId);
+                return;
+            }
 
             try {
+                // 将当前等待的步骤标记为确认状态
+                if (status.getCurrentStepIndex() < status.getSteps().size()) {
+                    InteractiveDeploymentDto.StepDto currentStep = status.getSteps().get(status.getCurrentStepIndex());
+                    currentStep.setStatus("running");
+                    currentStep.setMessage("用户已确认，正在执行...");
+                    sendDeploymentProgress(sessionId);
+                }
+                
                 // 从当前步骤继续执行
-                executeDeploymentSteps(sessionId, null, null); // 需要重新获取connection和request
+                executeDeploymentSteps(sessionId, connection, request);
             } catch (Exception e) {
                 handleDeploymentError(sessionId, e);
             }
@@ -982,6 +1070,8 @@ public class InteractiveDeploymentService {
     private void cleanupDeploymentSession(String sessionId) {
         deploymentStates.remove(sessionId);
         pendingConfirmations.remove(sessionId);
+        deploymentConnections.remove(sessionId);
+        deploymentRequests.remove(sessionId);
         log.debug("清理部署会话: {}", sessionId);
     }
 
@@ -1018,5 +1108,41 @@ public class InteractiveDeploymentService {
         }
         step.getLogs().add(String.format("[%s] %s",
                 new Date().toString(), message));
+    }
+
+    /**
+     * 安全地从Map中获取String值
+     */
+    private String getStringValue(Map<String, Object> config, String key, String defaultValue) {
+        Object value = config.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof String) {
+            return (String) value;
+        }
+        // 处理数字类型转换为字符串
+        return String.valueOf(value);
+    }
+
+    /**
+     * 安全地从Map中获取Boolean值
+     */
+    private boolean getBooleanValue(Map<String, Object> config, String key, boolean defaultValue) {
+        Object value = config.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof String) {
+            return Boolean.parseBoolean((String) value);
+        }
+        // 处理数字类型：0为false，其他为true
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue() != 0.0;
+        }
+        return defaultValue;
     }
 }
