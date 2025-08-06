@@ -556,8 +556,10 @@ export default {
     startDeployment() {
       // 使用真正的交互式部署API而不是模拟
       const deploymentRequest = {
-        mode: this.selectedMode,
-        config: this.deploymentConfig
+        deploymentMode: this.selectedMode, // 修正字段名从 mode 到 deploymentMode
+        customConfig: this.deploymentConfig, // 修正字段名从 config 到 customConfig
+        enableLogging: true,
+        timeoutSeconds: 300
       }
       
       // 调用父组件的部署方法，传递交互式部署配置

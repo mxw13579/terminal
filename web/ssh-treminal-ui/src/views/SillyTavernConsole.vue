@@ -400,9 +400,9 @@ const handleDeploy = async (deploymentConfig) => {
   try {
     console.log('开始部署，配置:', deploymentConfig)
     
-    // 检查是否是交互式部署请求（包含mode属性）
-    if (deploymentConfig.mode) {
-      console.log('启动交互式部署，模式:', deploymentConfig.mode)
+    // 检查是否是交互式部署请求（包含deploymentMode属性）
+    if (deploymentConfig.deploymentMode) {
+      console.log('启动交互式部署，模式:', deploymentConfig.deploymentMode)
       await startInteractiveDeployment(deploymentConfig)
     } else {
       // 传统部署方式

@@ -223,6 +223,7 @@ public class InteractiveDeploymentService {
                 .isCompleted(false)
                 .isSuccess(false)
                 .startTime(System.currentTimeMillis())
+                .request(request) // 保存原始请求
                 .build();
     }
 
@@ -617,20 +618,34 @@ public class InteractiveDeploymentService {
             sendDeploymentProgress(sessionId);
         };
 
-        // 创建部署配置
+        // 从部署状态中获取用户配置
+        InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
+        Map<String, Object> customConfig = status != null && status.getRequest() != null ? 
+            status.getRequest().getCustomConfig() : new HashMap<>();
+
+        // 从customConfig中提取配置，使用默认值作为fallback
+        String selectedVersion = (String) customConfig.getOrDefault("selectedVersion", "latest");
+        String port = String.valueOf(customConfig.getOrDefault("port", "8000"));
+        boolean enableExternalAccess = (Boolean) customConfig.getOrDefault("enableExternalAccess", false);
+        String username = (String) customConfig.getOrDefault("username", "");
+        String password = (String) customConfig.getOrDefault("password", "");
+
+        // 创建部署配置 - 使用用户提供的配置
         SillyTavernDeploymentService.SillyTavernDeploymentConfig deploymentConfig =
                 SillyTavernDeploymentService.SillyTavernDeploymentConfig.builder()
-                        .selectedVersion("latest")
-                        .port("8000")
-                        .enableExternalAccess(false)
-                        .username("")
-                        .password("")
+                        .selectedVersion(selectedVersion)
+                        .port(port)
+                        .enableExternalAccess(enableExternalAccess)
+                        .username(username)
+                        .password(password)
                         .build();
+
+        progressCallback.accept("使用配置: " + selectedVersion + ", 端口: " + port + 
+                               (enableExternalAccess ? ", 开启外网访问" : ", 仅本地访问"));
 
         // 判断是否使用中国镜像源
         boolean useChineseMirror = false;
         try {
-            InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
             if (status != null && status.getSteps().size() > 0) {
                 InteractiveDeploymentDto.StepDto geoStep = status.getSteps().get(0);
                 if (geoStep.getConfirmationData() != null) {

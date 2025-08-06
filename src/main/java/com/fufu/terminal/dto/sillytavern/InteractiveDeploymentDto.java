@@ -232,6 +232,12 @@ public class InteractiveDeploymentDto {
         private long startTime; // 开始时间
         
         /**
+         * 原始请求
+         * 保存原始部署请求以便在后续步骤中使用配置
+         */
+        private RequestDto request; // 原始请求
+        
+        /**
          * 结束时间
          * 部署过程的结束时间戳
          */
