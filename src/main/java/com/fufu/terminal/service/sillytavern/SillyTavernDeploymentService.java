@@ -166,7 +166,7 @@ public class SillyTavernDeploymentService {
 
         // 确定镜像地址
         String sillyTavernImage = useChineseMirror ?
-                "goolashe/sillytavern:" + config.getSelectedVersion() :
+                "dockerproxy.net/goolashe/sillytavern:" + config.getSelectedVersion() :
                 "goolashe/sillytavern:" + config.getSelectedVersion();
 
         String watchtowerImage = useChineseMirror ?
