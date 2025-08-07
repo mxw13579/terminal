@@ -37,7 +37,41 @@ public class SillyTavernDeploymentService {
     /** 容器启动等待时间(ms) */
     private static final int CONTAINER_STARTUP_WAIT_MS = 5000;
 
+    private volatile String cachedComposeCommand = null;
+
+
     private final SshCommandService sshCommandService;
+
+
+    /**
+     * 检测服务器支持的 compose 命令（docker compose 或 docker-compose），并缓存结果
+     * @param connection SSH连接
+     * @return 可用的 compose 命令字符串
+     * @throws RuntimeException 若两者都不可用
+     */
+    private String detectDockerComposeCommand(SshConnection connection) {
+        if (cachedComposeCommand != null) {
+            return cachedComposeCommand;
+        }
+        try {
+            // 优先检测 docker compose
+            CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), "docker compose version");
+            if (result.exitStatus() == 0) {
+                cachedComposeCommand = "docker compose";
+                return cachedComposeCommand;
+            }
+            // 再检测 docker-compose
+            result = sshCommandService.executeCommand(connection.getJschSession(), "docker-compose version");
+            if (result.exitStatus() == 0) {
+                cachedComposeCommand = "docker-compose";
+                return cachedComposeCommand;
+            }
+        } catch (Exception e) {
+            log.warn("检测 compose 命令时发生异常: {}", e.getMessage());
+        }
+        throw new RuntimeException("服务器未安装 docker compose 或 docker-compose，请先安装其中之一");
+    }
+
 
     /**
      * 部署SillyTavern容器
@@ -207,14 +241,12 @@ public class SillyTavernDeploymentService {
      */
     private void pullDockerImages(SshConnection connection,
                                   Consumer<String> progressCallback) throws Exception {
-
         progressCallback.accept("正在拉取所需镜像...");
-
+        // 检测 compose 命令
+        String composeCmd = detectDockerComposeCommand(connection);
         // 切换到部署目录并拉取镜像
-        String pullCommand = String.format("cd %s && sudo docker-compose pull", DEPLOYMENT_PATH);
-
+        String pullCommand = String.format("cd %s && sudo %s pull", DEPLOYMENT_PATH, composeCmd);
         CommandResult pullResult = sshCommandService.executeCommand(connection.getJschSession(), pullCommand);
-
         if (pullResult.exitStatus() == 0) {
             progressCallback.accept("✅ 镜像拉取成功");
         } else {
@@ -234,14 +266,13 @@ public class SillyTavernDeploymentService {
      */
     private void startContainerService(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("正在启动SillyTavern服务...");
-
-        String startCommand = String.format("cd %s && sudo docker-compose up -d", DEPLOYMENT_PATH);
+        // 检测 compose 命令
+        String composeCmd = detectDockerComposeCommand(connection);
+        String startCommand = String.format("cd %s && sudo %s up -d", DEPLOYMENT_PATH, composeCmd);
         CommandResult startResult = sshCommandService.executeCommand(connection.getJschSession(), startCommand);
-
         if (startResult.exitStatus() != 0) {
             throw new RuntimeException("启动容器失败: " + startResult.stderr());
         }
-
         // 等待容器完全启动
         progressCallback.accept("等待容器完全启动...");
         Thread.sleep(CONTAINER_STARTUP_WAIT_MS);

@@ -39,10 +39,10 @@ defineProps({
 
 const emit = defineEmits(['connect']);
 
-const host = ref('156.233.233.40');
+const host = ref('');
 const port = ref(22);
-const user = ref('root');
-const password = ref('vxwpYXDJ6295');
+const user = ref('');
+const password = ref('');
 
 const doConnect = () => {
   if (!host.value || !user.value || !password.value) {

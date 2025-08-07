@@ -58,7 +58,12 @@ export function useSillyTavern(options = {}) {
             return;
         }
 
-        console.log('Subscribing to SillyTavern queues...');
+        // 获取 sessionId
+        const sessionId = client.ws?._websocket?.extensions?.sessionId || 
+                         (client.ws?.readyState && Math.random().toString(36).substr(2, 9)) ||
+                         'default';
+        
+        console.log('Subscribing to SillyTavern queues with sessionId:', sessionId);
 
         // Subscribe to system validation responses
         client.subscribe('/user/queue/sillytavern/system-validation', (message) => {
@@ -259,33 +264,80 @@ export function useSillyTavern(options = {}) {
             }
         });
 
-        // Subscribe to interactive deployment progress
-        client.subscribe('/user/queue/sillytavern/interactive-deploy-progress', (message) => {
+        // Subscribe to interactive deployment progress (临时兼容旧路径)
+        client.subscribe('/queue/sillytavern/interactive-deployment-progress-user' + sessionId, (message) => {
             try {
                 const data = JSON.parse(message.body);
+                console.log('收到交互式部署进度 (旧路径):', data);
                 handleInteractiveDeploymentProgress(data);
             } catch (e) {
-                console.error('Error processing interactive deployment progress:', e);
+                console.error('Error processing interactive deployment progress (old path):', e);
             }
         });
 
-        // Subscribe to interactive deployment results
-        client.subscribe('/user/queue/sillytavern/interactive-deploy', (message) => {
+        // Subscribe to interactive deployment status (临时兼容旧路径)  
+        client.subscribe('/queue/sillytavern/interactive-deployment-status-user' + sessionId, (message) => {
             try {
                 const data = JSON.parse(message.body);
-                handleInteractiveDeploymentResult(data);
+                console.log('收到交互式部署状态 (旧路径):', data);
+                handleInteractiveDeploymentStatus(data);
             } catch (e) {
-                console.error('Error processing interactive deployment result:', e);
+                console.error('Error processing interactive deployment status (old path):', e);
             }
         });
 
-        // Subscribe to deployment confirmation responses
-        client.subscribe('/user/queue/sillytavern/deployment-confirm', (message) => {
+        // Subscribe to interactive deployment confirmation requests (临时兼容旧路径)
+        client.subscribe('/queue/sillytavern/interactive-deployment-confirmation-user' + sessionId, (message) => {
             try {
                 const data = JSON.parse(message.body);
+                console.log('收到交互式部署确认请求 (旧路径):', data);
+                handleInteractiveDeploymentConfirmation(data);
+            } catch (e) {
+                console.error('Error processing interactive deployment confirmation (old path):', e);
+            }
+        });
+
+        // Subscribe to deployment confirmation responses (确认响应)
+        client.subscribe('/queue/sillytavern/deployment-confirm-user' + sessionId, (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('收到部署确认响应 (旧路径):', data);
                 handleDeploymentConfirmResponse(data);
             } catch (e) {
-                console.error('Error processing deployment confirm response:', e);
+                console.error('Error processing deployment confirm response (old path):', e);
+            }
+        });
+
+        // Subscribe to interactive deployment progress (新路径)
+        client.subscribe('/user/queue/sillytavern/interactive-deployment-progress', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('收到交互式部署进度 (新路径):', data);
+                handleInteractiveDeploymentProgress(data);
+            } catch (e) {
+                console.error('Error processing interactive deployment progress (new path):', e);
+            }
+        });
+
+        // Subscribe to interactive deployment status (新路径)
+        client.subscribe('/user/queue/sillytavern/interactive-deployment-status', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('收到交互式部署状态 (新路径):', data);
+                handleInteractiveDeploymentStatus(data);
+            } catch (e) {
+                console.error('Error processing interactive deployment status (new path):', e);
+            }
+        });
+
+        // Subscribe to interactive deployment confirmation requests (新路径)
+        client.subscribe('/user/queue/sillytavern/interactive-deployment-confirmation', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('收到交互式部署确认请求 (新路径):', data);
+                handleInteractiveDeploymentConfirmation(data);
+            } catch (e) {
+                console.error('Error processing interactive deployment confirmation (new path):', e);
             }
         });
 
@@ -401,7 +453,80 @@ export function useSillyTavern(options = {}) {
 
     // --- Interactive Deployment Handlers ---
     const handleInteractiveDeploymentProgress = (data) => {
-        if (data.payload) {
+        console.log('处理交互式部署进度，数据格式:', data);
+        
+        // 后端发送的数据格式：{sessionId, currentStep: {stepId, stepName, ...}, totalSteps, completedSteps, overallProgress, waitingForConfirmation, pendingConfirmation}
+        if (data.sessionId) {
+            // 更新交互式部署状态
+            interactiveDeployment.value.active = true;
+            interactiveDeployment.value.totalSteps = data.totalSteps || 0;
+            interactiveDeployment.value.completedSteps = data.completedSteps || 0;
+            interactiveDeployment.value.overallProgress = data.overallProgress || 0;
+            
+            // 更新当前步骤
+            if (data.currentStep) {
+                interactiveDeployment.value.currentStep = data.currentStep.stepId;
+                console.log('设置当前步骤:', data.currentStep.stepId);
+                
+                // 检查并更新步骤详细信息（包括日志）
+                if (interactiveDeployment.value.steps) {
+                    const stepIndex = interactiveDeployment.value.steps.findIndex(s => s.id === data.currentStep.stepId);
+                    if (stepIndex !== -1) {
+                        const currentStepData = data.currentStep;
+                        const step = interactiveDeployment.value.steps[stepIndex];
+                        
+                        // 更新步骤状态和进度
+                        step.status = currentStepData.status || 'running';
+                        step.progress = currentStepData.progress || 0;
+                        step.message = currentStepData.message || currentStepData.stepName;
+                        
+                        // 处理步骤日志 - 这是关键部分！
+                        if (currentStepData.logs && currentStepData.logs.length > 0) {
+                            console.log('更新步骤日志:', data.currentStep.stepId, currentStepData.logs);
+                            // 将后端的日志格式转换为前端期望的格式
+                            step.logs = currentStepData.logs.map(logStr => {
+                                // 后端日志格式: "[Tue Dec 10 14:24:22 CST 2024] 检测到国家代码: CN"
+                                const timestampMatch = logStr.match(/^\[(.*?)\]\s*(.*)$/);
+                                if (timestampMatch) {
+                                    return {
+                                        timestamp: new Date(timestampMatch[1]),
+                                        message: timestampMatch[2],
+                                        type: 'info'
+                                    };
+                                } else {
+                                    return {
+                                        timestamp: new Date(),
+                                        message: logStr,
+                                        type: 'info'
+                                    };
+                                }
+                            });
+                        }
+                        
+                        console.log('步骤详细信息已更新:', step);
+                    }
+                }
+            }
+            
+            // 更新 deploymentProgress 以触发组件的 watcher
+            deploymentProgress.value = {
+                completed: false,
+                currentStep: data.currentStep?.stepId,
+                progress: data.overallProgress || 0,
+                totalSteps: data.totalSteps || 0,
+                completedSteps: data.completedSteps || 0,
+                message: data.currentStep?.message || data.currentStep?.stepName || '部署进行中...',
+                waitingForConfirmation: data.waitingForConfirmation || false,
+                pendingConfirmation: data.pendingConfirmation || null,
+                // 包含完整的当前步骤信息，包括日志
+                currentStep: data.currentStep || null
+            };
+            
+            console.log('更新 deploymentProgress:', deploymentProgress.value);
+        }
+        
+        // 兼容旧格式（如果有 payload 字段）
+        else if (data.payload) {
             const { step, message, progress, requiresConfirmation, stepData } = data.payload;
             
             // 更新交互式部署状态
@@ -469,11 +594,98 @@ export function useSillyTavern(options = {}) {
         }
     };
 
+    // 处理交互式部署状态更新
+    const handleInteractiveDeploymentStatus = (data) => {
+        console.log('收到交互式部署状态:', data);
+        
+        if (data.steps) {
+            interactiveDeployment.value.steps = data.steps.map(step => ({
+                id: step.stepId,
+                name: step.stepName,
+                description: step.description,
+                status: step.status,
+                progress: step.progress || 0,
+                requiresConfirmation: step.requiresConfirmation || false,
+                logs: step.logs || []
+            }));
+        }
+        
+        interactiveDeployment.value.active = true;
+        interactiveDeployment.value.currentStepIndex = data.currentStepIndex || 0;
+        
+        // 更新 deploymentProgress 以触发组件的 watcher
+        deploymentProgress.value = {
+            completed: false,
+            currentStep: data.currentStepIndex < data.steps.length ? data.steps[data.currentStepIndex].stepId : null,
+            progress: data.overallProgress || 0,
+            message: data.message || '部署进行中...'
+        };
+    };
+
+    // 处理交互式部署确认请求
+    const handleInteractiveDeploymentConfirmation = (data) => {
+        console.log('收到确认请求:', data);
+        
+        if (data.stepId) {
+            // 更新对应步骤为等待确认状态
+            const step = interactiveDeployment.value.steps.find(s => s.id === data.stepId);
+            if (step) {
+                step.status = 'waiting';
+                step.requiresConfirmation = true;
+                step.confirmationMessage = data.message;
+                step.userInput = data.userInput || [];
+            }
+            
+            // 更新当前等待确认的步骤
+            interactiveDeployment.value.pendingConfirmation = {
+                stepId: data.stepId,
+                stepName: data.stepName,
+                message: data.message,
+                userInput: data.userInput || []
+            };
+            
+            // 更新 deploymentProgress 以触发组件的 watcher
+            deploymentProgress.value = {
+                completed: false,
+                currentStep: data.stepId,
+                waitingForConfirmation: true,
+                confirmationRequest: {
+                    stepId: data.stepId,
+                    stepName: data.stepName,
+                    message: data.message,
+                    userInput: data.userInput || []
+                }
+            };
+        }
+    };
+
     const handleDeploymentConfirmResponse = (data) => {
+        console.log('收到部署确认响应:', data);
+        
         if (data.success) {
             // 确认成功，等待下一步进度更新
             console.log('部署步骤确认成功:', data.stepId);
+            
+            // 更新对应步骤状态为运行中，移除等待确认状态
+            if (interactiveDeployment.value.steps) {
+                const step = interactiveDeployment.value.steps.find(s => s.id === data.stepId);
+                if (step) {
+                    step.status = 'running';
+                    step.requiresConfirmation = false;
+                    step.confirmationMessage = null;
+                    console.log('更新步骤状态为运行中:', step.id);
+                }
+            }
+            
+            // 也更新 deploymentProgress
+            if (deploymentProgress.value) {
+                deploymentProgress.value.waitingForConfirmation = false;
+                deploymentProgress.value.pendingConfirmation = null;
+                deploymentProgress.value.message = '步骤确认成功，继续执行...';
+                console.log('更新部署进度状态');
+            }
         } else {
+            console.error('步骤确认失败:', data.error || data.message);
             onShowModal("步骤确认失败: " + (data.error || data.message), "确认失败");
         }
     };
@@ -716,8 +928,11 @@ export function useSillyTavern(options = {}) {
     };
 
     const confirmDeploymentStep = (stepId, confirmed, userInput = {}) => {
+        console.log('confirmDeploymentStep 被调用:', { stepId, confirmed, userInput })
+        
         const client = getStompClient();
         if (!client || !client.connected) {
+            console.error('WebSocket 未连接，无法发送确认消息')
             onShowModal("WebSocket 未连接");
             return;
         }
@@ -728,10 +943,15 @@ export function useSillyTavern(options = {}) {
             userInput
         };
 
+        console.log('准备发送WebSocket确认消息:', confirmRequest)
+        console.log('目标路径:', '/app/sillytavern/deployment-confirm')
+
         client.publish({
             destination: '/app/sillytavern/deployment-confirm',
             body: JSON.stringify(confirmRequest)
         });
+        
+        console.log('WebSocket确认消息已发送')
     };
 
     const skipDeploymentStep = (stepId, reason = '用户选择跳过') => {

@@ -98,7 +98,7 @@ public class SystemDetectionService {
             return "? 无法获取内存信息";
         }
         return availableMemory >= MIN_MEMORY_MB
-                ? "✓ 可用内存充足: " + formatDiskSpace(availableMemory) + " MB"
+                ? "✓ 可用内存充足: " + formatDiskSpace(availableMemory) + " "
                 : "✗ 可用内存不足: " + formatDiskSpace(availableMemory) + " MB，至少需要 " + MIN_MEMORY_MB + " MB";
     }
 

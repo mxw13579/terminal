@@ -64,7 +64,7 @@ public class PackageManagerService {
 
                 return switch (osId) {
                     case "debian", "ubuntu" ->
-                            configureDebianBasedMirrors(connection, osInfo, progressCallback);
+                            configureDebianBasedMirrors(connection, osInfo,useChineseMirror, progressCallback);
                     case "centos", "rhel", "fedora" ->
                             configureRedHatBasedMirrors(connection, osInfo, progressCallback);
                     case "arch" ->
@@ -99,48 +99,69 @@ public class PackageManagerService {
      */
     private PackageManagerConfigResult configureDebianBasedMirrors(SshConnection connection,
                                                                    SystemDetectionService.SystemInfo osInfo,
+                                                                   boolean useChineseMirror,
                                                                    Consumer<String> progressCallback) throws Exception {
-        // 检查是否已经是国内源
-        CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "grep -q -E \"aliyun|tuna|ustc|163\" /etc/apt/sources.list");
-
-        if (checkResult.exitStatus() == 0) {
-            progressCallback.accept("/etc/apt/sources.list 已使用国内镜像，跳过替换");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo apt-get update");
-            return buildResult(true, "已使用国内镜像源", ALIYUN, "/etc/apt/sources.list.bak");
-        }
-
+        String osId = osInfo.getOsId().toLowerCase();
+        String codename = osInfo.getOsVersionCodename();
+        // 备份现有源文件
         progressCallback.accept("备份当前 sources.list...");
         sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak");
-
-        String osId = osInfo.getOsId().toLowerCase();
-        String osVersionCodename = osInfo.getOsVersionCodename();
-
-        if ("debian".equals(osId)) {
-            configureDebianMirrors(connection, osVersionCodename, progressCallback);
-        } else if ("ubuntu".equals(osId)) {
-            configureUbuntuMirrors(connection, osVersionCodename, progressCallback);
+                "sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%%s)");
+        String sourcesContent = null;
+        String mirrorName = OFFICIAL;
+        // 【核心修改】最高优先级：处理 Debian 11 的强制修复
+        if ("debian".equals(osId) && "bullseye".equals(codename)) {
+            progressCallback.accept("检测到 Debian 11 (bullseye)，其官方源已归档，正在强制修复...");
+            if (useChineseMirror) {
+                progressCallback.accept("使用阿里云归档镜像进行修复...");
+                mirrorName = ALIYUN;
+                sourcesContent = """
+                        deb https://mirrors.aliyun.com/debian-archive/debian/ bullseye main contrib non-free
+                        deb https://mirrors.aliyun.com/debian-archive/debian-security/ bullseye-security main contrib non-free
+                        deb https://mirrors.aliyun.com/debian-archive/debian/ bullseye-updates main contrib non-free
+                        deb https://mirrors.aliyun.com/debian-archive/debian/ bullseye-backports main contrib non-free
+                        """;
+            } else {
+                progressCallback.accept("使用 Debian 官方归档镜像进行修复...");
+                sourcesContent = """
+                        deb http://archive.debian.org/debian/ bullseye main contrib non-free
+                        deb http://archive.debian.org/debian-security/ bullseye-security main contrib non-free
+                        deb http://archive.debian.org/debian/ bullseye-updates main contrib non-free
+                        deb http://archive.debian.org/debian/ bullseye-backports main contrib non-free
+                        """;
+            }
+        } else if (useChineseMirror) {
+            // 【常规逻辑】如果不是 Debian 11，但在中国，则执行常规的镜像替换
+            progressCallback.accept("配置阿里云镜像源...");
+            mirrorName = ALIYUN;
+            if ("debian".equals(osId)) {
+                sourcesContent = generateDebianSources(codename);
+            } else if ("ubuntu".equals(osId)) {
+                sourcesContent = generateUbuntuSources(codename);
+            }
         }
-
+        // 如果有新的源内容，则写入文件
+        if (sourcesContent != null) {
+            String command = String.format("echo '%s' | sudo tee /etc/apt/sources.list > /dev/null", sourcesContent);
+            sshCommandService.executeCommand(connection.getJschSession(), command);
+            progressCallback.accept("镜像源文件已更新。");
+        } else {
+            progressCallback.accept("使用官方源，无需替换。");
+        }
         progressCallback.accept("刷新软件包索引...");
         CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(),
-                "sudo apt-get update");
-
-        return buildResult(updateResult.exitStatus() == 0, "阿里云镜像源配置完成", ALIYUN, "/etc/apt/sources.list.bak");
+                "sudo apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false");
+        return buildResult(updateResult.exitStatus() == 0, "镜像源配置完成", mirrorName, "/etc/apt/sources.list.bak");
     }
 
     /**
-     * 配置Debian镜像源
+     * 生成Debian系统的sources.list内容
      *
-     * @param connection       SSH连接
-     * @param codename         发行版代号
-     * @param progressCallback 进度回调
-     * @throws Exception 执行命令异常
+     * @param codename 版本代号
+     * @return sources.list内容
      */
-    private void configureDebianMirrors(SshConnection connection, String codename, Consumer<String> progressCallback) throws Exception {
-        progressCallback.accept("配置Debian阿里云镜像源...");
-        String sourcesContent = String.format(
+    private String generateDebianSources(String codename) {
+        return String.format(
                 "deb https://mirrors.aliyun.com/debian/ %s main contrib non-free\n" +
                         "deb-src https://mirrors.aliyun.com/debian/ %s main contrib non-free\n" +
                         "deb https://mirrors.aliyun.com/debian-security/ %s-security main contrib non-free\n" +
@@ -148,11 +169,75 @@ public class PackageManagerService {
                         "deb https://mirrors.aliyun.com/debian/ %s-updates main contrib non-free\n" +
                         "deb-src https://mirrors.aliyun.com/debian/ %s-updates main contrib non-free\n" +
                         "deb https://mirrors.aliyun.com/debian/ %s-backports main contrib non-free\n" +
-                        "deb-src https://mirrors.aliyun.com/debian/ %s-backports main contrib non-free",
-                codename, codename, codename, codename, codename, codename, codename, codename);
+                        "deb-src https://mirrors.aliyun.com/debian/ %s-backports main contrib non-free\n",
+                codename, codename, codename, codename, codename, codename, codename, codename
+        );
+    }
 
+    /**
+     * 生成Ubuntu系统的sources.list内容
+     *
+     * @param codename 版本代号
+     * @return sources.list内容
+     */
+    private String generateUbuntuSources(String codename) {
+        return String.format(
+                "deb https://mirrors.aliyun.com/ubuntu/ %s main restricted universe multiverse\n" +
+                        "deb-src https://mirrors.aliyun.com/ubuntu/ %s main restricted universe multiverse\n" +
+                        "deb https://mirrors.aliyun.com/ubuntu/ %s-updates main restricted universe multiverse\n" +
+                        "deb-src https://mirrors.aliyun.com/ubuntu/ %s-updates main restricted universe multiverse\n" +
+                        "deb https://mirrors.aliyun.com/ubuntu/ %s-backports main restricted universe multiverse\n" +
+                        "deb-src https://mirrors.aliyun.com/ubuntu/ %s-backports main restricted universe multiverse\n" +
+                        "deb https://mirrors.aliyun.com/ubuntu/ %s-security main restricted universe multiverse\n" +
+                        "deb-src https://mirrors.aliyun.com/ubuntu/ %s-security main restricted universe multiverse\n",
+                codename, codename, codename, codename, codename, codename, codename, codename
+        );
+    }
+
+
+    /**
+     * 配置Debian镜像源。
+     * 增加了对 Debian 11 (bullseye) 的特殊处理，为其使用正确的归档安全源。
+     *
+     * @param connection       SSH连接
+     * @param codename         发行版代号，例如 "bullseye", "bookworm"
+     * @param progressCallback 进度回调
+     * @throws Exception 执行命令异常
+     */
+    private void configureDebianMirrors(SshConnection connection, String codename, Consumer<String> progressCallback) throws Exception {
+        progressCallback.accept("配置Debian阿里云镜像源 (版本: " + codename + ")...");
+        String sourcesContent;
+        // 针对 Debian 11 (bullseye) 的特殊处理
+        if ("bullseye".equals(codename)) {
+            progressCallback.accept("检测到 Debian 11 (bullseye)，使用归档安全源。");
+            sourcesContent = """
+                    deb https://mirrors.aliyun.com/debian/ %s main contrib non-free
+                    deb-src https://mirrors.aliyun.com/debian/ %s main contrib non-free
+                    deb https://mirrors.aliyun.com/debian/ %s-updates main contrib non-free
+                    deb-src https://mirrors.aliyun.com/debian/ %s-updates main contrib non-free
+                    deb https://mirrors.aliyun.com/debian/ %s-backports main contrib non-free
+                    deb-src https://mirrors.aliyun.com/debian/ %s-backports main contrib non-free
+                    deb https://mirrors.aliyun.com/debian-security/ %s-security main contrib non-free
+                    deb-src https://mirrors.aliyun.com/debian-security/ %s-security main contrib non-free
+                    """.formatted(codename, codename, codename, codename, codename, codename, codename, codename);
+        } else {
+            // 适用于当前稳定版 (如 Debian 12 "bookworm") 及更新版本的标准配置
+            progressCallback.accept("使用标准安全源。");
+            sourcesContent = """
+                    deb https://mirrors.aliyun.com/debian/ %s main contrib non-free non-free-firmware
+                    deb-src https://mirrors.aliyun.com/debian/ %s main contrib non-free non-free-firmware
+                    deb https://mirrors.aliyun.com/debian-security/ %s-security main contrib non-free non-free-firmware
+                    deb-src https://mirrors.aliyun.com/debian-security/ %s-security main contrib non-free non-free-firmware
+                    deb https://mirrors.aliyun.com/debian/ %s-updates main contrib non-free non-free-firmware
+                    deb-src https://mirrors.aliyun.com/debian/ %s-updates main contrib non-free non-free-firmware
+                    """.formatted(codename, codename, codename, codename, codename, codename);
+        }
+        // 使用 heredoc 方式写入文件，更安全可靠
         String command = String.format("sudo tee /etc/apt/sources.list > /dev/null <<'EOF'\n%s\nEOF", sourcesContent);
-        sshCommandService.executeCommand(connection.getJschSession(), command);
+        CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+        if (result.exitStatus() != 0) {
+            throw new RuntimeException("写入 sources.list 文件失败: " + result.stderr());
+        }
     }
 
     /**

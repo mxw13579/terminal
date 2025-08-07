@@ -130,8 +130,8 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
             log.error("为会话{}建立SSH连接失败: {}", sessionId, e.getMessage(), e);
             // 清理部分建立的连接
             handleDisconnect(sessionId);
-            // 不抛出异常，允许STOMP连接继续建立
-            log.warn("会话{} SSH连接失败，STOMP连接继续，但SSH功能不可用", sessionId);
+            // SSH连接失败时抛出异常，阻止STOMP连接建立
+            throw new IllegalStateException("SSH连接失败: " + e.getMessage(), e);
         }
     }
 

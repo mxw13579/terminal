@@ -321,17 +321,26 @@
                 <div class="interaction-buttons">
                   <button 
                     @click="confirmStep(step.id, true)"
-                    class="btn btn-success btn-sm"
+                    class="btn-confirm"
                   >
-                    <span class="btn-icon">✓</span>
-                    确认执行
+                    <span class="btn-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </span>
+                    <span class="btn-text">确认执行</span>
                   </button>
                   <button 
                     @click="confirmStep(step.id, false)"
-                    class="btn btn-secondary btn-sm"
+                    class="btn-skip"
                   >
-                    <span class="btn-icon">⏭️</span>
-                    跳过
+                    <span class="btn-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m6 17 5-5-5-5"></path>
+                        <path d="m13 17 5-5-5-5"></path>
+                      </svg>
+                    </span>
+                    <span class="btn-text">跳过此步骤</span>
                   </button>
                 </div>
               </div>
@@ -443,7 +452,7 @@
 <script>
 export default {
   name: 'InteractiveDeploymentWizard',
-  emits: ['deployment-complete', 'validate-system', 'deploy', 'get-versions'],
+  emits: ['deployment-complete', 'validate-system', 'deploy', 'get-versions', 'step-confirmed'],
   props: {
     systemInfo: {
       type: Object,
@@ -523,7 +532,7 @@ export default {
       // 部署步骤
       deploymentSteps: [
         {
-          id: 'geo-detection',
+          id: 'geolocation_detection',
           title: '地理位置检测',
           status: 'pending', // pending | running | completed | error | waiting
           requiresConfirmation: false,
@@ -531,7 +540,7 @@ export default {
           progress: 0
         },
         {
-          id: 'system-detection',
+          id: 'system_detection',
           title: '系统检测',
           status: 'pending',
           requiresConfirmation: false,
@@ -539,7 +548,7 @@ export default {
           progress: 0
         },
         {
-          id: 'package-manager',
+          id: 'package_manager_config',
           title: '包管理器配置',
           status: 'pending',
           requiresConfirmation: true,
@@ -548,7 +557,7 @@ export default {
           progress: 0
         },
         {
-          id: 'docker-installation',
+          id: 'docker_installation',
           title: 'Docker安装',
           status: 'pending',
           requiresConfirmation: false,
@@ -556,7 +565,7 @@ export default {
           progress: 0
         },
         {
-          id: 'docker-mirror',
+          id: 'docker_mirror_config',
           title: 'Docker镜像加速',
           status: 'pending',
           requiresConfirmation: true,
@@ -565,7 +574,7 @@ export default {
           progress: 0
         },
         {
-          id: 'sillytavern-deployment',
+          id: 'sillytavern_deployment',
           title: 'SillyTavern部署',
           status: 'pending',
           requiresConfirmation: false,
@@ -573,7 +582,7 @@ export default {
           progress: 0
         },
         {
-          id: 'external-access',
+          id: 'external_access_config',
           title: '外网访问配置',
           status: 'pending',
           requiresConfirmation: false,
@@ -581,8 +590,16 @@ export default {
           progress: 0
         },
         {
-          id: 'service-validation',
+          id: 'service_validation',
           title: '服务验证',
+          status: 'pending',
+          requiresConfirmation: false,
+          logs: [],
+          progress: 0
+        },
+        {
+          id: 'deployment_complete',
+          title: '部署完成',
           status: 'pending',
           requiresConfirmation: false,
           logs: [],
@@ -664,14 +681,49 @@ export default {
             
             // 更新当前步骤状态（如果有步骤信息）
             if (newProgress.currentStep) {
-              const step = this.deploymentSteps.find(s => s.id === newProgress.currentStep)
+              const stepId = typeof newProgress.currentStep === 'string' ? newProgress.currentStep : newProgress.currentStep.stepId;
+              const step = this.deploymentSteps.find(s => s.id === stepId);
               if (step) {
-                step.status = 'running'
+                // 检查是否等待确认
+                if (newProgress.waitingForConfirmation && newProgress.pendingConfirmation) {
+                  step.status = 'waiting'
+                  step.requiresConfirmation = true
+                  step.confirmationMessage = newProgress.pendingConfirmation.message
+                  step.userInput = newProgress.pendingConfirmation.userInput || []
+                  console.log('设置步骤等待确认:', step.id, step.confirmationMessage)
+                } else {
+                  step.status = 'running'
+                }
+                
                 if (newProgress.progress !== undefined) {
                   step.progress = newProgress.progress
                 }
                 if (newProgress.message) {
-                  this.addStepLog(newProgress.currentStep, newProgress.message, 'info')
+                  this.addStepLog(stepId, newProgress.message, 'info')
+                }
+                
+                // 处理来自后端的步骤日志 - 关键修复！
+                if (typeof newProgress.currentStep === 'object' && newProgress.currentStep.logs && newProgress.currentStep.logs.length > 0) {
+                  console.log('处理后端步骤日志:', newProgress.currentStep.stepId, newProgress.currentStep.logs);
+                  // 将后端的日志格式转换为前端期望的格式
+                  step.logs = newProgress.currentStep.logs.map(logStr => {
+                    // 后端日志格式: "[Tue Dec 10 14:24:22 CST 2024] 检测到国家代码: CN"
+                    const timestampMatch = logStr.match(/^\[(.*?)\]\s*(.*)$/);
+                    if (timestampMatch) {
+                      return {
+                        timestamp: new Date(timestampMatch[1]),
+                        message: timestampMatch[2],
+                        type: 'info'
+                      };
+                    } else {
+                      return {
+                        timestamp: new Date(),
+                        message: logStr,
+                        type: 'info'
+                      };
+                    }
+                  });
+                  console.log('步骤日志已更新:', step.id, step.logs);
                 }
               }
             }
@@ -779,11 +831,22 @@ export default {
     },
     
     confirmStep(stepId, confirmed) {
+      console.log('确认步骤被调用:', { stepId, confirmed })
+      
       const step = this.deploymentSteps.find(s => s.id === stepId)
-      if (!step) return
+      if (!step) {
+        console.error('未找到步骤:', stepId)
+        return
+      }
       
       const userInput = step.userInput ? 
         Object.fromEntries(step.userInput.map(input => [input.name, this.userInputValues[input.name]])) : {}
+      
+      console.log('准备发送确认事件:', {
+        stepId,
+        confirmed,
+        userInput
+      })
       
       this.$emit('step-confirmed', {
         stepId,
@@ -1403,17 +1466,39 @@ export default {
 }
 
 .step-interaction {
-  background: #fff;
-  border: 1px solid #e9ecef;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15);
+}
+
+.step-interaction::before {
+  content: '⚠️';
+  position: absolute;
+  top: -10px;
+  left: 20px;
+  background: #f59e0b;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
 }
 
 .interaction-message {
-  margin-bottom: 16px;
-  font-weight: 500;
-  color: #495057;
+  margin-bottom: 20px;
+  font-weight: 600;
+  color: #92400e;
+  font-size: 16px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .user-input-form {
@@ -1433,7 +1518,76 @@ export default {
 
 .interaction-buttons {
   display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* 确认按钮样式 */
+.btn-confirm {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+}
+
+.btn-confirm:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+}
+
+.btn-confirm:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+}
+
+/* 跳过按钮样式 */
+.btn-skip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
+}
+
+.btn-skip:hover {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(107, 114, 128, 0.3);
+}
+
+.btn-skip:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
+}
+
+/* 按钮图标和文字 */
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-text {
+  font-weight: 600;
+  letter-spacing: 0.025em;
 }
 
 .step-progress {

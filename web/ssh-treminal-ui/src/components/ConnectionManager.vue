@@ -50,7 +50,7 @@
                 @click="selectConnection(conn)"
               >
                 <div class="history-info">
-                  <div class="history-primary">{{ conn.username }}@{{ conn.host }}</div>
+                  <div class="history-primary">{{ conn.user }}@{{ conn.host }}</div>
                   <div class="history-secondary">端口: {{ conn.port || 22 }}</div>
                 </div>
                 <div class="history-actions">
@@ -92,10 +92,10 @@
                 </div>
                 
                 <div class="form-group">
-                  <label for="username">用户名 *</label>
+                  <label for="user">用户名 *</label>
                   <input 
-                    id="username"
-                    v-model="connectionForm.username" 
+                    id="user"
+                    v-model="connectionForm.user" 
                     type="text" 
                     placeholder="root"
                     required
@@ -192,7 +192,7 @@ const testResult = ref(null)
 const connectionForm = reactive({
   host: '',
   port: 22,
-  username: '',
+  user: '',
   password: '',
   savePassword: false
 })
@@ -215,7 +215,7 @@ const statusText = computed(() => {
 })
 
 const isFormValid = computed(() => {
-  return connectionForm.host && connectionForm.username && connectionForm.password
+  return connectionForm.host && connectionForm.user && connectionForm.password
 })
 
 // 方法
@@ -229,7 +229,7 @@ const resetForm = () => {
   Object.assign(connectionForm, {
     host: '',
     port: 22,
-    username: '',
+    user: '',
     password: '',
     savePassword: false
   })
@@ -240,7 +240,7 @@ const selectConnection = (conn) => {
   Object.assign(connectionForm, {
     host: conn.host,
     port: conn.port || 22,
-    username: conn.username,
+    user: conn.user,
     password: conn.savePassword ? conn.password : '',
     savePassword: conn.savePassword || false
   })

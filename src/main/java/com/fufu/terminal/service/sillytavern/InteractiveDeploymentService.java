@@ -76,9 +76,9 @@ public class InteractiveDeploymentService {
             String sessionId,
             SshConnection connection,
             InteractiveDeploymentDto.RequestDto request) {
-        
+
         log.info("启动增强版交互式部署，会话: {}, 模式: {}", sessionId, request.getDeploymentMode());
-        
+
         // 增强版部署逻辑与普通版本相同，但在Docker安装步骤会自动处理未安装的情况
         // 关键改进已经在 executeDockerInstallation 方法中实现
         return startInteractiveDeployment(sessionId, connection, request);
@@ -102,7 +102,7 @@ public class InteractiveDeploymentService {
         // 初始化部署状态
         InteractiveDeploymentDto.StatusDto status = initializeDeploymentStatus(sessionId, request);
         deploymentStates.put(sessionId, status);
-        
+
         // 保存连接和请求以供恢复使用
         deploymentConnections.put(sessionId, connection);
         deploymentRequests.put(sessionId, request);
@@ -266,7 +266,7 @@ public class InteractiveDeploymentService {
                     sendDeploymentProgress(sessionId);
                     return; // 等待用户确认，暂停执行
                 }
-                
+
                 executeStep(sessionId, connection, currentStep, request);
 
                 // 标记步骤完成
@@ -375,6 +375,9 @@ public class InteractiveDeploymentService {
 
         addStepLog(step, "检测到国家代码: " + result.getCountryCode());
         addStepLog(step, "使用中国镜像源: " + result.isUseChineseMirror());
+
+        // 发送包含日志的进度更新
+        sendDeploymentProgress(sessionId);
     }
 
     /**
@@ -398,7 +401,7 @@ public class InteractiveDeploymentService {
         step.setConfirmationData(Map.of("systemInfo", systemInfo));
 
         addStepLog(step, "操作系统: " + systemInfo.getOsType());
-        addStepLog(step, "架构: " + systemInfo.getArchitecture());
+        addStepLog(step, "操作系统发行版: " + systemInfo.getDistro());
     }
 
     /**
@@ -423,13 +426,13 @@ public class InteractiveDeploymentService {
                     sendDeploymentProgress(sessionId);
                 }).join();
 
-        step.setMessage(result.isSuccess() ? "系统镜像源配置完成" : 
+        step.setMessage(result.isSuccess() ? "系统镜像源配置完成" :
                        (result.isSkipped() ? "系统镜像源配置跳过" : "系统镜像源配置失败"));
         step.setProgress(100);
         step.setConfirmationData(Map.of("configResult", result));
 
         addStepLog(step, result.getMessage());
-        
+
         if (result.getGeolocationInfo() != null) {
             addStepLog(step, "地理位置: " + result.getGeolocationInfo().getCountryCode());
             addStepLog(step, "使用中国镜像: " + result.getGeolocationInfo().isUseChineseMirror());
@@ -458,9 +461,9 @@ public class InteractiveDeploymentService {
         };
 
         // 首先检查Docker是否已安装
-        DockerInstallationService.DockerInstallationStatus dockerStatus = 
+        DockerInstallationService.DockerInstallationStatus dockerStatus =
                 dockerInstallationService.checkDockerInstallation(connection).join();
-        
+
         if (dockerStatus.isInstalled() && dockerStatus.isServiceRunning()) {
             step.setMessage("Docker已安装且运行正常");
             step.setProgress(100);
@@ -469,7 +472,7 @@ public class InteractiveDeploymentService {
             step.setConfirmationData(Map.of("dockerStatus", dockerStatus));
             return;
         }
-        
+
         if (dockerStatus.isInstalled() && !dockerStatus.isServiceRunning()) {
             progressCallback.accept("Docker已安装但服务未运行，尝试启动...");
             try {
@@ -486,10 +489,10 @@ public class InteractiveDeploymentService {
 
         // 关键修复：Docker未安装时，自动安装而不是失败
         progressCallback.accept("Docker未安装，开始自动安装...");
-        
+
         // 获取系统信息
         SystemDetectionService.SystemInfo systemInfo = systemDetectionService.detectSystemEnvironmentSync(connection);
-        
+
         // 判断是否使用中国镜像源（从前面步骤获取）
         boolean useChineseMirror = false;
         try {
@@ -528,19 +531,19 @@ public class InteractiveDeploymentService {
 
         addStepLog(step, "安装方式: " + result.getInstallationMethod());
         addStepLog(step, "安装版本: " + result.getInstalledVersion());
-        
+
         // 验证安装结果
         progressCallback.accept("验证Docker安装...");
-        DockerInstallationService.DockerInstallationStatus finalStatus = 
+        DockerInstallationService.DockerInstallationStatus finalStatus =
                 dockerInstallationService.checkDockerInstallation(connection).join();
-                
+
         if (finalStatus.isInstalled() && finalStatus.isServiceRunning()) {
             addStepLog(step, "Docker安装验证成功");
         } else {
             addStepLog(step, "警告: Docker安装后验证失败，可能需要手动启动服务");
         }
     }
-    
+
     /**
      * 启动Docker服务
      *
@@ -551,24 +554,24 @@ public class InteractiveDeploymentService {
     private void startDockerService(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         try {
             progressCallback.accept("正在启动Docker服务...");
-            
+
             // 首先检查Docker是否已经在运行
             CommandResult statusResult = sshCommandService.executeCommand(
                     connection.getJschSession(),
                     "sudo systemctl is-active docker"
             );
-            
+
             if (statusResult.exitStatus() == 0 && "active".equals(statusResult.stdout().trim())) {
                 progressCallback.accept("Docker服务已经在运行");
                 return;
             }
-            
+
             // 尝试使用systemctl启动Docker
             CommandResult result = sshCommandService.executeCommand(
                     connection.getJschSession(),
                     "sudo systemctl start docker && sudo systemctl enable docker"
             );
-            
+
             if (result.exitStatus() != 0) {
                 // 获取详细错误信息
                 CommandResult detailResult = sshCommandService.executeCommand(
@@ -576,26 +579,26 @@ public class InteractiveDeploymentService {
                         "sudo systemctl status docker.service -l --no-pager"
                 );
                 log.warn("systemctl启动Docker失败，详细信息: {}", detailResult.stdout());
-                
+
                 throw new RuntimeException("systemctl启动Docker失败: " + result.stderr());
             }
-            
+
             // 验证Docker是否真正启动
             Thread.sleep(2000); // 等待服务完全启动
             CommandResult verifyResult = sshCommandService.executeCommand(
                     connection.getJschSession(),
                     "sudo systemctl is-active docker"
             );
-            
+
             if (verifyResult.exitStatus() == 0 && "active".equals(verifyResult.stdout().trim())) {
                 progressCallback.accept("Docker服务启动成功");
             } else {
                 throw new RuntimeException("Docker服务启动后验证失败");
             }
-            
+
         } catch (Exception e) {
             log.error("使用systemctl启动Docker失败", e);
-            
+
             // 尝试使用service命令
             try {
                 progressCallback.accept("尝试使用service命令启动Docker...");
@@ -603,7 +606,7 @@ public class InteractiveDeploymentService {
                         connection.getJschSession(),
                         "sudo service docker start"
                 );
-                
+
                 if (serviceResult.exitStatus() != 0) {
                     // 尝试重新安装或重置Docker
                     progressCallback.accept("尝试重新初始化Docker...");
@@ -611,28 +614,28 @@ public class InteractiveDeploymentService {
                             connection.getJschSession(),
                             "sudo systemctl reset-failed docker && sudo systemctl daemon-reload && sudo systemctl start docker"
                     );
-                    
+
                     if (reinitResult.exitStatus() != 0) {
                         throw new RuntimeException("Docker服务启动失败，可能需要手动检查Docker安装: " + serviceResult.stderr());
                     }
                 }
-                
+
                 // 验证服务状态
                 Thread.sleep(2000);
                 CommandResult finalVerifyResult = sshCommandService.executeCommand(
                         connection.getJschSession(),
                         "docker --version && sudo docker ps"
                 );
-                
+
                 if (finalVerifyResult.exitStatus() == 0) {
                     progressCallback.accept("Docker服务启动成功");
                 } else {
                     throw new RuntimeException("Docker服务验证失败: " + finalVerifyResult.stderr());
                 }
-                
+
             } catch (Exception serviceException) {
                 log.error("使用service启动Docker也失败", serviceException);
-                
+
                 // 提供详细的错误诊断信息
                 try {
                     CommandResult diagResult = sshCommandService.executeCommand(
@@ -643,7 +646,7 @@ public class InteractiveDeploymentService {
                 } catch (Exception diagException) {
                     log.warn("无法获取Docker诊断信息", diagException);
                 }
-                
+
                 throw new RuntimeException("无法启动Docker服务，请检查系统配置和Docker安装状态。错误信息: " + serviceException.getMessage());
             }
         }
@@ -694,7 +697,7 @@ public class InteractiveDeploymentService {
 
         // 从部署状态中获取用户配置
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
-        Map<String, Object> customConfig = status != null && status.getRequest() != null ? 
+        Map<String, Object> customConfig = status != null && status.getRequest() != null ?
             status.getRequest().getCustomConfig() : new HashMap<>();
 
         // 安全地从customConfig中提取配置，避免ClassCastException
@@ -714,7 +717,7 @@ public class InteractiveDeploymentService {
                         .password(password)
                         .build();
 
-        progressCallback.accept("使用配置: " + selectedVersion + ", 端口: " + port + 
+        progressCallback.accept("使用配置: " + selectedVersion + ", 端口: " + port +
                                (enableExternalAccess ? ", 开启外网访问" : ", 仅本地访问"));
 
         // 判断是否使用中国镜像源
@@ -891,7 +894,7 @@ public class InteractiveDeploymentService {
             InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
             SshConnection connection = deploymentConnections.get(sessionId);
             InteractiveDeploymentDto.RequestDto request = deploymentRequests.get(sessionId);
-            
+
             if (status == null || connection == null || request == null) {
                 log.error("无法恢复部署，缺少必要数据，会话: {}", sessionId);
                 return;
@@ -905,7 +908,7 @@ public class InteractiveDeploymentService {
                     currentStep.setMessage("用户已确认，正在执行...");
                     sendDeploymentProgress(sessionId);
                 }
-                
+
                 // 从当前步骤继续执行
                 executeDeploymentSteps(sessionId, connection, request);
             } catch (Exception e) {
@@ -1026,7 +1029,8 @@ public class InteractiveDeploymentService {
      * @param status 部署状态
      */
     private void sendDeploymentStatus(String sessionId, InteractiveDeploymentDto.StatusDto status) {
-        messagingTemplate.convertAndSend("/queue/sillytavern/interactive-deployment-status-user" + sessionId, status);
+        log.debug("发送部署状态到前端，Session: {}, currentStep: {}", sessionId, status.getCurrentStepIndex());
+        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/interactive-deployment-status", status);
     }
 
     /**
@@ -1049,7 +1053,10 @@ public class InteractiveDeploymentService {
                 .pendingConfirmation(pendingConfirmations.get(sessionId))
                 .build();
 
-        messagingTemplate.convertAndSend("/queue/sillytavern/interactive-deployment-progress-user" + sessionId, progress);
+        log.debug("发送进度更新到前端，Session: {}, currentStep: {}, logs: {}", sessionId,
+                progress.getCurrentStep() != null ? progress.getCurrentStep().getStepId() : "null",
+                progress.getCurrentStep() != null ? progress.getCurrentStep().getLogs() : "null");
+        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/interactive-deployment-progress", progress);
     }
 
     /**
@@ -1059,7 +1066,8 @@ public class InteractiveDeploymentService {
      * @param request 确认请求对象
      */
     private void sendConfirmationRequest(String sessionId, InteractiveDeploymentDto.ConfirmationRequestDto request) {
-        messagingTemplate.convertAndSend("/queue/sillytavern/interactive-deployment-confirmation-user" + sessionId, request);
+        log.debug("发送确认请求到前端，Session: {}, stepId: {}", sessionId, request.getStepId());
+        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/interactive-deployment-confirmation", request);
     }
 
     /**

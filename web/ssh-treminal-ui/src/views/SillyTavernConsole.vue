@@ -202,6 +202,7 @@
                   @deploy="handleDeploy"
                   @deployment-complete="handleDeploymentComplete"
                   @get-versions="handleGetVersions"
+                  @step-confirmed="handleStepConfirmed"
                 />
               </div>
               
@@ -275,6 +276,7 @@ import ConfigurationEditor from '../components/sillytavern/ConfigurationEditor.v
 import LogViewer from '../components/sillytavern/LogViewer.vue'
 import DataManager from '../components/sillytavern/DataManager.vue'
 import VersionManager from '../components/sillytavern/VersionManager.vue'
+import AccessInfo from '../components/sillytavern/AccessInfo.vue'
 import useConnectionManager from '../composables/useConnectionManager'
 import { useSillyTavern } from '../composables/useSillyTavern'
 
@@ -299,6 +301,8 @@ const {
   validateSystem,
   deployContainer,
   startInteractiveDeployment,
+  confirmDeploymentStep,
+  skipDeploymentStep,
   getAvailableVersions,
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
@@ -469,6 +473,21 @@ const handleDeploymentComplete = (success) => {
 const handleGetVersions = () => {
   console.log('收到获取版本信息事件')
   getAvailableVersions()
+}
+
+// 处理步骤确认事件
+const handleStepConfirmed = (confirmationData) => {
+  console.log('父组件收到步骤确认事件:', confirmationData)
+  const { stepId, confirmed, userInput } = confirmationData
+  
+  // 调用 SillyTavern 的确认方法
+  if (confirmed) {
+    console.log('调用确认方法:', stepId, userInput)
+    confirmDeploymentStep(stepId, true, userInput)
+  } else {
+    console.log('调用跳过方法:', stepId)
+    skipDeploymentStep(stepId, '用户选择跳过')
+  }
 }
 
 // 生命周期
