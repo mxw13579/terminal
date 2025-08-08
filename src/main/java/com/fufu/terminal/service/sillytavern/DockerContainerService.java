@@ -3,6 +3,7 @@ package com.fufu.terminal.service.sillytavern;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.dto.sillytavern.ContainerStatusDto;
+import com.fufu.terminal.dto.sillytavern.ConfigurationDto;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
@@ -28,6 +29,7 @@ public class DockerContainerService {
 
     private final SshCommandService sshCommandService;
     private final ObjectMapper objectMapper;
+    private final ConfigurationService configurationService;
 
     private static final String DOCKER_CMD = "sudo docker";
     private static final String DOCKER_VERSION_CHECK = "docker --version";
@@ -52,14 +54,18 @@ public class DockerContainerService {
                 log.warn("目标系统未检测到 Docker");
                 return ContainerStatusDto.dockerNotAvailable();
             }
+            log.debug("Docker可用性检查通过");
 
             // 2. Inspect 一次性获取全部信息
             String inspectCmd = String.format(
                     "%s inspect --format '{{json .}}' %s",
                     DOCKER_CMD, containerName
             );
+            log.debug("执行容器检查命令: {}", inspectCmd);
             String json = executeCommand(connection, inspectCmd).trim();
+            log.debug("容器检查命令输出长度: {}", json.length());
             if (json.isEmpty()) {
+                log.debug("容器不存在: {}", containerName);
                 return ContainerStatusDto.notExists();
             }
 
@@ -75,6 +81,9 @@ public class DockerContainerService {
             status.setImage(config.path("Image").asText(""));
             String id = root.path("Id").asText("");
             status.setContainerId(id.length() > 12 ? id.substring(0, 12) : id);
+
+            log.debug("容器状态解析结果: exists={}, running={}, status={}",
+                     status.getExists(), status.getRunning(), status.getStatus());
 
             // 启动时长计算
             if (status.getRunning()) {
@@ -109,12 +118,33 @@ public class DockerContainerService {
                     }
                 });
             }
+            log.debug("容器端口映射: {}", status.getPort());
+
+            // 设置主机地址（SSH连接的目标主机）
+            status.setHostAddress(connection.getSession().getHost());
+            log.debug("服务器主机地址: {}", status.getHostAddress());
+
+            // 从配置文件读取SillyTavern账号密码
+            try {
+                ConfigurationDto configurationDto = configurationService.readConfiguration(connection, containerName);
+                status.setUsername(configurationDto.getUsername() != null ? configurationDto.getUsername() : "admin");
+                status.setPassword(configurationDto.getPassword() != null ? configurationDto.getPassword() : "password");
+                status.setAcceleratedUrl("暂无");
+                log.debug("SillyTavern访问信息: username={}, hasPassword={}", status.getUsername(), configurationDto.getHasPassword());
+            } catch (Exception e) {
+                log.warn("读取配置文件失败，使用默认账号密码: {}", e.getMessage());
+                // 使用默认值
+                status.setUsername("admin");
+                status.setPassword("password");
+                status.setAcceleratedUrl("暂无");
+            }
 
             // 5. 获取实时资源使用（内存 + CPU）
             if (status.getRunning()) {
                 enrichResourceUsage(connection, containerName, status);
             }
 
+            log.debug("容器状态获取完成: {}", status);
             return status;
 
         } catch (Exception e) {
@@ -163,7 +193,7 @@ public class DockerContainerService {
         try {
             String portMapping = port != null ? String.format("-p %d:8000", port) : "";
             String workDirParam = workingDir != null ? String.format("-w %s", workingDir) : "";
-            
+
             String cmd = String.format(
                     "%s run -d --name %s %s %s %s",
                     DOCKER_CMD, containerName, portMapping, workDirParam, image
@@ -264,10 +294,10 @@ public class DockerContainerService {
         try {
             String sinceParam = days != null ? String.format("--since %dh", days * 24) : "";
             String tailParam = tailLines != null ? String.format("--tail %d", tailLines) : "";
-            
+
             String cmd = String.format("%s logs %s %s %s", DOCKER_CMD, sinceParam, tailParam, containerName);
             String output = executeCommand(connection, cmd);
-            
+
             return java.util.Arrays.asList(output.split("\n"));
         } catch (Exception e) {
             log.error("获取容器日志失败: {}", containerName, e);
@@ -312,12 +342,18 @@ public class DockerContainerService {
      * @return 可用返回 true，否则 false
      */
     private boolean isDockerAvailable(SshConnection connection) {
+        log.debug("检查Docker可用性...");
         return Stream.of(DOCKER_VERSION_CHECK, DOCKER_CMD + " --version")
                 .anyMatch(cmd -> {
                     try {
+                        log.debug("执行Docker版本检查命令: {}", cmd);
                         String out = executeCommand(connection, cmd).toLowerCase();
-                        return out.contains(DOCKER_VERSION_KEYWORD);
-                    } catch (Exception ignore) {
+                        log.debug("Docker版本检查命令输出: {}", out);
+                        boolean available = out.contains("docker version");
+                        log.debug("Docker可用性检查结果: {} (期望包含: docker version)", available);
+                        return available;
+                    } catch (Exception e) {
+                        log.debug("Docker版本检查命令执行失败: {} - {}", cmd, e.getMessage());
                         return false;
                     }
                 });

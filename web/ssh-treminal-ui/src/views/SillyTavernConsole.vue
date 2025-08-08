@@ -145,16 +145,20 @@
               <div class="section-content">
                 <div v-if="containerStatus && containerStatus.running" class="access-details">
                   <div class="access-item">
-                    <span class="access-label">服务地址</span>
-                    <span class="access-value">{{ connectionState.connectionInfo?.host || 'localhost' }}:{{ containerStatus.port || '8000' }}</span>
+                    <span class="access-label">登录地址</span>
+                    <span class="access-value">{{ containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost' }}:{{ containerStatus.port || '8000' }}</span>
                   </div>
                   <div class="access-item">
-                    <span class="access-label">协议</span>
-                    <span class="access-value">HTTP</span>
+                    <span class="access-label">加速访问地址</span>
+                    <span class="access-value">{{ containerStatus.acceleratedUrl || '暂无' }}</span>
                   </div>
                   <div class="access-item">
-                    <span class="access-label">状态</span>
-                    <span class="access-value status-running">🟢 运行中</span>
+                    <span class="access-label">账号</span>
+                    <span class="access-value">{{ containerStatus.username || 'admin' }}</span>
+                  </div>
+                  <div class="access-item">
+                    <span class="access-label">密码</span>
+                    <span class="access-value">{{ containerStatus.password || 'password' }}</span>
                   </div>
                   <button @click="openService" class="btn btn-primary btn-sm access-button">
                     <i class="fas fa-external-link-alt"></i>
@@ -163,7 +167,24 @@
                 </div>
                 <div v-else class="access-unavailable">
                   <i class="fas fa-times-circle"></i>
-                  <p>服务未运行</p>
+                  <div v-if="!containerStatus">
+                    <p>正在检查服务状态...</p>
+                  </div>
+                  <div v-else-if="containerStatus.error">
+                    <p>{{ containerStatus.error }}</p>
+                    <small class="text-muted">{{ containerStatus.status }}</small>
+                  </div>
+                  <div v-else-if="containerStatus.exists && !containerStatus.running">
+                    <p>服务已停止</p>
+                    <small class="text-muted">容器存在但未运行</small>
+                  </div>
+                  <div v-else-if="!containerStatus.exists">
+                    <p>服务未部署</p>
+                    <small class="text-muted">请先部署SillyTavern容器</small>
+                  </div>
+                  <div v-else>
+                    <p>服务未运行</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -395,7 +416,7 @@ const checkForUpdates = () => {
 
 const openService = () => {
   if (containerStatus.value && containerStatus.value.running) {
-    const url = `http://${connectionState.connectionInfo?.host || 'localhost'}:${containerStatus.value.port || 8000}`
+    const url = `http://${containerStatus.value.hostAddress || connectionState.connectionInfo?.host || 'localhost'}:${containerStatus.value.port || 8000}`
     window.open(url, '_blank')
   }
 }

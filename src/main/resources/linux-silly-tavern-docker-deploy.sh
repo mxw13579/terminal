@@ -506,13 +506,70 @@ if [ $? -eq 0 ]; then
     echo "--------------------------------------------------"
     echo "✅ SillyTavern 已成功部署！"
     echo "--------------------------------------------------"
+    
     # 从 ipinfo.io 的返回结果中解析出 IP 地址
     public_ip=$(curl -sS ipinfo.io | grep '"ip":' | cut -d'"' -f4)
 
     # 如果获取失败，则提供一个占位符
     [ -z "$public_ip" ] && public_ip="<你的服务器公网IP>"
 
-    echo "访问地址: http://${public_ip}:8000"
+    # 写入部署信息文件 (支持NAT环境)
+    echo "正在写入部署信息文件..."
+    
+    # 检测端口映射 (从docker-compose.yaml中提取)
+    external_port=$(grep -o '"[0-9]*:8000"' /data/docker/sillytavem/docker-compose.yaml | cut -d':' -f1 | tr -d '"')
+    [ -z "$external_port" ] && external_port="8000"
+    
+    # 询问是否为NAT环境
+    nat_external_port="null"
+    nat_external_host="null"
+    environment_type="direct"
+    
+    if [[ $enable_external_access == "y" ]]; then
+        echo ""
+        echo "检测到您开启了外网访问。"
+        read -p "您的服务器是否在NAT环境下(如家庭网络、企业网络)? (y/n): " -r is_nat </dev/tty
+        if [[ $is_nat =~ ^[Yy]$ ]]; then
+            read -p "请输入NAT的外部端口号 (如路由器端口映射): " -r nat_port </dev/tty
+            read -p "请输入NAT的外部IP地址 (如公网IP): " -r nat_ip </dev/tty
+            nat_external_port="$nat_port"
+            nat_external_host="\"$nat_ip\""
+            environment_type="nat"
+            echo "已配置NAT环境: $nat_ip:$nat_port -> $public_ip:$external_port"
+        fi
+    fi
+
+    # 生成JSON文件
+    sudo tee /data/docker/sillytavem/deployment-info.json > /dev/null <<EOF
+{
+  "authentication": {
+    "username": "${username:-admin}",
+    "password": "${password:-password}"
+  },
+  "ports": {
+    "internal": 8000,
+    "external": $external_port,
+    "natExternal": $nat_external_port
+  },
+  "network": {
+    "internalHost": "sillytavern",
+    "externalHost": "$public_ip",
+    "natExternalHost": $nat_external_host
+  },
+  "deployment": {
+    "time": "$(date -Iseconds)",
+    "version": "1.0",
+    "environment": "$environment_type"
+  }
+}
+EOF
+
+    echo "部署信息已保存到 deployment-info.json"
+
+    echo "访问地址: http://${public_ip}:${external_port}"
+    if [[ $environment_type == "nat" ]] && [[ $nat_external_host != "null" ]]; then
+        echo "NAT外部访问地址: http://${nat_ip}:${nat_port}"
+    fi
     if [[ $enable_external_access == "y" ]]; then
         echo "用户名: ${username}"
         echo "密码: ${password}"

@@ -87,8 +87,8 @@
       <div v-if="containerStatus.port" class="info-row">
         <span class="info-label">访问地址:</span>
         <span class="info-value info-link">
-          <a :href="`http://localhost:${containerStatus.port}`" target="_blank">
-            http://localhost:{{ containerStatus.port }}
+          <a :href="`http://${containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost'}:${containerStatus.port}`" target="_blank">
+            http://{{ containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost' }}:{{ containerStatus.port }}
           </a>
         </span>
       </div>
@@ -103,6 +103,9 @@
 
 <script setup>
 import { defineProps, defineEmits } from 'vue'
+import useConnectionManager from '@/composables/useConnectionManager'
+
+const { connectionState } = useConnectionManager()
 
 const props = defineProps({
   containerStatus: {

@@ -120,7 +120,7 @@
                     </div>
                   </div>
                   <div class="form-text">
-                    Direct server access (localhost)
+                    Direct server access
                   </div>
                 </div>
               </div>
@@ -290,6 +290,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSillyTavern } from '@/composables/useSillyTavern'
+import useConnectionManager from '@/composables/useConnectionManager'
 
 export default {
   name: 'AccessInfo',
@@ -310,6 +311,7 @@ export default {
   },
   setup(props) {
     const { stompClient, isConnected } = useSillyTavern()
+    const { connectionState } = useConnectionManager()
     
     const loading = ref(false)
     const testing = ref(false)
@@ -318,16 +320,20 @@ export default {
     const connectionTestResult = ref(null)
     const errorMessage = ref('')
     
-    const serverHost = window.location.hostname
+    const serverHost = computed(() => 
+      props.containerStatus.hostAddress || 
+      connectionState.connectionInfo?.host || 
+      'localhost'
+    )
     
     const webUrl = computed(() => {
       const port = props.containerStatus.port || 8000
-      return `http://${serverHost}:${port}`
+      return `http://${serverHost.value}:${port}`
     })
     
     const localUrl = computed(() => {
       const port = props.containerStatus.port || 8000
-      return `http://localhost:${port}`
+      return `http://${serverHost.value}:${port}`
     })
     
     const formatUptime = (seconds) => {

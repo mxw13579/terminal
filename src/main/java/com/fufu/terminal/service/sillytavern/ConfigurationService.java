@@ -1,6 +1,8 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.dto.sillytavern.ConfigurationDto;
+import com.fufu.terminal.dto.sillytavern.DeploymentInfoDto;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
@@ -32,6 +34,7 @@ import java.util.regex.Pattern;
 public class ConfigurationService {
 
     private final SshCommandService sshCommandService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 针对每个容器维护独立锁，实现并发安全。
@@ -39,8 +42,9 @@ public class ConfigurationService {
      */
     private final Map<String, ReentrantLock> containerLocks = new ConcurrentHashMap<>();
 
-    private static final String DEFAULT_CONFIG_PATH = "/app/data/config.yaml";
-    private static final String BACKUP_PATH_TEMPLATE = "/app/data/config.yaml.backup.%s";
+    private static final String DEFAULT_CONFIG_PATH = "/data/docker/sillytavern/config.yaml";
+    private static final String BACKUP_PATH_TEMPLATE = "/data/docker/sillytavern/config.yaml.backup.%s";
+    private static final String DEPLOYMENT_INFO_PATH = "/data/docker/sillytavem/deployment-info.json";
 
     /**
      * 获取指定容器的独占锁。
@@ -65,11 +69,24 @@ public class ConfigurationService {
     public ConfigurationDto readConfiguration(SshConnection connection, String containerName) throws Exception {
         log.debug("读取容器配置: {}", containerName);
 
+        // 1. 优先尝试读取部署信息文件 (更高效)
+        try {
+            String deployInfoContent = executeCommand(connection, "cat " + DEPLOYMENT_INFO_PATH);
+            ConfigurationDto config = parseDeploymentInfo(deployInfoContent);
+            config.setContainerName(containerName);
+            log.debug("成功从部署信息文件读取配置");
+            return config;
+        } catch (Exception e) {
+            log.debug("部署信息文件不存在或读取失败，尝试解析config.yaml: {}", e.getMessage());
+        }
+
+        // 2. 回退到解析传统的config.yaml文件
         try {
             String configContent = executeCommand(connection,
-                    String.format("sudo docker exec %s cat %s", containerName, DEFAULT_CONFIG_PATH));
+                    String.format("cat ", containerName, DEFAULT_CONFIG_PATH));
             ConfigurationDto config = parseConfiguration(configContent);
             config.setContainerName(containerName);
+            log.debug("成功从config.yaml解析配置");
             return config;
         } catch (Exception e) {
             log.error("读取配置失败: {} - {}", containerName, e.getMessage());
@@ -77,10 +94,57 @@ public class ConfigurationService {
             ConfigurationDto defaultConfig = new ConfigurationDto();
             defaultConfig.setContainerName(containerName);
             defaultConfig.setUsername("admin");
+            defaultConfig.setPassword("password");
             defaultConfig.setHasPassword(false);
             defaultConfig.setPort(8000);
+            log.debug("使用默认配置");
             return defaultConfig;
         }
+    }
+
+    /**
+     * 从部署信息JSON文件解析配置
+     * Parse configuration from deployment info JSON file
+     *
+     * @param deployInfoContent 部署信息JSON内容
+     * @return 配置 DTO
+     * @throws Exception 解析失败时抛出
+     */
+    private ConfigurationDto parseDeploymentInfo(String deployInfoContent) throws Exception {
+        DeploymentInfoDto deploymentInfo = objectMapper.readValue(deployInfoContent, DeploymentInfoDto.class);
+        
+        ConfigurationDto config = new ConfigurationDto();
+        
+        if (deploymentInfo.getAuthentication() != null) {
+            config.setUsername(deploymentInfo.getAuthentication().getUsername());
+            config.setPassword(deploymentInfo.getAuthentication().getPassword());
+            config.setHasPassword(deploymentInfo.getAuthentication().getPassword() != null && 
+                                 !deploymentInfo.getAuthentication().getPassword().isEmpty());
+        }
+        
+        if (deploymentInfo.getPorts() != null) {
+            // 优先使用NAT外部端口，否则使用外部端口
+            Integer displayPort = deploymentInfo.getPorts().getNatExternal() != null 
+                ? deploymentInfo.getPorts().getNatExternal()
+                : deploymentInfo.getPorts().getExternal();
+            config.setPort(displayPort);
+        }
+        
+        // 存储完整的部署信息用于状态显示
+        Map<String, String> otherSettings = new HashMap<>();
+        if (deploymentInfo.getNetwork() != null) {
+            if (deploymentInfo.getNetwork().getNatExternalHost() != null) {
+                otherSettings.put("hostAddress", deploymentInfo.getNetwork().getNatExternalHost());
+            } else {
+                otherSettings.put("hostAddress", deploymentInfo.getNetwork().getExternalHost());
+            }
+        }
+        if (deploymentInfo.getDeployment() != null) {
+            otherSettings.put("environment", deploymentInfo.getDeployment().getEnvironment());
+        }
+        config.setOtherSettings(otherSettings);
+        
+        return config;
     }
 
     /**
@@ -351,12 +415,13 @@ public class ConfigurationService {
             config.setUsername(usernameMatcher.group(1).trim());
         }
 
-        // 检查密码是否设置 Check if password is set
+        // 检查密码是否设置并获取密码值 Check if password is set and get password value
         Pattern passwordPattern = Pattern.compile("password:\\s*['\"]?([^'\"\\n]*)['\"]?", Pattern.CASE_INSENSITIVE);
         Matcher passwordMatcher = passwordPattern.matcher(configContent);
         if (passwordMatcher.find()) {
             String password = passwordMatcher.group(1).trim();
             config.setHasPassword(!password.isEmpty());
+            config.setPassword(password); // 设置密码值用于状态显示
         }
 
         // 解析端口 Parse port

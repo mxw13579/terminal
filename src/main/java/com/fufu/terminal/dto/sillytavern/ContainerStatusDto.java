@@ -48,6 +48,30 @@ public class ContainerStatusDto {
     private Integer port;
     
     /**
+     * 服务器主机地址
+     * 运行容器的服务器IP地址，用于外部访问
+     */
+    private String hostAddress;
+    
+    /**
+     * SillyTavern登录账号
+     * 酒馆的登录用户名
+     */
+    private String username;
+    
+    /**
+     * SillyTavern登录密码
+     * 酒馆的登录密码
+     */
+    private String password;
+    
+    /**
+     * 加速访问地址
+     * 提供更快访问的备用地址
+     */
+    private String acceleratedUrl;
+    
+    /**
      * 容器状态字符串
      * 从Docker获取的容器状态描述字符串
      */
