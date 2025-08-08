@@ -3,6 +3,7 @@ import { formatSpeed } from '../utils/formatters.js';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { AuthService } from '../services/auth.js';
+import { StreamingFileService } from '../services/streamingFile.js';
 
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
 export function useTerminal(options = {}) {
@@ -35,10 +36,14 @@ export function useTerminal(options = {}) {
 
     let stompClient = null;
     let term = null;
+    let terminalOutputBuffer = [];
+    let terminalOutputTimer = null;
+    let resizeTimeout = null;
     let sendNextChunk = null;
     let uploadStartTime = 0;
     let uploadBytesSent = 0;
     let currentCredentials = null; // 存储当前连接凭据，用于重连
+    const streamingFileService = new StreamingFileService();
 
     // --- STOMP Connection Logic ---
     const connect = async (details) => {
@@ -192,10 +197,9 @@ export function useTerminal(options = {}) {
             try {
                 const data = JSON.parse(message.body);
                 console.log('Parsed terminal data:', data);
-                console.log('Terminal instance:', term);
                 if (term && data.payload) {
-                    console.log('Writing to terminal:', data.payload.substring(0, 50));
-                    term.write(data.payload);
+                    // 使用缓冲区和requestAnimationFrame优化输出
+                    bufferTerminalOutput(data.payload);
                 } else {
                     console.warn('Cannot write to terminal:', { term: !!term, payload: !!data.payload });
                 }
@@ -288,6 +292,70 @@ export function useTerminal(options = {}) {
         resetState();
     };
 
+    // --- Terminal Output Buffering ---
+    const bufferTerminalOutput = (data) => {
+        terminalOutputBuffer.push(data);
+        
+        // 如果没有定时器运行，启动一个
+        if (!terminalOutputTimer) {
+            terminalOutputTimer = requestAnimationFrame(flushTerminalOutput);
+        }
+    };
+
+    const flushTerminalOutput = () => {
+        terminalOutputTimer = null;
+        
+        if (!term || terminalOutputBuffer.length === 0) {
+            return;
+        }
+
+        // 合并缓冲区内容，限制单次写入的数据量
+        const maxChunkSize = 4096; // 4KB per frame
+        let totalSize = 0;
+        let flushData = '';
+        
+        while (terminalOutputBuffer.length > 0 && totalSize < maxChunkSize) {
+            const data = terminalOutputBuffer.shift();
+            if (totalSize + data.length <= maxChunkSize) {
+                flushData += data;
+                totalSize += data.length;
+            } else {
+                // 数据太大，放回缓冲区，下次处理
+                terminalOutputBuffer.unshift(data);
+                break;
+            }
+        }
+
+        if (flushData) {
+            try {
+                term.write(flushData);
+            } catch (e) {
+                console.error('Terminal write error:', e);
+            }
+        }
+
+        // 如果还有数据，继续下一帧
+        if (terminalOutputBuffer.length > 0) {
+            terminalOutputTimer = requestAnimationFrame(flushTerminalOutput);
+        }
+    };
+
+    // --- Debounced Resize Handler ---
+    const debouncedTerminalResize = (size) => {
+        if (resizeTimeout) {
+            clearTimeout(resizeTimeout);
+        }
+        
+        resizeTimeout = setTimeout(() => {
+            if (stompClient && stompClient.connected) {
+                stompClient.publish({
+                    destination: '/app/terminal/resize',
+                    body: JSON.stringify({ cols: size.cols, rows: size.rows })
+                });
+            }
+        }, 150); // 150ms debounce
+    };
+
     // --- Message Handlers ---
     const handleSftpListResponse = (data) => {
         if (data.type === 'sftp_list_response') {
@@ -318,7 +386,25 @@ export function useTerminal(options = {}) {
 
     const handleSftpDownloadResponse = (data) => {
         if (data.type === 'sftp_download_response') {
-            handleFileDownload(data.filename, data.content);
+            // Fallback to old base64 method for compatibility
+            handleLegacyFileDownload(data.filename, data.content);
+        }
+    };
+
+    const handleLegacyFileDownload = (filename, base64Content) => {
+        try {
+            const byteCharacters = atob(base64Content);
+            const byteNumbers = Array.from(byteCharacters, char => char.charCodeAt(0));
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray]);
+
+            streamingFileService.triggerDownload(filename, blob);
+            onShowModal(`下载完成: ${filename}`);
+        } catch (error) {
+            console.error('Legacy download failed:', error);
+            onShowModal("创建下载文件失败！");
+        } finally {
+            isSftpActionInProgress.value = false;
         }
     };
 
@@ -344,6 +430,17 @@ export function useTerminal(options = {}) {
             stompClient = null;
         }
         if (term) term.dispose();
+        
+        // 清理缓冲区和定时器
+        terminalOutputBuffer = [];
+        if (terminalOutputTimer) {
+            cancelAnimationFrame(terminalOutputTimer);
+            terminalOutputTimer = null;
+        }
+        if (resizeTimeout) {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = null;
+        }
         
         // 清理认证状态
         AuthService.clearToken();
@@ -394,12 +491,7 @@ export function useTerminal(options = {}) {
     };
     
     const sendTerminalResize = (size) => {
-        if (stompClient && stompClient.connected) {
-            stompClient.publish({
-                destination: '/app/terminal/resize',
-                body: JSON.stringify({ cols: size.cols, rows: size.rows })
-            });
-        }
+        debouncedTerminalResize(size);
     };
 
     const toggleMonitorPanel = () => {
@@ -445,85 +537,91 @@ export function useTerminal(options = {}) {
         }
     };
 
-    const downloadSftpFiles = (paths) => {
-        if (paths.length === 0 || !stompClient || !stompClient.connected) return;
+    const downloadSftpFiles = async (paths) => {
+        if (paths.length === 0) return;
+        
         isSftpActionInProgress.value = true;
         sftpError.value = '';
-        stompClient.publish({
-            destination: '/app/sftp/download',
-            body: JSON.stringify({ paths: paths })
-        });
+
+        try {
+            // 创建取消控制器
+            const abortController = new AbortController();
+            
+            // 进度回调
+            const onProgress = (loaded, total, percentage) => {
+                if (percentage !== undefined) {
+                    console.log(`下载进度: ${percentage}% (${streamingFileService.formatFileSize(loaded)}/${streamingFileService.formatFileSize(total)})`);
+                }
+            };
+
+            // 使用流式下载
+            const { filename, blob } = await streamingFileService.downloadFiles(
+                paths, 
+                onProgress, 
+                abortController.signal
+            );
+
+            // 触发下载
+            streamingFileService.triggerDownload(filename, blob);
+            
+            onShowModal(`下载完成: ${filename}`);
+
+        } catch (error) {
+            console.error('下载失败:', error);
+            sftpError.value = `下载失败: ${error.message}`;
+            onShowModal(`下载失败: ${error.message}`);
+        } finally {
+            isSftpActionInProgress.value = false;
+        }
     };
 
-    const uploadSftpFile = (file) => {
-        if (!stompClient || !stompClient.connected) return;
+    const uploadSftpFile = async (file) => {
+        if (!file) return;
         
-        const chunkSize = 128 * 1024;
-        const totalChunks = Math.ceil(file.size / chunkSize);
-        let chunkIndex = 0;
-
         isSftpActionInProgress.value = true;
         sftpError.value = '';
         localUploadProgress.value = 0;
         remoteUploadProgress.value = 0;
+        uploadStatusText.value = `准备上传: ${file.name}`;
         uploadSpeed.value = '';
         sftpUploadSpeed.value = '';
-        uploadStatusText.value = `准备上传: ${file.name}`;
-        uploadStartTime = Date.now();
-        uploadBytesSent = 0;
-
-        sendNextChunk = () => {
-            if (chunkIndex >= totalChunks) {
-                uploadStatusText.value = '分片发送完毕, 等待服务器处理...';
-                sendNextChunk = null;
-                return;
-            }
-            const offset = chunkIndex * chunkSize;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const base64Content = e.target.result.split(',')[1];
-                uploadBytesSent += file.slice(offset, offset + chunkSize).size;
-                const elapsed = (Date.now() - uploadStartTime) / 1000;
-                if (elapsed > 0) uploadSpeed.value = formatSpeed(uploadBytesSent / elapsed);
-                uploadStatusText.value = `正在上传分片 ${chunkIndex + 1}/${totalChunks}`;
-                
-                stompClient.publish({
-                    destination: '/app/sftp/upload',
-                    body: JSON.stringify({
-                        path: currentSftpPath.value,
-                        filename: file.name,
-                        chunkIndex,
-                        totalChunks,
-                        content: base64Content
-                    })
-                });
-                chunkIndex++;
-            };
-            reader.onerror = () => { 
-                onShowModal("读取文件失败！"); 
-                isSftpActionInProgress.value = false; 
-                sendNextChunk = null; 
-            };
-            reader.readAsDataURL(file.slice(offset, offset + chunkSize));
-        };
-        sendNextChunk();
-    };
-
-    const handleFileDownload = (filename, base64Content) => {
+        
         try {
-            const byteCharacters = atob(base64Content);
-            const byteNumbers = Array.from(byteCharacters, char => char.charCodeAt(0));
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray]);
+            // 进度回调
+            const onProgress = (progressData) => {
+                localUploadProgress.value = progressData.percentage;
+                uploadSpeed.value = streamingFileService.formatSpeed(progressData.speed);
+                uploadStatusText.value = `正在上传: ${progressData.percentage}%`;
+            };
 
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = filename;
-            link.click();
-            URL.revokeObjectURL(link.href);
-            link.remove();
+            // 完成回调
+            const onComplete = (result) => {
+                uploadStatusText.value = '上传完成！';
+                onShowModal(`文件 "${file.name}" 上传成功`);
+                // 刷新文件列表
+                setTimeout(() => fetchSftpList(currentSftpPath.value), 1000);
+            };
+
+            // 错误回调
+            const onError = (error) => {
+                console.error('上传失败:', error);
+                sftpError.value = `上传失败: ${error.message}`;
+                onShowModal(`上传失败: ${error.message}`);
+            };
+
+            // 启动流式上传
+            await streamingFileService.uploadFiles(
+                [file], 
+                currentSftpPath.value,
+                onProgress,
+                onComplete,
+                onError
+            );
+
         } catch (error) {
-            onShowModal("创建下载文件失败！");
+            console.error('启动上传失败:', error);
+            sftpError.value = `启动上传失败: ${error.message}`;
+            onShowModal(`启动上传失败: ${error.message}`);
         } finally {
             isSftpActionInProgress.value = false;
         }

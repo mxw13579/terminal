@@ -487,7 +487,7 @@ public class ConfigurationService {
     }
 
     /**
-     * 通过 SSH 执行命令并返回标准输出内容。
+     * 通过 SSH 执行命令并返回标准输出内容（使用统一SSH命令服务API）。
      * Execute command via SSH and return stdout.
      *
      * @param connection SSH 连接 SSH connection
@@ -497,17 +497,14 @@ public class ConfigurationService {
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
-            CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
-            if (result.exitStatus() != 0) {
-                String errorMsg = "命令执行失败，退出码 " + result.exitStatus() +
-                        ": " + result.stderr();
-                log.debug("命令执行失败: {} - {}", command, errorMsg);
-                throw new Exception(errorMsg);
-            }
-            return result.stdout();
+            // 使用统一的SshCommandService API - executeOrThrow 模式
+            return sshCommandService.executeOrThrow(connection.getJschSession(), command);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Exception("命令执行被中断: " + command, e);
+        } catch (RuntimeException re) {
+            // 统一API已包含详细错误处理
+            throw new Exception(re.getMessage(), re);
         }
     }
 }

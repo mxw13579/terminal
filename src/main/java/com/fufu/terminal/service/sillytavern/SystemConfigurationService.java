@@ -147,9 +147,14 @@ public class SystemConfigurationService {
     
     
     private void executeCommandOrThrow(SshConnection connection, String command, String errorPrefix) throws Exception {
-        CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
-        if (result.exitStatus() != 0) {
-            throw new RuntimeException(errorPrefix + ": " + result.stderr());
+        try {
+            // 使用统一的SshCommandService API - executeOrThrow 模式
+            sshCommandService.executeOrThrow(connection.getJschSession(), command);
+        } catch (RuntimeException re) {
+            throw new RuntimeException(errorPrefix + ": " + re.getMessage(), re);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new Exception(errorPrefix + ": 命令被中断", ie);
         }
     }
 

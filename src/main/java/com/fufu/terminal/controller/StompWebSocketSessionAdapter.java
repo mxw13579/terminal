@@ -90,10 +90,10 @@ public class StompWebSocketSessionAdapter implements WebSocketSession {
                 // 根据消息类型确定 STOMP 目标队列
                 String destination = determineDestination(messageType);
 
-                // 发送消息到指定队列，队列名带上 sessionId 保证私有性
-                messagingTemplate.convertAndSend(destination + "-user" + sessionId, messageMap);
+                // 发送消息到指定队列，使用标准user-scoped routing
+                messagingTemplate.convertAndSendToUser(sessionId, destination, messageMap);
 
-                log.debug("STOMP 消息已发送，sessionId={}, destination={}, type={}", sessionId, destination + "-user" + sessionId, messageType);
+                log.debug("STOMP 消息已发送，sessionId={}, destination={}, type={}", sessionId, destination, messageType);
 
             } catch (Exception e) {
                 log.error("发送 STOMP 消息失败，sessionId={}, error={}", sessionId, e.getMessage(), e);
@@ -107,6 +107,7 @@ public class StompWebSocketSessionAdapter implements WebSocketSession {
 
     /**
      * 根据消息类型确定 STOMP 目标队列。
+     * 所有队列都遵循 /user/queue/* 模式，通过 convertAndSendToUser 自动处理用户隔离。
      *
      * @param messageType 消息类型
      * @return STOMP 目标队列
@@ -115,12 +116,12 @@ public class StompWebSocketSessionAdapter implements WebSocketSession {
         if (messageType == null) {
             return "/queue/response";
         }
-        // 根据不同类型路由到不同队列
+        // 根据不同类型路由到不同队列 - 统一使用 /user/queue/* 模式
         return switch (messageType) {
-            case "sftp_list_response" -> "/queue/sftp/list";
-            case "sftp_download_response" -> "/queue/sftp/download";
-            case "sftp_upload_chunk_success", "sftp_remote_progress", "sftp_upload_final_success" -> "/queue/sftp/upload";
-            case "sftp_error" -> "/queue/sftp/error";
+            case "sftp_list_response" -> "/queue/sftp";
+            case "sftp_download_response" -> "/queue/sftp";
+            case "sftp_upload_chunk_success", "sftp_remote_progress", "sftp_upload_final_success" -> "/queue/sftp";
+            case "sftp_error" -> "/queue/errors";
             case "error" -> "/queue/errors";
             default -> "/queue/response";
         };

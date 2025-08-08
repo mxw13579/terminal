@@ -108,9 +108,10 @@ public class StompSessionManager {
                             "payload", payload
                     );
 
-                    // 推送到用户专属队列
-                    messagingTemplate.convertAndSend(
-                            "/queue/terminal/output-user" + sessionId,
+                    // 推送到用户专属队列 (使用标准user-scoped routing)
+                    messagingTemplate.convertAndSendToUser(
+                            sessionId,
+                            "/queue/terminal",
                             response
                     );
 
@@ -236,6 +237,31 @@ public class StompSessionManager {
     }
 
     /**
+     * 获取所有活动连接（用于文件传输）
+     *
+     * @return 所有活动连接的映射
+     */
+    public Map<String, SshConnection> getAllConnections() {
+        return authInterceptor.getAllConnections();
+    }
+
+    /**
+     * 发送消息到指定会话的特定队列
+     *
+     * @param sessionId 会话ID
+     * @param destination 目标队列
+     * @param message 消息内容
+     */
+    public void sendToSession(String sessionId, String destination, Object message) {
+        try {
+            messagingTemplate.convertAndSendToUser(sessionId, destination, message);
+            log.debug("消息已发送到会话 {} 的队列 {}", sessionId, destination);
+        } catch (Exception e) {
+            log.error("发送消息到会话 {} 失败: {}", sessionId, e.getMessage(), e);
+        }
+    }
+
+    /**
      * 发送测试消息以验证STOMP消息通道是否正常。
      *
      * @param sessionId 会话ID
@@ -248,16 +274,10 @@ public class StompSessionManager {
             );
             log.info("发送STOMP测试消息，session: {}", sessionId);
 
-            // 方式1：标准用户目的地
+            // 使用标准用户目的地 - 统一的STOMP路由模式
             messagingTemplate.convertAndSendToUser(
                     sessionId,
-                    "/queue/terminal/output",
-                    testMessage
-            );
-
-            // 方式2：直接推送到特定队列（调试用）
-            messagingTemplate.convertAndSend(
-                    "/queue/terminal/output-user" + sessionId,
+                    "/queue/terminal",
                     testMessage
             );
 

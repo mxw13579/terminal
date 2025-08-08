@@ -360,7 +360,7 @@ public class DockerContainerService {
     }
 
     /**
-     * 执行 SSH 命令并返回标准输出，失败时抛出异常。
+     * 执行 SSH 命令并返回标准输出，失败时抛出异常（使用统一SSH命令服务API）。
      *
      * @param connection SSH 连接
      * @param command    Shell 命令
@@ -369,16 +369,15 @@ public class DockerContainerService {
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
-            CommandResult res = sshCommandService.executeCommand(connection.getJschSession(), command);
-            if (res.exitStatus() != 0) {
-                String msg = buildErrorMessage(res.stderr(), command, res.exitStatus());
-                log.warn("命令失败: {} - {}", command, msg);
-                throw new RuntimeException(msg);
-            }
-            return res.stdout();
+            // 使用统一的SshCommandService API - executeOrThrow 模式（含安全策略和审计日志）
+            return sshCommandService.executeOrThrow(connection.getJschSession(), command);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new Exception("命令被中断: " + command, ie);
+        } catch (RuntimeException re) {
+            // 统一API已经包含了详细的错误信息处理，不需要额外的buildErrorMessage
+            log.warn("命令执行失败: {} - {}", command, re.getMessage());
+            throw new Exception(re.getMessage(), re);
         }
     }
 

@@ -657,7 +657,8 @@ public class SillyTavernStompController {
                 "success", true,
                 "payload", data
         );
-        messagingTemplate.convertAndSend("/queue/sillytavern/" + messageType + "-user" + sessionId, message);
+        // 使用统一的convertAndSendToUser方法，路由到 /user/queue/sillytavern 队列
+        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern", message);
     }
 
     /**

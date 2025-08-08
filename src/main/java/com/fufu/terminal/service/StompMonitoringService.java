@@ -98,9 +98,10 @@ public class StompMonitoringService {
                     "payload", monitoringData
             );
 
-            // 通过STOMP推送到指定用户队列，队列路径建议加斜杠分隔
-            messagingTemplate.convertAndSend(
-                    "/queue/monitor/data-user/" + sessionId,
+            // 通过STOMP推送到指定用户队列，使用标准的convertAndSendToUser方法
+            messagingTemplate.convertAndSendToUser(
+                    sessionId,
+                    "/queue/monitor",
                     updateMessage
             );
 
