@@ -15,7 +15,10 @@
       "Bash(grep:*)",
       "Bash(where mvn)",
       "Bash(ls:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)"
     ],
     "deny": []
   }

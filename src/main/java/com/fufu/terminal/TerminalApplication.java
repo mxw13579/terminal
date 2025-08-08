@@ -2,6 +2,7 @@ package com.fufu.terminal;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Spring Boot应用程序主类
@@ -10,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * @author lizelin
  */
 @SpringBootApplication
+@EnableScheduling
 public class TerminalApplication {
 
     public static void main(String[] args) {
