@@ -2,6 +2,7 @@ import { ref, readonly, watch } from 'vue';
 import { formatSpeed } from '../utils/formatters.js';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
+import { AuthService } from '../services/auth.js';
 
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
 export function useTerminal(options = {}) {
@@ -37,62 +38,139 @@ export function useTerminal(options = {}) {
     let sendNextChunk = null;
     let uploadStartTime = 0;
     let uploadBytesSent = 0;
+    let currentCredentials = null; // 存储当前连接凭据，用于重连
 
     // --- STOMP Connection Logic ---
-    const connect = (details) => {
-        host.value = details.host;
-        port.value = details.port;
-        user.value = details.user;
-        isConnecting.value = true;
+    const connect = async (details) => {
+        try {
+            host.value = details.host;
+            port.value = details.port;
+            user.value = details.user;
+            isConnecting.value = true;
 
-        // 创建STOMP客户端，SSH参数通过连接头传递
-        stompClient = new Client({
-            webSocketFactory: () => new SockJS('/ws/terminal'),
-            connectHeaders: {
-                'host': details.host,
-                'port': details.port || '22',
-                'user': details.user,
-                'password': details.password
-            },
-            debug: function (str) {
-                console.log('STOMP: ' + str);
-            },
-            reconnectDelay: 5000,
-            heartbeatIncoming: 4000,
-            heartbeatOutgoing: 4000,
-        });
+            // 存储凭据用于重连
+            currentCredentials = { ...details };
 
-        stompClient.onConnect = (frame) => {
-            console.log('STOMP Connected: ' + frame);
-            console.log('STOMP Frame details:', frame);
-            console.log('Session ID:', stompClient.webSocket.url);
-            isConnecting.value = false;
-            isConnected.value = true;
+            console.debug('开始安全连接流程...');
 
-            // 订阅消息队列
-            subscribeToQueues();
+            // 获取会话令牌（使用RSA加密的凭据）
+            console.debug('获取会话令牌...');
+            await AuthService.getSessionToken(details);
             
-            // SSH连接由StompAuthenticationInterceptor在CONNECT时建立
-            // 启动终端输出转发
-            startTerminalOutputForwarding();
-        };
-
-        stompClient.onStompError = (frame) => {
-            console.error('STOMP Error: ' + frame.headers['message']);
-            console.error('Additional details: ' + frame.body);
-            isConnecting.value = false;
-            onShowModal("STOMP连接错误: " + frame.headers['message']);
-        };
-
-        stompClient.onDisconnect = () => {
-            console.log('STOMP Disconnected');
-            if (isConnected.value) {
-                onShowModal("连接已断开");
+            // 获取连接头（包含Authorization令牌）
+            const connectHeaders = AuthService.getConnectionHeaders();
+            if (!connectHeaders) {
+                throw new Error('无法获取有效的认证令牌');
             }
-            resetState();
-        };
 
-        stompClient.activate();
+            console.debug('使用安全令牌创建STOMP连接...');
+
+            // 创建STOMP客户端，使用Authorization头替代明文密码
+            stompClient = new Client({
+                webSocketFactory: () => new SockJS('/ws/terminal'),
+                connectHeaders,
+                debug: function (str) {
+                    // 环境守卫：仅在开发环境输出详细日志
+                    if (import.meta.env?.MODE === 'development' || process.env.NODE_ENV === 'development') {
+                        console.log('STOMP: ' + str);
+                    }
+                },
+                // 指数退避重连策略（带抖动）
+                reconnectDelay: () => {
+                    const attempt = stompClient.reconnectAttempts || 0;
+                    const baseDelay = 1000;
+                    const maxDelay = 30000;
+                    const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+                    const jitter = Math.random() * 1000;
+                    return delay + jitter;
+                },
+                heartbeatIncoming: 4000,
+                heartbeatOutgoing: 4000,
+            });
+
+            // 连接成功处理
+            stompClient.onConnect = (frame) => {
+                console.log('STOMP Connected: ' + frame);
+                console.log('STOMP Frame details:', frame);
+                console.log('Session ID:', stompClient.webSocket.url);
+                isConnecting.value = false;
+                isConnected.value = true;
+
+                // 订阅消息队列
+                subscribeToQueues();
+                
+                // SSH连接由StompAuthenticationInterceptor在CONNECT时建立
+                // 启动终端输出转发
+                startTerminalOutputForwarding();
+            };
+
+            // STOMP错误处理
+            stompClient.onStompError = async (frame) => {
+                console.error('STOMP Error: ' + frame.headers['message']);
+                console.error('Additional details: ' + frame.body);
+                
+                const errorMessage = frame.headers['message'] || '连接认证失败';
+                
+                // 检查是否为认证错误，如果是则尝试重新获取令牌
+                if (errorMessage.includes('认证') || errorMessage.includes('令牌') || 
+                    errorMessage.includes('授权') || errorMessage.includes('Authentication')) {
+                    
+                    console.warn('检测到认证错误，尝试重新获取令牌...');
+                    
+                    const retryHeaders = await AuthService.handleConnectionRetry(currentCredentials);
+                    if (retryHeaders) {
+                        console.info('令牌更新成功，重新尝试连接...');
+                        // 更新连接头并重连
+                        stompClient.connectHeaders = retryHeaders;
+                        return; // 让STOMP客户端处理重连
+                    }
+                }
+                
+                isConnecting.value = false;
+                onShowModal("连接错误: " + errorMessage);
+            };
+
+            // 断开连接处理
+            stompClient.onDisconnect = async () => {
+                console.log('STOMP Disconnected');
+                
+                if (isConnected.value) {
+                    console.info('连接意外断开，尝试恢复...');
+                    
+                    // 尝试通过令牌刷新恢复连接
+                    const retryHeaders = await AuthService.handleConnectionRetry(currentCredentials);
+                    if (retryHeaders) {
+                        console.info('准备使用新令牌重连...');
+                        stompClient.connectHeaders = retryHeaders;
+                        return;
+                    } else {
+                        onShowModal("连接已断开，请重新连接");
+                    }
+                }
+                
+                resetState();
+            };
+
+            // 激活STOMP连接
+            stompClient.activate();
+
+        } catch (error) {
+            console.error('连接失败:', error);
+            isConnecting.value = false;
+            
+            // 提供用户友好的错误信息
+            let userMessage = error.message;
+            if (error.message.includes('不支持')) {
+                userMessage = '浏览器不支持必要的安全功能，请升级到最新版本的Chrome、Firefox或Edge';
+            } else if (error.message.includes('网络')) {
+                userMessage = '网络连接失败，请检查网络连接后重试';
+            } else if (error.message.includes('凭据')) {
+                userMessage = '登录信息验证失败，请检查主机地址、用户名和密码';
+            }
+            
+            onShowModal("连接失败: " + userMessage);
+            resetState();
+        }
     };
 
     const startTerminalOutputForwarding = () => {
@@ -202,6 +280,11 @@ export function useTerminal(options = {}) {
         if (term) {
             term.write('\r\n🔌 连接已由用户关闭。\r\n');
         }
+        
+        // 清理认证状态
+        AuthService.clearToken();
+        currentCredentials = null;
+        
         resetState();
     };
 
@@ -261,6 +344,10 @@ export function useTerminal(options = {}) {
             stompClient = null;
         }
         if (term) term.dispose();
+        
+        // 清理认证状态
+        AuthService.clearToken();
+        currentCredentials = null;
         
         // 重置所有状态
         host.value = '';
