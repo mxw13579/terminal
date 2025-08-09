@@ -39,6 +39,7 @@ import java.util.Arrays;
 public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthenticationInterceptor authInterceptor;
+    private final StompTracingInterceptor tracingInterceptor;
     
     /**
      * 生产环境允许的来源域名列表
@@ -115,14 +116,16 @@ public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
     }
 
     /**
-     * 配置客户端入站通道，添加认证拦截器。
+     * 配置客户端入站通道，添加认证拦截器和追踪拦截器。
      *
      * @param registration 通道注册器
      */
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
+        // 添加追踪拦截器（需要在认证拦截器之前）
+        registration.interceptors(tracingInterceptor);
         // 添加认证拦截器
         registration.interceptors(authInterceptor);
-        log.info("已注册 STOMP 认证拦截器");
+        log.info("已注册 STOMP 追踪拦截器和认证拦截器");
     }
 }

@@ -2,6 +2,7 @@ package com.fufu.terminal.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.config.StompAuthenticationInterceptor;
+import com.fufu.terminal.config.StompDestinationConfig;
 import com.fufu.terminal.model.SshConnection;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -111,7 +112,7 @@ public class StompSessionManager {
                     // 推送到用户专属队列 (使用标准user-scoped routing)
                     messagingTemplate.convertAndSendToUser(
                             sessionId,
-                            "/queue/terminal",
+                            StompDestinationConfig.USER_TERMINAL,
                             response
                     );
 
@@ -167,7 +168,7 @@ public class StompSessionManager {
             );
             messagingTemplate.convertAndSendToUser(
                     sessionId,
-                    "/queue/errors",
+                    StompDestinationConfig.USER_ERRORS,
                     errorResponse
             );
         } catch (Exception e) {

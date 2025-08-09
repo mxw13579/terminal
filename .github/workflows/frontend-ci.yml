@@ -1,0 +1,413 @@
+name: Frontend CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'feat-*' ]
+    paths: 
+      - 'web/ssh-treminal-ui/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'web/ssh-treminal-ui/**'
+
+env:
+  NODE_VERSION: '18'
+  WORKING_DIRECTORY: './web/ssh-treminal-ui'
+
+defaults:
+  run:
+    working-directory: ${{ env.WORKING_DIRECTORY }}
+
+jobs:
+  # Install and Cache Dependencies
+  install-dependencies:
+    name: Install Dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: ${{ env.WORKING_DIRECTORY }}/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        npm ci --prefer-offline --no-audit --progress=false
+        npm ls # Verify dependency tree
+
+    - name: Cache node_modules
+      uses: actions/cache@v4
+      id: cache-node-modules
+      with:
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+        key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+    - name: Upload dependencies for other jobs
+      uses: actions/upload-artifact@v4
+      with:
+        name: node-modules
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+        retention-days: 1
+
+  # Lint and Format Check
+  lint-and-format:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    needs: install-dependencies
+    timeout-minutes: 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Download dependencies
+      uses: actions/download-artifact@v4
+      with:
+        name: node-modules
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+
+    - name: Check TypeScript Types
+      run: |
+        npx tsc --noEmit
+      continue-on-error: true
+
+    - name: Run Prettier Format Check
+      run: |
+        npm run format:check
+      continue-on-error: false
+
+    - name: Run ESLint
+      run: |
+        npx eslint src/ --ext .ts,.vue --format=json --output-file=eslint-report.json
+      continue-on-error: true
+
+    - name: Upload Lint Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: lint-results
+        path: ${{ env.WORKING_DIRECTORY }}/eslint-report.json
+        retention-days: 7
+
+  # Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: install-dependencies
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Download dependencies
+      uses: actions/download-artifact@v4
+      with:
+        name: node-modules
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+
+    - name: Run Unit Tests
+      run: |
+        npm run test:unit -- --coverage --reporter=json --outputFile=test-results.json
+      env:
+        CI: true
+
+    - name: Generate Test Report
+      uses: dorny/test-reporter@v1
+      if: success() || failure()
+      with:
+        name: Frontend Unit Tests
+        path: ${{ env.WORKING_DIRECTORY }}/test-results.json
+        reporter: java-junit
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: unit-test-results
+        path: |
+          ${{ env.WORKING_DIRECTORY }}/coverage/
+          ${{ env.WORKING_DIRECTORY }}/test-results.json
+        retention-days: 7
+
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: success()
+      with:
+        file: ${{ env.WORKING_DIRECTORY }}/coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+        fail_ci_if_error: false
+
+  # Build Application
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: install-dependencies
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        build-mode: [development, production]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Download dependencies
+      uses: actions/download-artifact@v4
+      with:
+        name: node-modules
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+
+    - name: Build Application (${{ matrix.build-mode }})
+      run: |
+        if [ "${{ matrix.build-mode }}" = "production" ]; then
+          npm run build
+        else
+          npm run build:dev
+        fi
+      env:
+        NODE_ENV: ${{ matrix.build-mode }}
+
+    - name: Analyze Bundle Size
+      if: matrix.build-mode == 'production'
+      run: |
+        npx webpack-bundle-analyzer dist/assets/*.js --mode=json > bundle-analysis.json
+      continue-on-error: true
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build-${{ matrix.build-mode }}
+        path: |
+          ${{ env.WORKING_DIRECTORY }}/dist/
+          ${{ env.WORKING_DIRECTORY }}/bundle-analysis.json
+        retention-days: 7
+
+  # Security Scan
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: install-dependencies
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Download dependencies
+      uses: actions/download-artifact@v4
+      with:
+        name: node-modules
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+
+    - name: Run npm audit
+      run: |
+        npm audit --audit-level=moderate --json > npm-audit-report.json
+      continue-on-error: true
+
+    - name: Snyk Security Scan
+      uses: snyk/actions/node@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high --file=web/ssh-treminal-ui/package.json
+
+    - name: Upload Security Scan Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: frontend-security-scan
+        path: |
+          ${{ env.WORKING_DIRECTORY }}/npm-audit-report.json
+          snyk-report.json
+        retention-days: 30
+
+  # End-to-End Tests
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [build, unit-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+
+    services:
+      # Mock backend service for E2E testing
+      mock-backend:
+        image: mockserver/mockserver:5.15.0
+        ports:
+          - 8080:1080
+        env:
+          MOCKSERVER_LOG_LEVEL: WARN
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Download dependencies
+      uses: actions/download-artifact@v4
+      with:
+        name: node-modules
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-build-production
+        path: ${{ env.WORKING_DIRECTORY }}/dist
+
+    - name: Setup Mock Server
+      run: |
+        # Setup mock server expectations
+        curl -X PUT http://localhost:8080/mockserver/expectation \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "httpRequest": {
+              "path": "/actuator/health",
+              "method": "GET"
+            },
+            "httpResponse": {
+              "statusCode": 200,
+              "body": {"status": "UP"}
+            }
+          }'
+
+    - name: Install Playwright
+      run: |
+        npx playwright install --with-deps chromium
+
+    - name: Start Frontend Application
+      run: |
+        npm run preview &
+        FRONTEND_PID=$!
+        echo "FRONTEND_PID=$FRONTEND_PID" >> $GITHUB_ENV
+        
+        # Wait for application to be ready
+        timeout 60 bash -c 'until curl -f http://localhost:4173; do sleep 2; done'
+
+    - name: Run E2E Tests
+      run: |
+        npx playwright test --reporter=json --output=playwright-report.json
+      env:
+        CI: true
+
+    - name: Stop Frontend Application
+      if: always()
+      run: |
+        if [ -n "$FRONTEND_PID" ]; then
+          kill $FRONTEND_PID || true
+        fi
+
+    - name: Upload E2E Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: e2e-test-results
+        path: |
+          ${{ env.WORKING_DIRECTORY }}/playwright-report.json
+          ${{ env.WORKING_DIRECTORY }}/test-results/
+        retention-days: 7
+
+  # Performance Tests
+  performance-test:
+    name: Frontend Performance Test
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-build-production
+        path: ${{ env.WORKING_DIRECTORY }}/dist
+
+    - name: Install Lighthouse CI
+      run: |
+        npm install -g @lhci/cli@0.12.x
+
+    - name: Run Lighthouse CI
+      run: |
+        lhci autorun
+      env:
+        LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+        LHCI_TOKEN: ${{ secrets.LHCI_TOKEN }}
+
+    - name: Upload Lighthouse Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: lighthouse-results
+        path: |
+          .lighthouseci/
+        retention-days: 7
+
+  # Build Summary
+  build-summary:
+    name: Frontend Build Summary
+    runs-on: ubuntu-latest
+    needs: [lint-and-format, unit-tests, build, security-scan]
+    if: always()
+
+    steps:
+    - name: Generate Build Summary
+      run: |
+        echo "# Frontend CI/CD Pipeline Summary" > build-summary.md
+        echo "" >> build-summary.md
+        echo "## Build Status" >> build-summary.md
+        echo "- Lint & Format: ${{ needs.lint-and-format.result }}" >> build-summary.md
+        echo "- Unit Tests: ${{ needs.unit-tests.result }}" >> build-summary.md
+        echo "- Build: ${{ needs.build.result }}" >> build-summary.md
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> build-summary.md
+        echo "" >> build-summary.md
+        echo "## Workflow Information" >> build-summary.md
+        echo "- Branch: ${{ github.ref_name }}" >> build-summary.md
+        echo "- Commit: ${{ github.sha }}" >> build-summary.md
+        echo "- Actor: ${{ github.actor }}" >> build-summary.md
+        echo "- Timestamp: $(date)" >> build-summary.md
+
+    - name: Upload Build Summary
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build-summary
+        path: build-summary.md
+        retention-days: 30

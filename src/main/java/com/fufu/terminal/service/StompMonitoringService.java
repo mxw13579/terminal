@@ -1,5 +1,6 @@
 package com.fufu.terminal.service;
 
+import com.fufu.terminal.config.StompDestinationConfig;
 import com.fufu.terminal.model.SshConnection;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -101,7 +102,7 @@ public class StompMonitoringService {
             // 通过STOMP推送到指定用户队列，使用标准的convertAndSendToUser方法
             messagingTemplate.convertAndSendToUser(
                     sessionId,
-                    "/queue/monitor",
+                    StompDestinationConfig.USER_MONITOR,
                     updateMessage
             );
 

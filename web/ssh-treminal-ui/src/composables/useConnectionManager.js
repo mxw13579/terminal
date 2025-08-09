@@ -67,18 +67,67 @@ export function useConnectionManager() {
       throw error;
     }
     
+  // 连接到服务器
+  const connect = async (connectionInfo) => {
+    console.log('接收到的连接信息:', connectionInfo); // 调试日志
+    
+    // 兼容处理：如果传入的是username字段，转换为user字段
+    if (connectionInfo.username && !connectionInfo.user) {
+      connectionInfo.user = connectionInfo.username;
+      delete connectionInfo.username;
+    }
+    
+    // 验证必要的连接参数
+    if (!connectionInfo || !connectionInfo.host || !connectionInfo.user || !connectionInfo.password) {
+      const error = new Error('缺少必要的连接参数 (host, user, password)');
+      connectionState.error = error.message;
+      throw error;
+    }
+    
     connectionState.connecting = true
     connectionState.error = null
 
     try {
-      // 创建STOMP客户端，SSH参数通过连接头传递
+      // 第1步: 获取RSA公钥并加密凭据
+      console.log('[安全认证] 获取RSA公钥...');
+      const publicKeyResponse = await fetch('/api/security/public-key');
+      if (!publicKeyResponse.ok) {
+        throw new Error('获取RSA公钥失败');
+      }
+      const { publicKey } = await publicKeyResponse.json();
+      
+      // 使用RSA公钥加密凭据 (这里需要加载crypto service)
+      const crypto = await import('../services/crypto.ts');
+      const encryptedCredentials = await crypto.encryptCredentials({
+        host: connectionInfo.host,
+        port: connectionInfo.port?.toString() || '22',
+        user: connectionInfo.user,
+        password: connectionInfo.password
+      }, publicKey);
+      
+      // 第2步: 获取访问令牌
+      console.log('[安全认证] 获取访问令牌...');
+      const tokenResponse = await fetch('/api/security/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(encryptedCredentials)
+      });
+      
+      if (!tokenResponse.ok) {
+        const error = await tokenResponse.json();
+        throw new Error(error.message || '获取访问令牌失败');
+      }
+      
+      const { token } = await tokenResponse.json();
+      console.log('[安全认证] 令牌获取成功');
+
+      // 第3步: 使用令牌建立STOMP连接
       stompClient = new Client({
         webSocketFactory: () => new SockJS(`/ws/terminal`),
         connectHeaders: {
-          host: connectionInfo.host,
-          port: connectionInfo.port.toString(),
-          user: connectionInfo.user,  // 后端期望的是 'user'
-          password: connectionInfo.password
+          'Authorization': `Bearer ${token}`
         },
         debug: (str) => {
           console.log('[STOMP Debug]', str)

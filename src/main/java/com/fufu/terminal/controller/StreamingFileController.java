@@ -20,11 +20,12 @@ import reactor.core.publisher.Mono;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * HTTP流式文件传输控制器
  * 提供高性能的文件上传和下载功能，替代基于WebSocket的base64传输
- * 
+ *
  * @author lizelin
  */
 @Slf4j
@@ -42,7 +43,7 @@ public class StreamingFileController {
     /**
      * 流式下载SFTP文件或目录
      * 支持单文件、目录压缩、多文件打包下载
-     * 
+     *
      * @param token 认证令牌
      * @param paths 文件/目录路径列表，JSON数组格式
      * @param request HTTP请求对象
@@ -53,7 +54,7 @@ public class StreamingFileController {
             @RequestParam String token,
             @RequestParam String paths,
             HttpServletRequest request) {
-        
+
         try {
             // 验证令牌
             if (!tokenVault.isTokenValid(token)) {
@@ -62,9 +63,9 @@ public class StreamingFileController {
             }
 
             // 解析路径列表
-            List<String> pathList = objectMapper.readValue(paths, 
+            List<String> pathList = objectMapper.readValue(paths,
                 objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
-            
+
             if (pathList == null || pathList.isEmpty()) {
                 return ResponseEntity.badRequest().build();
             }
@@ -77,20 +78,20 @@ public class StreamingFileController {
             }
 
             // 创建流式下载
-            StreamingFileService.DownloadResult downloadResult = 
+            StreamingFileService.DownloadResult downloadResult =
                 streamingFileService.createDownloadStream(connection, pathList, request.getRemoteAddr());
 
             // 设置响应头
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-            headers.set(HttpHeaders.CONTENT_DISPOSITION, 
+            headers.set(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"" + downloadResult.getFilename() + "\"");
-            
+
             if (downloadResult.getContentLength() > 0) {
                 headers.setContentLength(downloadResult.getContentLength());
             }
 
-            log.info("开始流式下载，文件: {}, 大小: {} bytes, 客户端: {}", 
+            log.info("开始流式下载，文件: {}, 大小: {} bytes, 客户端: {}",
                 downloadResult.getFilename(), downloadResult.getContentLength(), request.getRemoteAddr());
 
             return ResponseEntity.ok()
@@ -106,7 +107,7 @@ public class StreamingFileController {
     /**
      * 分块上传文件到SFTP服务器
      * 支持多文件并发上传，自动进度报告
-     * 
+     *
      * @param token 认证令牌
      * @param remotePath 远程目录路径
      * @param files 上传的文件列表
@@ -144,7 +145,7 @@ public class StreamingFileController {
                 String uploadId = streamingFileService.startUpload(
                     connection, sessionId, remotePath, files, request.getRemoteAddr());
 
-                log.info("启动流式上传，ID: {}, 文件数: {}, 目标: {}, 客户端: {}", 
+                log.info("启动流式上传，ID: {}, 文件数: {}, 目标: {}, 客户端: {}",
                     uploadId, files.size(), remotePath, request.getRemoteAddr());
 
                 return ResponseEntity.ok()
@@ -161,7 +162,7 @@ public class StreamingFileController {
 
     /**
      * 取消正在进行的上传
-     * 
+     *
      * @param token 认证令牌
      * @param uploadId 上传ID
      * @return 取消结果
@@ -170,7 +171,7 @@ public class StreamingFileController {
     public ResponseEntity<String> cancelUpload(
             @RequestParam String token,
             @PathVariable String uploadId) {
-        
+
         try {
             // 验证令牌
             if (!tokenVault.isTokenValid(token)) {
@@ -178,7 +179,7 @@ public class StreamingFileController {
             }
 
             boolean cancelled = streamingFileService.cancelUpload(uploadId);
-            
+
             if (cancelled) {
                 log.info("上传已取消，ID: {}", uploadId);
                 return ResponseEntity.ok("{\"status\":\"cancelled\"}");
@@ -195,7 +196,7 @@ public class StreamingFileController {
 
     /**
      * 获取上传进度
-     * 
+     *
      * @param token 认证令牌
      * @param uploadId 上传ID
      * @return 进度信息
@@ -204,7 +205,7 @@ public class StreamingFileController {
     public ResponseEntity<String> getUploadProgress(
             @RequestParam String token,
             @PathVariable String uploadId) {
-        
+
         try {
             // 验证令牌
             if (!tokenVault.isTokenValid(token)) {
@@ -212,7 +213,7 @@ public class StreamingFileController {
             }
 
             String progressJson = streamingFileService.getUploadProgress(uploadId);
-            
+
             if (progressJson != null) {
                 return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_JSON)
@@ -231,7 +232,7 @@ public class StreamingFileController {
     /**
      * 从令牌获取对应的SSH连接
      * 由于TokenVault是一次性消费的，我们需要通过其他方式关联token和session
-     * 
+     *
      * @param token 认证令牌
      * @return SSH连接，如果未找到则返回null
      */
@@ -239,21 +240,21 @@ public class StreamingFileController {
         // 目前的架构中，token在STOMP连接时被消费，无法直接映射到session
         // 作为临时解决方案，我们遍历所有活动连接寻找匹配的连接
         // 更好的解决方案是修改TokenVault支持多次验证而非一次性消费
-        
+
         // 这里需要一个更好的设计，暂时返回第一个可用连接进行测试
         Map<String, SshConnection> allConnections = sessionManager.getAllConnections();
         if (!allConnections.isEmpty()) {
             // 返回第一个活动连接作为临时解决方案
             return allConnections.values().iterator().next();
         }
-        
+
         return null;
     }
 
     /**
      * 从令牌提取会话ID
      * 临时实现：由于当前架构限制，使用活动连接的第一个sessionId
-     * 
+     *
      * @param token 认证令牌
      * @return 会话ID
      */
@@ -263,14 +264,14 @@ public class StreamingFileController {
             // 返回第一个活动会话ID作为临时解决方案
             return allConnections.keySet().iterator().next();
         }
-        
+
         // 如果没有活动连接，生成一个临时ID
         return "temp_session_" + System.currentTimeMillis();
     }
 
     /**
      * 获取所有活动连接信息（用于调试）
-     * 
+     *
      * @return 活动连接映射
      */
     private Map<String, SshConnection> getAllConnections() {

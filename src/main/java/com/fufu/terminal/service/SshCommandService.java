@@ -83,14 +83,15 @@ public class SshCommandService {
      * 敏感信息匹配模式 - 用于日志脱敏
      */
     private static final Pattern[] SENSITIVE_PATTERNS = {
-            Pattern.compile("(?i)password[=:]\s*\S+"),
-            Pattern.compile("(?i)passwd[=:]\s*\S+"),
-            Pattern.compile("(?i)secret[=:]\s*\S+"),
-            Pattern.compile("(?i)token[=:]\s*\S+"),
-            Pattern.compile("(?i)key[=:]\s*\S+"),
-            Pattern.compile("-p\s+\S+"), // -p password
-            Pattern.compile("--password\s+\S+")
+            Pattern.compile("(?i)password[=:]\\s*\\S+"),
+            Pattern.compile("(?i)passwd[=:]\\s*\\S+"),
+            Pattern.compile("(?i)secret[=:]\\s*\\S+"),
+            Pattern.compile("(?i)token[=:]\\s*\\S+"),
+            Pattern.compile("(?i)key[=:]\\s*\\S+"),
+            Pattern.compile("-p\\s+\\S+"), // -p password
+            Pattern.compile("--password\\s+\\S+")
     };
+
 
     /**
      * 简单的速率限制映射 - sessionId -> 最后执行时间
@@ -304,7 +305,7 @@ public class SshCommandService {
     /**
      * 带策略控制的命令执行核心方法。
      */
-    private CommandResult executeWithPolicies(Session session, String command, long timeoutMs, 
+    private CommandResult executeWithPolicies(Session session, String command, long timeoutMs,
                                                int stdoutLimit, int stderrLimit) throws InterruptedException {
         // 执行安全策略检查
         String sessionKey = getSessionKey(session);

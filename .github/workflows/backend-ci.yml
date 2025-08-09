@@ -1,0 +1,403 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'feat-*' ]
+    paths: 
+      - 'src/**'
+      - 'pom.xml'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+
+env:
+  JAVA_VERSION: '17'
+  MAVEN_OPTS: '-Xmx3g -XX:ReservedCodeCacheSize=512m'
+
+jobs:
+  # Build and Test Job
+  build-and-test:
+    name: Build and Test Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      # Redis for testing (if needed)
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Validate Maven Project
+      run: mvn validate
+
+    - name: Compile and Package
+      run: |
+        mvn clean compile -B -V
+        mvn package -DskipTests -B
+
+    - name: Run Unit Tests
+      run: |
+        mvn test -B -Dtest.profile=test
+      env:
+        SPRING_PROFILES_ACTIVE: test
+
+    - name: Run Integration Tests
+      run: |
+        mvn verify -B -Dtest.profile=integration
+      env:
+        SPRING_PROFILES_ACTIVE: test
+
+    - name: Generate Test Report
+      uses: dorny/test-reporter@v1
+      if: success() || failure()
+      with:
+        name: Maven Tests
+        path: target/surefire-reports/*.xml
+        reporter: java-junit
+        fail-on-error: true
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: |
+          target/surefire-reports/
+          target/failsafe-reports/
+        retention-days: 5
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-artifacts
+        path: |
+          target/*.jar
+          target/classes/
+        retention-days: 1
+
+  # Security Scanning Job
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: OWASP Dependency Check
+      run: |
+        mvn org.owasp:dependency-check-maven:check -B \
+          -DfailBuildOnAnyVulnerability=false \
+          -DfailBuildOnCVSS=8 \
+          -Dformat=ALL
+      continue-on-error: true
+
+    - name: Upload OWASP Dependency Check Report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: owasp-dependency-check-report
+        path: |
+          target/dependency-check-report.html
+          target/dependency-check-report.xml
+          target/dependency-check-report.json
+        retention-days: 30
+
+    - name: CodeQL Analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: java
+        config: |
+          name: "CodeQL Config"
+          disable-default-queries: false
+          queries:
+            - name: security-queries
+              uses: security-and-quality
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:java"
+
+    - name: Snyk Security Scan
+      uses: snyk/actions/maven@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high --file=pom.xml
+
+    - name: Upload Snyk Report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: snyk-report
+        path: snyk-report.json
+        retention-days: 30
+
+  # Code Quality Job
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Cache SonarCloud packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+
+    - name: Run SonarCloud Analysis
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        mvn clean verify sonar:sonar \
+          -Dsonar.projectKey=terminal-application \
+          -Dsonar.organization=your-org \
+          -Dsonar.host.url=https://sonarcloud.io \
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+      if: env.SONAR_TOKEN != null
+
+    - name: SpotBugs Analysis
+      run: |
+        mvn spotbugs:check -B
+      continue-on-error: true
+
+    - name: PMD Analysis
+      run: |
+        mvn pmd:check -B
+      continue-on-error: true
+
+    - name: Upload Code Quality Reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: code-quality-reports
+        path: |
+          target/spotbugsXml.xml
+          target/pmd.xml
+          target/site/jacoco/
+        retention-days: 7
+
+  # Performance Testing Job
+  performance-test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: backend-artifacts
+        path: target/
+
+    - name: Start Application for Performance Testing
+      run: |
+        java -jar target/*.jar --spring.profiles.active=test &
+        APP_PID=$!
+        echo "APP_PID=$APP_PID" >> $GITHUB_ENV
+        
+        # Wait for application to start
+        timeout 60 bash -c 'until curl -f http://localhost:8080/actuator/health; do sleep 2; done'
+      
+    - name: Run JMeter Performance Tests
+      run: |
+        # Download JMeter
+        wget -q https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.2.tgz
+        tar -xzf apache-jmeter-5.6.2.tgz
+        
+        # Create basic performance test plan
+        cat > performance-test.jmx << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <jmeterTestPlan version="1.2">
+          <hashTree>
+            <TestPlan testname="Terminal Application Performance Test">
+              <elementProp name="TestPlan.arguments" elementType="Arguments"/>
+              <boolProp name="TestPlan.functional_mode">false</boolProp>
+              <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+            </TestPlan>
+            <hashTree>
+              <ThreadGroup testname="Load Test">
+                <stringProp name="ThreadGroup.num_threads">10</stringProp>
+                <stringProp name="ThreadGroup.ramp_time">30</stringProp>
+                <stringProp name="ThreadGroup.duration">60</stringProp>
+                <boolProp name="ThreadGroup.scheduler">true</boolProp>
+              </ThreadGroup>
+              <hashTree>
+                <HTTPSamplerProxy testname="Health Check">
+                  <stringProp name="HTTPSampler.domain">localhost</stringProp>
+                  <stringProp name="HTTPSampler.port">8080</stringProp>
+                  <stringProp name="HTTPSampler.path">/actuator/health</stringProp>
+                  <stringProp name="HTTPSampler.method">GET</stringProp>
+                </HTTPSamplerProxy>
+                <hashTree>
+                  <ResponseAssertion testname="Response Code">
+                    <collectionProp name="Asserion.test_strings">
+                      <stringProp name="49586">200</stringProp>
+                    </collectionProp>
+                    <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                  </ResponseAssertion>
+                </hashTree>
+              </hashTree>
+            </hashTree>
+          </hashTree>
+        </jmeterTestPlan>
+        EOF
+        
+        # Run performance test
+        apache-jmeter-5.6.2/bin/jmeter -n -t performance-test.jmx -l results.jtl -e -o performance-report/
+
+    - name: Stop Application
+      if: always()
+      run: |
+        if [ -n "$APP_PID" ]; then
+          kill $APP_PID || true
+        fi
+
+    - name: Upload Performance Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: performance-test-results
+        path: |
+          performance-report/
+          results.jtl
+        retention-days: 7
+
+  # Build Summary Job
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan, code-quality]
+    if: always()
+
+    steps:
+    - name: Generate Build Summary
+      run: |
+        echo "# Backend CI/CD Pipeline Summary" > build-summary.md
+        echo "" >> build-summary.md
+        echo "## Build Status" >> build-summary.md
+        echo "- Build and Test: ${{ needs.build-and-test.result }}" >> build-summary.md
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> build-summary.md
+        echo "- Code Quality: ${{ needs.code-quality.result }}" >> build-summary.md
+        echo "" >> build-summary.md
+        echo "## Workflow Information" >> build-summary.md
+        echo "- Branch: ${{ github.ref_name }}" >> build-summary.md
+        echo "- Commit: ${{ github.sha }}" >> build-summary.md
+        echo "- Actor: ${{ github.actor }}" >> build-summary.md
+        echo "- Timestamp: $(date)" >> build-summary.md
+
+    - name: Upload Build Summary
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-summary
+        path: build-summary.md
+        retention-days: 30
+
+    - name: Comment PR with Results
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const buildStatus = '${{ needs.build-and-test.result }}';
+          const securityStatus = '${{ needs.security-scan.result }}';
+          const qualityStatus = '${{ needs.code-quality.result }}';
+          
+          const getStatusIcon = (status) => {
+            switch(status) {
+              case 'success': return '✅';
+              case 'failure': return '❌';
+              case 'cancelled': return '⏹️';
+              default: return '⚠️';
+            }
+          };
+          
+          const comment = `
+          ## Backend CI/CD Pipeline Results
+          
+          | Check | Status |
+          |-------|--------|
+          | Build & Test | ${getStatusIcon(buildStatus)} ${buildStatus} |
+          | Security Scan | ${getStatusIcon(securityStatus)} ${securityStatus} |
+          | Code Quality | ${getStatusIcon(qualityStatus)} ${qualityStatus} |
+          
+          **Commit**: ${context.sha.substring(0, 7)}
+          **Workflow**: [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

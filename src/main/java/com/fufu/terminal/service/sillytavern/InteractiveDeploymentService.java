@@ -1,5 +1,6 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fufu.terminal.config.StompDestinationConfig;
 import com.fufu.terminal.dto.sillytavern.InteractiveDeploymentDto;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
@@ -1030,7 +1031,7 @@ public class InteractiveDeploymentService {
      */
     private void sendDeploymentStatus(String sessionId, InteractiveDeploymentDto.StatusDto status) {
         log.debug("发送部署状态到前端，Session: {}, currentStep: {}", sessionId, status.getCurrentStepIndex());
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/interactive-deployment-status", status);
+        messagingTemplate.convertAndSendToUser(sessionId, StompDestinationConfig.USER_SILLYTAVERN, status);
     }
 
     /**
@@ -1056,7 +1057,7 @@ public class InteractiveDeploymentService {
         log.debug("发送进度更新到前端，Session: {}, currentStep: {}, logs: {}", sessionId,
                 progress.getCurrentStep() != null ? progress.getCurrentStep().getStepId() : "null",
                 progress.getCurrentStep() != null ? progress.getCurrentStep().getLogs() : "null");
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/interactive-deployment-progress", progress);
+        messagingTemplate.convertAndSendToUser(sessionId, StompDestinationConfig.USER_SILLYTAVERN, progress);
     }
 
     /**
@@ -1067,7 +1068,7 @@ public class InteractiveDeploymentService {
      */
     private void sendConfirmationRequest(String sessionId, InteractiveDeploymentDto.ConfirmationRequestDto request) {
         log.debug("发送确认请求到前端，Session: {}, stepId: {}", sessionId, request.getStepId());
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/interactive-deployment-confirmation", request);
+        messagingTemplate.convertAndSendToUser(sessionId, StompDestinationConfig.USER_SILLYTAVERN, request);
     }
 
     /**
