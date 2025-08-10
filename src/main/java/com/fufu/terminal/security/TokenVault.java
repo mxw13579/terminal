@@ -41,6 +41,11 @@ public class TokenVault {
 
     /** 最大存储条目数，防止内存耗尽 */
     private static final int MAX_ENTRIES = 10_000;
+    /**
+     * 维护当前有效条目数
+     */
+    private final AtomicInteger currentSize = new AtomicInteger(0);
+
 
     /** 凭据存储映射表 */
     private final ConcurrentHashMap<String, VaultEntry> vault = new ConcurrentHashMap<>();
@@ -49,6 +54,18 @@ public class TokenVault {
     private final AtomicInteger totalCreated = new AtomicInteger(0);
     private final AtomicInteger totalExpired = new AtomicInteger(0);
     private final AtomicInteger totalRetrieved = new AtomicInteger(0);
+
+
+    /**
+     * 确保参数非空
+     * @param value 参数值
+     * @param name 参数名
+     */
+    private void requireNonBlank(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " 不能为空");
+        }
+    }
 
     /**
      * 存储凭据并生成访问令牌。
@@ -66,46 +83,28 @@ public class TokenVault {
      * @throws IllegalArgumentException 如果必要参数为空
      */
     public String storeCredentials(String host, String port, String user, String password) {
-        // 参数校验
-        if (host == null || host.trim().isEmpty()) {
-            throw new IllegalArgumentException("SSH主机地址不能为空");
-        }
-        if (user == null || user.trim().isEmpty()) {
-            throw new IllegalArgumentException("SSH用户名不能为空");
-        }
+        requireNonBlank(host, "SSH主机地址");
+        requireNonBlank(user, "SSH用户名");
         if (password == null) {
-            throw new IllegalArgumentException("SSH密码不能为null");
+            throw new IllegalArgumentException("SSH密码不能为 null");
         }
-
-        // 检查存储空间
-        if (vault.size() >= MAX_ENTRIES) {
-            log.warn("令牌保险库已满，当前条目数: {}，拒绝新的存储请求", vault.size());
-            throw new IllegalStateException("令牌保险库存储空间已满，请稍后重试");
+        if (currentSize.get() >= MAX_ENTRIES) {
+            log.warn("令牌保险库已满，拒绝新的存储请求");
+            throw new IllegalStateException("存储空间已满，请稍后重试");
         }
-
-        // 生成唯一令牌
         String token = UUID.randomUUID().toString();
-
-        // 计算过期时间
-        long expiryTime = Instant.now().toEpochMilli() + (DEFAULT_TTL_SECONDS * 1000);
-
-        // 创建并存储凭据条目
+        long expiryTime = System.currentTimeMillis() + DEFAULT_TTL_SECONDS * 1_000;
         VaultEntry entry = new VaultEntry(
-            host.trim(),
-            port != null ? port.trim() : "22",
-            user.trim(),
-            password,
-            expiryTime
+                host.trim(), port == null ? "22" : port.trim(),
+                user.trim(), password, expiryTime
         );
-
         vault.put(token, entry);
         totalCreated.incrementAndGet();
-
-        log.info("凭据已存储，令牌: {}...，过期时间: {}，当前存储条目数: {}",
-                token.substring(0, 8),
+        currentSize.incrementAndGet();
+        log.info("存储成功，令牌 {}...，过期于 {}，当前数量 {}",
+                token.substring(0,8),
                 Instant.ofEpochMilli(expiryTime),
-                vault.size());
-
+                currentSize.get());
         return token;
     }
 
@@ -120,33 +119,17 @@ public class TokenVault {
      * @return 凭据条目，如果令牌无效或已过期则返回null
      */
     public VaultEntry retrieveAndRemove(String token) {
-        if (token == null || token.trim().isEmpty()) {
-            log.debug("尝试使用空令牌检索凭据");
-            return null;
-        }
-
+        if (token == null || token.isBlank()) return null;
         VaultEntry entry = vault.remove(token);
-
-        if (entry == null) {
-            log.debug("令牌不存在或已被使用: {}...", token.substring(0, Math.min(8, token.length())));
-            return null;
-        }
-
-        // 检查是否过期
-        long currentTime = Instant.now().toEpochMilli();
-        if (currentTime > entry.getExpiryTime()) {
+        if (entry == null) return null;
+        currentSize.decrementAndGet();
+        if (entry.isExpired()) {
             totalExpired.incrementAndGet();
-            log.debug("令牌已过期: {}...，过期时间: {}，当前时间: {}",
-                    token.substring(0, 8),
-                    Instant.ofEpochMilli(entry.getExpiryTime()),
-                    Instant.ofEpochMilli(currentTime));
+            log.debug("令牌已过期 {}", token.substring(0,8));
             return null;
         }
-
         totalRetrieved.incrementAndGet();
-        log.info("凭据检索成功，令牌: {}...，剩余存储条目数: {}",
-                token.substring(0, 8), vault.size());
-
+        log.info("检索成功 {}...，剩余 {}", token.substring(0,8), currentSize.get());
         return entry;
     }
 
@@ -178,22 +161,22 @@ public class TokenVault {
      */
     @Scheduled(fixedRate = CLEANUP_INTERVAL_MS)
     public void cleanupExpiredEntries() {
-        long currentTime = Instant.now().toEpochMilli();
-        AtomicInteger cleanedCount = new AtomicInteger();
-
-        vault.entrySet().removeIf(entry -> {
-            boolean expired = currentTime > entry.getValue().getExpiryTime();
-            if (expired) {
-                cleanedCount.getAndIncrement();
+        long now = System.currentTimeMillis();
+        AtomicInteger cleaned = new AtomicInteger();
+        vault.entrySet().removeIf(e -> {
+            if (e.getValue().isExpired()) {
+                cleaned.incrementAndGet();
                 totalExpired.incrementAndGet();
+                return true;
             }
-            return expired;
+            return false;
         });
-
-        if (cleanedCount.get() > 0) {
-            log.info("清理过期凭据完成，清理数量: {}，剩余条目数: {}", cleanedCount, vault.size());
+        int c = cleaned.get();
+        if (c > 0) {
+            currentSize.addAndGet(-c);
+            log.info("清理过期 {} 条，剩余 {}", c, currentSize.get());
         } else {
-            log.debug("定时清理执行，无过期条目，当前条目数: {}", vault.size());
+            log.debug("无过期条目，当前 {}", currentSize.get());
         }
     }
 
@@ -232,7 +215,7 @@ public class TokenVault {
      */
     @Getter
     @AllArgsConstructor
-    public static class VaultEntry {
+    public static  class VaultEntry {
         private final String host;
         private final String port;
         private final String user;
