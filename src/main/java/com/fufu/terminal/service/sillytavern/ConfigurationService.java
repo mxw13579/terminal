@@ -81,10 +81,10 @@ public class ConfigurationService {
         log.debug("读取容器配置: {}", containerName);
         // 1) 优先读取容器内部署信息（修复路径问题）
         try {
-            // 先尝试从config目录读取
+            // 先尝试从config目录读取，如果失败则尝试应用根目录
             String deployInfoContent = executeCommand(
                     connection,
-                    String.format("sudo docker exec %s cat /home/node/app/config/deployment-info.json 2>/dev/null || sudo docker exec %s cat /home/node/app/deployment-info.json", containerName, containerName)
+                    String.format("sudo docker exec %s sh -c 'cat /home/node/app/config/deployment-info.json 2>/dev/null || cat /home/node/app/deployment-info.json 2>/dev/null'", containerName)
             );
             ConfigurationDto config = parseDeploymentInfo(deployInfoContent);
             config.setContainerName(containerName);

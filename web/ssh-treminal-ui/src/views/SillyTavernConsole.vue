@@ -246,9 +246,9 @@
                 <ServiceControls 
                   :connection="connectionState.connectionInfo"
                   :container-status="containerStatus"
-                  @action-started="handleActionStarted"
-                  @action-completed="handleActionCompleted"
-                  @status-updated="handleStatusUpdated"
+                  :is-performing-action="isActionLoading"
+                  :current-action="currentActionType"
+                  @service-action="handleServiceAction"
                 />
               </div>
               
@@ -345,6 +345,7 @@ const {
 // 状态管理
 const showConnectionModal = ref(false)
 const activeTab = ref('deployment')
+const currentActionType = ref('')
 
 // 标签页配置
 const tabs = computed(() => [
@@ -478,6 +479,34 @@ const handleActionCompleted = () => {
 
 const handleStatusUpdated = () => {
   refreshStatus()
+}
+
+const handleServiceAction = async (action, options = {}) => {
+  try {
+    console.log('执行服务操作:', action, options)
+    currentActionType.value = getActionDisplayName(action)
+    
+    await performServiceAction(action, options)
+    
+    // 操作完成后刷新状态
+    await refreshStatus()
+    
+    console.log(`服务操作 ${action} 完成`)
+  } catch (error) {
+    console.error(`服务操作 ${action} 失败:`, error)
+  } finally {
+    currentActionType.value = ''
+  }
+}
+
+const getActionDisplayName = (action) => {
+  const actionNames = {
+    'start': '启动容器',
+    'stop': '停止容器', 
+    'restart': '重启容器',
+    'upgrade': '升级容器'
+  }
+  return actionNames[action] || action
 }
 
 const handleConfigurationUpdated = () => {

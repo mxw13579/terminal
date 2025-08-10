@@ -49,9 +49,10 @@
                   style="width: auto; display: inline-block;"
                   @change="onConfigChange"
                 >
+                  <option value="50">50行</option>
+                  <option value="100">100行</option>
+                  <option value="300">300行</option>
                   <option value="500">500行</option>
-                  <option value="1000">1000行</option>
-                  <option value="3000">3000行</option>
                 </select>
               </div>
             </div>
@@ -319,7 +320,7 @@ export default {
     const { stompClient, isConnected } = useSillyTavern()
     
     // 响应式状态
-    const logMode = ref('history') // 'history' | 'realtime'
+    const logMode = ref('realtime') // 'history' | 'realtime' - 默认开启实时日志
     const logs = ref([])
     const totalLines = ref(0)
     const isLoadingHistory = ref(false)
@@ -336,7 +337,7 @@ export default {
     
     // 日志配置
     const logConfig = reactive({
-      maxLines: 1000,
+      maxLines: 50,
       level: 'all'
     })
     
@@ -664,6 +665,13 @@ export default {
           `/queue/sillytavern/realtime-logs-stopped-user${sessionId}`,
           handleRealtimeStopResponse
         )
+        
+        // 自动启动实时日志（类似 logs -f 50 效果）
+        setTimeout(() => {
+          if (logMode.value === 'realtime' && !isRealtimeActive.value) {
+            startRealtimeLogs()
+          }
+        }, 500) // 延迟500ms确保WebSocket连接稳定
       }
     })
     

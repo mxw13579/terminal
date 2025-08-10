@@ -48,11 +48,13 @@ public class SillyTavernDeploymentService {
 
     /**
      * 检测服务器支持的 compose 命令（docker compose 或 docker-compose），并缓存结果
+     * 如果未找到，会尝试自动安装 docker-compose
      * @param connection SSH连接
+     * @param progressCallback 进度回调（可选）
      * @return 可用的 compose 命令字符串
-     * @throws RuntimeException 若两者都不可用
+     * @throws RuntimeException 若安装失败
      */
-    private String detectDockerComposeCommand(SshConnection connection) {
+    private String detectDockerComposeCommand(SshConnection connection, Consumer<String> progressCallback) {
         if (cachedComposeCommand != null) {
             return cachedComposeCommand;
         }
@@ -61,18 +63,89 @@ public class SillyTavernDeploymentService {
             CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), "docker compose version");
             if (result.exitStatus() == 0) {
                 cachedComposeCommand = "docker compose";
+                log.info("检测到 docker compose 命令");
                 return cachedComposeCommand;
             }
             // 再检测 docker-compose
             result = sshCommandService.executeInternal(connection.getJschSession(), "docker-compose version");
             if (result.exitStatus() == 0) {
                 cachedComposeCommand = "docker-compose";
+                log.info("检测到 docker-compose 命令");
                 return cachedComposeCommand;
             }
+            
+            // 都没有找到，尝试自动安装 docker-compose
+            log.warn("未检测到 docker compose 或 docker-compose，尝试自动安装...");
+            if (progressCallback != null) {
+                progressCallback.accept("正在自动安装 Docker Compose...");
+            }
+            installDockerCompose(connection);
+            
+            // 安装后再次检测
+            result = sshCommandService.executeInternal(connection.getJschSession(), "docker-compose version");
+            if (result.exitStatus() == 0) {
+                cachedComposeCommand = "docker-compose";
+                log.info("安装并检测到 docker-compose 命令");
+                if (progressCallback != null) {
+                    progressCallback.accept("✅ Docker Compose 安装完成");
+                }
+                return cachedComposeCommand;
+            }
+            
         } catch (Exception e) {
-            log.warn("检测 compose 命令时发生异常: {}", e.getMessage());
+            log.warn("检测或安装 compose 命令时发生异常: {}", e.getMessage());
+            if (progressCallback != null) {
+                progressCallback.accept("❌ Docker Compose 安装失败: " + e.getMessage());
+            }
         }
-        throw new RuntimeException("服务器未安装 docker compose 或 docker-compose，请先安装其中之一");
+        throw new RuntimeException("❌ 镜像拉取失败：Docker Compose命令未找到");
+    }
+
+    // 重载方法，向后兼容
+    private String detectDockerComposeCommand(SshConnection connection) {
+        return detectDockerComposeCommand(connection, null);
+    }
+
+    /**
+     * 自动安装 docker-compose
+     * @param connection SSH连接
+     * @throws Exception 安装失败时抛出
+     */
+    private void installDockerCompose(SshConnection connection) throws Exception {
+        log.info("开始自动安装 docker-compose...");
+        
+        // 检测操作系统类型
+        CommandResult osResult = sshCommandService.executeInternal(connection.getJschSession(), 
+            "cat /etc/os-release | grep '^ID=' | cut -d'=' -f2 | tr -d '\"'");
+        String osType = osResult.stdout().trim().toLowerCase();
+        
+        String installCommand;
+        
+        if (osType.contains("ubuntu") || osType.contains("debian")) {
+            // Ubuntu/Debian 系统
+            installCommand = "sudo apt-get update && sudo apt-get install -y docker-compose";
+        } else if (osType.contains("centos") || osType.contains("rhel") || osType.contains("fedora")) {
+            // CentOS/RHEL/Fedora 系统
+            String pkgManager = osType.contains("fedora") ? "dnf" : "yum";
+            installCommand = String.format("sudo %s install -y epel-release && sudo %s install -y docker-compose", pkgManager, pkgManager);
+        } else {
+            // 通用安装方式 - 下载二进制文件
+            installCommand = """
+                sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \\
+                -o /usr/local/bin/docker-compose && \\
+                sudo chmod +x /usr/local/bin/docker-compose && \\
+                sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+                """;
+        }
+        
+        log.debug("执行安装命令: {}", installCommand);
+        CommandResult installResult = sshCommandService.executeInternal(connection.getJschSession(), installCommand);
+        
+        if (installResult.exitStatus() != 0) {
+            throw new RuntimeException("安装 docker-compose 失败: " + installResult.stderr());
+        }
+        
+        log.info("docker-compose 安装完成");
     }
 
 
@@ -251,8 +324,8 @@ public class SillyTavernDeploymentService {
                                   Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("开始拉取Docker镜像...");
         
-        // 检测 compose 命令
-        String composeCmd = detectDockerComposeCommand(connection);
+        // 检测 compose 命令，如果没有则自动安装
+        String composeCmd = detectDockerComposeCommand(connection, progressCallback);
         
         // 使用带进度显示的命令，但增加错误处理
         String pullCommand = String.format("cd %s && sudo %s pull 2>&1", DEPLOYMENT_PATH, composeCmd);
@@ -742,8 +815,8 @@ public class SillyTavernDeploymentService {
      */
     private void startContainerService(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("正在启动SillyTavern服务...");
-        // 检测 compose 命令
-        String composeCmd = detectDockerComposeCommand(connection);
+        // 检测 compose 命令，如果没有则自动安装
+        String composeCmd = detectDockerComposeCommand(connection, progressCallback);
         String startCommand = String.format("cd %s && sudo %s up -d", DEPLOYMENT_PATH, composeCmd);
         CommandResult startResult = sshCommandService.executeInternal(connection.getJschSession(), startCommand);
         if (startResult.exitStatus() != 0) {

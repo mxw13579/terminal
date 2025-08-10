@@ -697,6 +697,11 @@ export default {
                   step.status = 'running'
                 }
                 
+                // 当步骤状态改变时，滚动到当前步骤
+                this.$nextTick(() => {
+                  this.scrollToCurrentStep()
+                })
+                
                 if (newProgress.progress !== undefined) {
                   step.progress = newProgress.progress
                 }
@@ -897,6 +902,42 @@ export default {
         timestamp: new Date(),
         message,
         type
+      })
+      
+      // 滚动到当前活动步骤
+      this.$nextTick(() => {
+        this.scrollToCurrentStep()
+      })
+    },
+    
+    // 滚动到当前活动步骤的位置
+    scrollToCurrentStep() {
+      const container = this.$refs.stepsContainer
+      if (!container) return
+      
+      // 找到当前正在运行或等待的步骤
+      const activeStepIndex = this.deploymentSteps.findIndex(step => 
+        step.status === 'running' || step.status === 'waiting'
+      )
+      
+      if (activeStepIndex === -1) {
+        // 如果没有活动步骤，滚动到底部
+        container.scrollTop = container.scrollHeight
+        return
+      }
+      
+      // 计算每个步骤卡片的大概高度（包括间距）
+      const stepCardHeight = 200 // 大概高度
+      const gap = 16 // 步骤间的间距
+      const totalHeight = (stepCardHeight + gap) * activeStepIndex
+      
+      // 滚动到当前活动步骤的位置，让它显示在可视区域的中上部
+      const containerHeight = container.clientHeight
+      const scrollPosition = Math.max(0, totalHeight - containerHeight / 3)
+      
+      container.scrollTo({
+        top: scrollPosition,
+        behavior: 'smooth'
       })
     },
     
@@ -1322,6 +1363,30 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.deployment-steps-container {
+  max-height: 60vh; /* 限制最大高度为视口高度的60% */
+  overflow-y: auto;
+  padding-right: 8px; /* 为滚动条留出空间 */
+}
+
+.deployment-steps-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.deployment-steps-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.deployment-steps-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.deployment-steps-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
 .deployment-steps {

@@ -11,7 +11,7 @@
     <div class="controls-grid">
       <!-- Start Button -->
       <button 
-        @click="$emit('service-action', 'start')"
+        @click="handleServiceAction('start')"
         :disabled="isPerformingAction || !containerStatus || !containerStatus.exists || containerStatus.running"
         class="control-button start-button"
       >
@@ -24,7 +24,7 @@
       
       <!-- Stop Button -->
       <button 
-        @click="$emit('service-action', 'stop')"
+        @click="handleServiceAction('stop')"
         :disabled="isPerformingAction || !containerStatus || !containerStatus.exists || !containerStatus.running"
         class="control-button stop-button"
       >
@@ -37,7 +37,7 @@
       
       <!-- Restart Button -->
       <button 
-        @click="$emit('service-action', 'restart')"
+        @click="handleServiceAction('restart')"
         :disabled="isPerformingAction || !containerStatus || !containerStatus.exists"
         class="control-button restart-button"
       >
@@ -50,27 +50,14 @@
       
       <!-- Upgrade Button -->
       <button 
-        @click="$emit('service-action', 'upgrade')"
+        @click="showUpgradeModal = true"
         :disabled="isPerformingAction || !containerStatus || !containerStatus.exists"
         class="control-button upgrade-button"
       >
         <span class="button-icon">⬆️</span>
         <div class="button-content">
           <div class="button-title">升级</div>
-          <div class="button-subtitle">更新到最新版本</div>
-        </div>
-      </button>
-      
-      <!-- Delete Button -->
-      <button 
-        @click="handleDelete"
-        :disabled="isPerformingAction || !containerStatus || !containerStatus.exists"
-        class="control-button delete-button"
-      >
-        <span class="button-icon">🗑️</span>
-        <div class="button-content">
-          <div class="button-title">删除</div>
-          <div class="button-subtitle">删除容器</div>
+          <div class="button-subtitle">选择版本进行升级</div>
         </div>
       </button>
     </div>
@@ -98,11 +85,47 @@
         <span class="info-value">{{ containerStatus.image }}</span>
       </div>
     </div>
+    
+    <!-- Upgrade Modal -->
+    <div v-if="showUpgradeModal" class="upgrade-modal-overlay" @click="showUpgradeModal = false">
+      <div class="upgrade-modal" @click.stop>
+        <div class="modal-header">
+          <h3 class="modal-title">选择升级版本</h3>
+          <button @click="showUpgradeModal = false" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-description">选择要升级到的版本：</p>
+          <div class="version-options">
+            <button @click="handleUpgrade('latest')" class="version-option">
+              <div class="version-tag latest">Latest</div>
+              <div class="version-info">
+                <div class="version-name">最新版</div>
+                <div class="version-desc">包含最新功能和修复</div>
+              </div>
+            </button>
+            <button @click="handleUpgrade('stable')" class="version-option">
+              <div class="version-tag stable">Stable</div>
+              <div class="version-info">
+                <div class="version-name">稳定版</div>
+                <div class="version-desc">推荐生产环境使用</div>
+              </div>
+            </button>
+            <button @click="handleUpgrade('release')" class="version-option">
+              <div class="version-tag release">Release</div>
+              <div class="version-info">
+                <div class="version-name">发布版</div>
+                <div class="version-desc">正式发布版本</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { defineProps, defineEmits } from 'vue'
+import { defineProps, defineEmits, ref } from 'vue'
 import useConnectionManager from '@/composables/useConnectionManager'
 
 const { connectionState } = useConnectionManager()
@@ -124,13 +147,15 @@ const props = defineProps({
 
 const emit = defineEmits(['service-action'])
 
-const handleDelete = () => {
-  const confirmed = confirm('确定要删除容器吗？此操作不可撤销。\n\n选择"确定"仅删除容器，选择"取消"放弃删除。')
-  if (confirmed) {
-    // For now, just delete container without data
-    // In a full implementation, you might want a more sophisticated dialog
-    emit('service-action', 'delete', { removeData: false })
-  }
+const showUpgradeModal = ref(false)
+
+const handleServiceAction = (action, options = {}) => {
+  emit('service-action', action, options)
+}
+
+const handleUpgrade = (version) => {
+  showUpgradeModal.value = false
+  handleServiceAction('upgrade', { version })
 }
 </script>
 
@@ -242,10 +267,6 @@ const handleDelete = () => {
   background: #faf5ff;
 }
 
-.delete-button:hover:not(:disabled) {
-  border-color: #e53e3e;
-  background: #fff5f5;
-}
 
 /* Container Info */
 .container-info {
@@ -300,6 +321,136 @@ const handleDelete = () => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Upgrade Modal Styles */
+.upgrade-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.upgrade-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #718096;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: #4a5568;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-description {
+  margin: 0 0 20px 0;
+  color: #4a5568;
+  font-size: 0.95rem;
+}
+
+.version-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.version-option {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.version-option:hover {
+  border-color: #667eea;
+  background: #f7fafc;
+  transform: translateY(-1px);
+}
+
+.version-tag {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-right: 16px;
+  min-width: 60px;
+  text-align: center;
+  color: white;
+}
+
+.version-tag.latest {
+  background: #f56565;
+}
+
+.version-tag.stable {
+  background: #48bb78;
+}
+
+.version-tag.release {
+  background: #667eea;
+}
+
+.version-info {
+  flex: 1;
+}
+
+.version-name {
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 4px;
+}
+
+.version-desc {
+  font-size: 0.85rem;
+  color: #718096;
 }
 
 /* Responsive design */
