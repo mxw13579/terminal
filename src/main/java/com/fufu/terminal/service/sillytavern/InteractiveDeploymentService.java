@@ -1054,10 +1054,16 @@ public class InteractiveDeploymentService {
                 .pendingConfirmation(pendingConfirmations.get(sessionId))
                 .build();
 
-        log.debug("发送进度更新到前端，Session: {}, currentStep: {}, logs: {}", sessionId,
-                progress.getCurrentStep() != null ? progress.getCurrentStep().getStepId() : "null",
-                progress.getCurrentStep() != null ? progress.getCurrentStep().getLogs() : "null");
-        messagingTemplate.convertAndSendToUser(sessionId, StompDestinationConfig.USER_SILLYTAVERN, progress);
+        log.debug("发送进度更新到前端，Session: {}, currentStep: {}", sessionId,
+                progress.getCurrentStep() != null ? progress.getCurrentStep().getStepId() : "null");
+
+        // 发送包装的消息，包含type字段以便前端正确识别
+        Map<String, Object> wrappedMessage = Map.of(
+                "type", "interactive-deployment-progress",
+                "success", true,
+                "payload", progress
+        );
+        messagingTemplate.convertAndSendToUser(sessionId, StompDestinationConfig.USER_SILLYTAVERN, wrappedMessage);
     }
 
     /**

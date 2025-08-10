@@ -81,8 +81,8 @@
                 <!-- Docker not available case -->
                 <div v-if="containerStatus && containerStatus.error" class="docker-unavailable">
                   <i class="fas fa-exclamation-triangle"></i>
-                  <p>{{ containerStatus.error }}</p>
-                  <small class="text-muted">{{ containerStatus.status }}</small>
+                  <p>Docker未安装</p>
+                  <small class="text-muted">请先安装Docker服务</small>
                 </div>
                 <!-- Docker available and container exists -->
                 <div v-else-if="containerStatus && containerStatus.exists" class="docker-stats">
@@ -112,7 +112,7 @@
                 <!-- Container doesn't exist but Docker is available -->
                 <div v-else-if="containerStatus && !containerStatus.exists && !containerStatus.error" class="docker-not-deployed">
                   <i class="fas fa-info-circle"></i>
-                  <p>Docker已安装，但容器未部署</p>
+                  <p>Docker已安装，SillyTavern未部署</p>
                   <small class="text-muted">请先部署SillyTavern容器</small>
                 </div>
                 <!-- Loading state -->
@@ -185,15 +185,15 @@
                     <p>正在检查服务状态...</p>
                   </div>
                   <div v-else-if="containerStatus.error">
-                    <p>{{ containerStatus.error }}</p>
-                    <small class="text-muted">{{ containerStatus.status }}</small>
+                    <p>SillyTavern未部署</p>
+                    <small class="text-muted">{{ containerStatus.error }}</small>
                   </div>
                   <div v-else-if="containerStatus.exists && !containerStatus.running">
                     <p>服务已停止</p>
                     <small class="text-muted">容器存在但未运行</small>
                   </div>
                   <div v-else-if="!containerStatus.exists">
-                    <p>服务未部署</p>
+                    <p>SillyTavern未部署</p>
                     <small class="text-muted">请先部署SillyTavern容器</small>
                   </div>
                   <div v-else>

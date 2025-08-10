@@ -76,7 +76,39 @@ public class DockerContainerService {
 
             JsonNode root = objectMapper.readTree(inspectJson);
             parseInspectOutput(root, status);
-            status.setHostAddress(connection.getSession().getHost());
+            
+            // 优先从部署信息文件获取访问信息（解决NAT环境问题）
+            try {
+                ConfigurationDto deploymentConfig = configurationService.readConfiguration(connection, containerName);
+                if (deploymentConfig != null) {
+                    // 使用部署信息中的访问配置
+                    if (deploymentConfig.getUsername() != null) {
+                        status.setUsername(deploymentConfig.getUsername());
+                    }
+                    if (deploymentConfig.getPassword() != null) {
+                        status.setPassword(deploymentConfig.getPassword());
+                    }
+                    if (deploymentConfig.getPort() != null) {
+                        status.setPort(deploymentConfig.getPort());
+                    }
+                    
+                    // 获取主机地址信息
+                    if (deploymentConfig.getOtherSettings() != null) {
+                        String hostAddress = deploymentConfig.getOtherSettings().get("hostAddress");
+                        if (hostAddress != null) {
+                            status.setHostAddress(hostAddress);
+                        }
+                    }
+                    log.debug("成功从部署信息获取访问配置");
+                }
+            } catch (Exception e) {
+                log.warn("获取部署信息失败，使用默认访问配置: {}", e.getMessage());
+                // 回退到默认配置
+                if (status.getHostAddress() == null) {
+                    status.setHostAddress(connection.getSession().getHost());
+                }
+                setDefaultCredentials(status);
+            }
 
             // 如果容器正在运行，获取资源使用情况
             if (status.getRunning()) {
@@ -88,9 +120,6 @@ public class DockerContainerService {
                     log.warn("获取资源使用情况失败: {}", e.getMessage());
                 }
             }
-
-            // 设置默认访问凭据（简化版本）
-            setDefaultCredentials(status);
 
             log.debug("容器状态获取完成: {}", status);
             return status;

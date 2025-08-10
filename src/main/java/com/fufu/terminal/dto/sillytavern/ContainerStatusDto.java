@@ -129,7 +129,7 @@ public class ContainerStatusDto {
         ContainerStatusDto status = new ContainerStatusDto();
         status.setExists(false);
         status.setRunning(false);
-        status.setStatus("Container not found");
+        status.setStatus("SillyTavern未部署");
         status.setLastUpdated(LocalDateTime.now());
         return status;
     }
@@ -144,8 +144,8 @@ public class ContainerStatusDto {
         ContainerStatusDto status = new ContainerStatusDto();
         status.setExists(false);
         status.setRunning(false);
-        status.setStatus("Docker not available");
-        status.setError("Docker is not installed or not accessible. Please install Docker first.");
+        status.setStatus("Docker未安装");
+        status.setError("Docker未安装");
         status.setLastUpdated(LocalDateTime.now());
         return status;
     }

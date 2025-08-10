@@ -1,5 +1,7 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fufu.terminal.dto.sillytavern.DeploymentInfoDto;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
@@ -39,8 +41,8 @@ public class SillyTavernDeploymentService {
 
     private volatile String cachedComposeCommand = null;
 
-
     private final SshCommandService sshCommandService;
+    private final ObjectMapper objectMapper;
 
 
     /**
@@ -105,6 +107,11 @@ public class SillyTavernDeploymentService {
                 // 5. 验证部署结果
                 SillyTavernDeploymentResult result = verifyDeployment(connection, deploymentConfig, progressCallback);
 
+                // 6. 写入部署信息文件（新增步骤）
+                if (result.isSuccess()) {
+                    writeDeploymentInfo(connection, deploymentConfig, result, progressCallback);
+                }
+
                 if (result.isSuccess()) {
                     progressCallback.accept("✅ SillyTavern部署成功！");
                 } else {
@@ -166,7 +173,7 @@ public class SillyTavernDeploymentService {
 
         // 确定镜像地址
         String sillyTavernImage = useChineseMirror ?
-                "dockerproxy.net/goolashe/sillytavern:" + config.getSelectedVersion() :
+                "ghcr.nju.edu.cn/goolashe/sillytavern:" + config.getSelectedVersion() :
                 "goolashe/sillytavern:" + config.getSelectedVersion();
 
         String watchtowerImage = useChineseMirror ?
@@ -337,6 +344,89 @@ public class SillyTavernDeploymentService {
             log.debug("获取公网IP失败: {}", e.getMessage());
         }
         return "";
+    }
+
+    /**
+     * 写入部署信息到deployment-info.json文件
+     * <p>
+     * 该文件包含NAT环境下的访问信息，用于解决NAT环境访问问题
+     * </p>
+     *
+     * @param connection       SSH连接
+     * @param config           部署配置
+     * @param result           部署结果
+     * @param progressCallback 进度回调
+     */
+    private void writeDeploymentInfo(SshConnection connection,
+                                     SillyTavernDeploymentConfig config,
+                                     SillyTavernDeploymentResult result,
+                                     Consumer<String> progressCallback) {
+        try {
+            progressCallback.accept("写入部署信息文件...");
+
+            // 获取服务器地址信息
+            String publicIp = getServerPublicIp(connection);
+            String privateIp = connection.getSession().getHost();
+
+            // 构建部署信息DTO
+            DeploymentInfoDto deploymentInfo = DeploymentInfoDto.builder()
+                    .deployment(DeploymentInfoDto.DeploymentInfo.builder()
+                            .time(String.valueOf(System.currentTimeMillis()))
+                            .version(result.getVersion())
+                            .environment("production")
+                            .build())
+                    .ports(DeploymentInfoDto.PortInfo.builder()
+                            .internal(8000) // SillyTavern内部端口
+                            .external(Integer.parseInt(config.getPort())) // 配置的外部端口
+                            .natExternal(Integer.parseInt(config.getPort())) // NAT外部端口（与外部端口相同）
+                            .build())
+                    .network(DeploymentInfoDto.NetworkInfo.builder()
+                            .internalHost("sillytavern") // 容器内部主机名
+                            .externalHost(privateIp) // SSH连接的IP（内网IP）
+                            .natExternalHost(!publicIp.isEmpty() ? publicIp : privateIp) // 公网IP或内网IP
+                            .build())
+                    .authentication(DeploymentInfoDto.AuthenticationInfo.builder()
+                            .username(config.getUsername())
+                            .password(config.getPassword())
+                            .build())
+                    .build();
+
+            // 将DTO序列化为JSON
+            String deploymentInfoJson = objectMapper.writeValueAsString(deploymentInfo);
+
+            // 先写入到宿主机临时文件
+            String tempFilePath = "/tmp/deployment-info-" + System.currentTimeMillis() + ".json";
+            String writeTempCommand = String.format(
+                    "sudo tee %s > /dev/null <<'EOF'\n%s\nEOF",
+                    tempFilePath, deploymentInfoJson);
+
+            CommandResult writeTempResult = sshCommandService.executeInternal(connection.getJschSession(), writeTempCommand);
+            if (writeTempResult.exitStatus() != 0) {
+                throw new Exception("写入临时文件失败: " + writeTempResult.stderr());
+            }
+
+            // 将临时文件复制到容器内部
+            String copyToContainerCommand = String.format(
+                    "sudo docker cp %s %s:/data/docker/sillytavern/deployment-info.json",
+                    tempFilePath, CONTAINER_NAME);
+
+            CommandResult copyResult = sshCommandService.executeInternal(connection.getJschSession(), copyToContainerCommand);
+
+            // 清理临时文件
+            sshCommandService.executeInternal(connection.getJschSession(), "sudo rm -f " + tempFilePath);
+
+            if (copyResult.exitStatus() != 0) {
+                log.warn("复制部署信息文件到容器失败: {}", copyResult.stderr());
+                progressCallback.accept("警告：部署信息文件写入失败，但不影响正常使用");
+            } else {
+                log.info("成功写入部署信息文件到容器内部");
+                progressCallback.accept("部署信息文件写入成功");
+            }
+
+        } catch (Exception e) {
+            log.warn("写入部署信息文件时发生异常: {}", e.getMessage(), e);
+            progressCallback.accept("警告：部署信息写入失败，但不影响正常使用");
+        }
     }
 
     /**

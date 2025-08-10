@@ -75,13 +75,75 @@ export function useSillyTavern(options = {}) {
             }
         });
 
-        // Subscribe to container status responses
-        client.subscribe('/user/queue/sillytavern/status', (message) => {
-            console.log('收到STOMP状态消息:', message);
+        // Subscribe to unified SillyTavern queue for all message types
+        client.subscribe('/user/queue/sillytavern', (message) => {
+            console.log('收到统一STOMP消息:', message);
             console.log('消息体内容:', message.body);
             try {
                 const data = JSON.parse(message.body);
-                console.log('解析后的状态数据:', data);
+                console.log('解析后的数据:', data);
+                
+                // 根据消息类型分发到对应的处理函数
+                if (data.type) {
+                    switch (data.type) {
+                        case 'status':
+                            handleStatusResponse(data);
+                            break;
+                        case 'deployment-progress':
+                            handleDeploymentProgress(data);
+                            break;
+                        case 'interactive-deployment-progress':
+                            console.log('收到交互式部署进度消息:', data);
+                            handleInteractiveDeploymentProgress(data.payload);
+                            break;
+                        case 'action-result':
+                            handleActionResult(data);
+                            break;
+                        case 'upgrade-progress':
+                            handleUpgradeProgress(data);
+                            break;
+                        case 'logs':
+                            handleLogsResponse(data);
+                            break;
+                        case 'config':
+                            handleConfigResponse(data);
+                            break;
+                        case 'config-updated':
+                            handleConfigUpdateResponse(data);
+                            break;
+                        case 'version-info':
+                            handleVersionInfoResponse(data);
+                            break;
+                        case 'version-upgrade':
+                            handleVersionUpgradeResponse(data);
+                            break;
+                        case 'version-upgrade-progress':
+                            handleVersionUpgradeProgress(data);
+                            break;
+                        case 'cleanup-images':
+                            handleImageCleanupResponse(data);
+                            break;
+                        case 'versions':
+                            console.log('收到版本信息消息:', data);
+                            handleVersionsResponse(data);
+                            break;
+                        default:
+                            console.warn('未知的消息类型:', data.type, data);
+                    }
+                } else {
+                    console.warn('收到没有type字段的消息:', data);
+                }
+            } catch (e) {
+                console.error('Error processing unified STOMP message:', e);
+            }
+        });
+
+        // Keep legacy subscriptions for backward compatibility
+        // Subscribe to container status responses
+        client.subscribe('/user/queue/sillytavern/status', (message) => {
+            console.log('收到状态子队列消息:', message);
+            try {
+                const data = JSON.parse(message.body);
                 handleStatusResponse(data);
             } catch (e) {
                 console.error('Error processing status response:', e);
