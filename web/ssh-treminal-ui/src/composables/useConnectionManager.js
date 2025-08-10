@@ -1,14 +1,14 @@
-// 统一连接管理 composable
+// SSH Connection Manager Composable
 import { ref, reactive, computed, readonly } from 'vue'
 import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 
-// 连接状态管理
+// Connection state management
 const connectionState = reactive({
   isConnected: false,
   connectionInfo: null,
   connectionHistory: JSON.parse(localStorage.getItem('ssh-connections') || '[]').map(conn => {
-    // 兼容处理：将旧的username字段转换为user字段
+    // Compatibility: convert old username field to user field
     if (conn.username && !conn.user) {
       conn.user = conn.username;
       delete conn.username;
@@ -20,13 +20,13 @@ const connectionState = reactive({
   connecting: false
 })
 
-// STOMP客户端实例
+// STOMP client instance
 let stompClient = null
 
-// 连接配置
+// Connection configuration
 export function useConnectionManager() {
 
-  // 保存连接信息到本地存储
+  // Save connection info to local storage
   const saveConnection = (connectionInfo) => {
     const existing = connectionState.connectionHistory.findIndex(
       conn => conn.host === connectionInfo.host && conn.user === connectionInfo.user
@@ -45,41 +45,24 @@ export function useConnectionManager() {
       })
     }
 
-    // 只保留最近10个连接
+    // Keep only recent 10 connections
     connectionState.connectionHistory = connectionState.connectionHistory.slice(0, 10)
     localStorage.setItem('ssh-connections', JSON.stringify(connectionState.connectionHistory))
   }
 
-  // 连接到服务器
+  // Connect to server
   const connect = async (connectionInfo) => {
-    console.log('接收到的连接信息:', connectionInfo); // 调试日志
+    console.log('Connection info received:', connectionInfo); // Debug log
     
-    // 兼容处理：如果传入的是username字段，转换为user字段
+    // Compatibility: convert username field to user field
     if (connectionInfo.username && !connectionInfo.user) {
       connectionInfo.user = connectionInfo.username;
       delete connectionInfo.username;
     }
     
-    // 验证必要的连接参数
+    // Validate required connection parameters
     if (!connectionInfo || !connectionInfo.host || !connectionInfo.user || !connectionInfo.password) {
-      const error = new Error('缺少必要的连接参数 (host, user, password)');
-      connectionState.error = error.message;
-      throw error;
-    }
-    
-  // 连接到服务器
-  const connect = async (connectionInfo) => {
-    console.log('接收到的连接信息:', connectionInfo); // 调试日志
-    
-    // 兼容处理：如果传入的是username字段，转换为user字段
-    if (connectionInfo.username && !connectionInfo.user) {
-      connectionInfo.user = connectionInfo.username;
-      delete connectionInfo.username;
-    }
-    
-    // 验证必要的连接参数
-    if (!connectionInfo || !connectionInfo.host || !connectionInfo.user || !connectionInfo.password) {
-      const error = new Error('缺少必要的连接参数 (host, user, password)');
+      const error = new Error('Missing required connection parameters (host, user, password)');
       connectionState.error = error.message;
       throw error;
     }
@@ -88,42 +71,37 @@ export function useConnectionManager() {
     connectionState.error = null
 
     try {
-      // 第1步: 获取RSA公钥并加密凭据
-      console.log('[安全认证] 获取RSA公钥...');
-      const publicKeyResponse = await fetch('/api/security/public-key');
-      if (!publicKeyResponse.ok) {
-        throw new Error('获取RSA公钥失败');
-      }
-      const { publicKey } = await publicKeyResponse.json();
-      
-      // 使用RSA公钥加密凭据 (这里需要加载crypto service)
-      const crypto = await import('../services/crypto.ts');
-      const encryptedCredentials = await crypto.encryptCredentials({
+      // Step 1: Encrypt credentials using CryptoService (auto-fetches public key)
+      console.log('[Security Auth] Encrypting SSH credentials...');
+      const { CryptoService } = await import('../services/crypto.ts');
+      const encryptedCredentialsString = await CryptoService.encryptCredentials({
         host: connectionInfo.host,
         port: connectionInfo.port?.toString() || '22',
         user: connectionInfo.user,
         password: connectionInfo.password
-      }, publicKey);
+      });
       
-      // 第2步: 获取访问令牌
-      console.log('[安全认证] 获取访问令牌...');
-      const tokenResponse = await fetch('/api/security/token', {
+      // Step 2: Get access token
+      console.log('[Security Auth] Getting access token...');
+      const tokenResponse = await fetch('/api/security/session/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(encryptedCredentials)
+        body: JSON.stringify({
+          encryptedCredentials: encryptedCredentialsString
+        })
       });
       
       if (!tokenResponse.ok) {
         const error = await tokenResponse.json();
-        throw new Error(error.message || '获取访问令牌失败');
+        throw new Error(error.message || 'Failed to get access token');
       }
       
       const { token } = await tokenResponse.json();
-      console.log('[安全认证] 令牌获取成功');
+      console.log('[Security Auth] Token obtained successfully');
 
-      // 第3步: 使用令牌建立STOMP连接
+      // Step 3: Establish STOMP connection using token
       stompClient = new Client({
         webSocketFactory: () => new SockJS(`/ws/terminal`),
         connectHeaders: {
@@ -132,45 +110,45 @@ export function useConnectionManager() {
         debug: (str) => {
           console.log('[STOMP Debug]', str)
         },
-        reconnectDelay: 0, // 禁用自动重连
-        heartbeatIncoming: 0, // 禁用心跳检测
-        heartbeatOutgoing: 0 // 禁用心跳检测
+        reconnectDelay: 0, // Disable auto-reconnect
+        heartbeatIncoming: 0, // Disable heartbeat
+        heartbeatOutgoing: 0 // Disable heartbeat
       })
 
-      // 连接成功处理
+      // Connection success handler
       stompClient.onConnect = (frame) => {
-        console.log('STOMP连接成功:', frame)
+        console.log('STOMP connection successful:', frame)
         connectionState.isConnected = true
         connectionState.connectionInfo = connectionInfo
         connectionState.currentSessionId = frame.headers.session || 'default'
         connectionState.connecting = false
 
-        // 保存成功的连接
+        // Save successful connection
         saveConnection(connectionInfo)
       }
 
-      // 连接错误处理
+      // Connection error handler
       stompClient.onStompError = (frame) => {
-        console.error('STOMP连接错误:', frame)
-        let errorMessage = frame.headers.message || '连接失败'
+        console.error('STOMP connection error:', frame)
+        let errorMessage = frame.headers.message || 'Connection failed'
 
-        // 根据不同的错误类型提供更详细的错误信息
+        // Provide detailed error messages based on error type
         if (errorMessage.includes('Connection refused')) {
-          errorMessage = `无法连接到SSH服务器，请检查：
-1. 服务器地址是否正确
-2. SSH端口是否正确（通常是22）
-3. SSH服务是否已启动
-4. 防火墙是否允许SSH连接`
+          errorMessage = `Cannot connect to SSH server, please check:
+1. Server address is correct
+2. SSH port is correct (usually 22)
+3. SSH service is running
+4. Firewall allows SSH connections`
         } else if (errorMessage.includes('Authentication')) {
-          errorMessage = `SSH认证失败，请检查：
-1. 用户名是否正确
-2. 密码是否正确
-3. 用户是否有SSH登录权限`
+          errorMessage = `SSH authentication failed, please check:
+1. Username is correct
+2. Password is correct
+3. User has SSH login permission`
         } else if (errorMessage.includes('timeout')) {
-          errorMessage = `连接超时，请检查：
-1. 网络连接是否正常
-2. 服务器是否可达
-3. 防火墙设置`
+          errorMessage = `Connection timeout, please check:
+1. Network connection is normal
+2. Server is reachable
+3. Firewall settings`
         }
 
         connectionState.error = errorMessage
@@ -178,26 +156,26 @@ export function useConnectionManager() {
         connectionState.isConnected = false
       }
 
-      // 连接断开处理
+      // Connection disconnect handler
       stompClient.onDisconnect = () => {
-        console.log('STOMP连接断开')
+        console.log('STOMP connection disconnected')
         connectionState.isConnected = false
         connectionState.connectionInfo = null
         connectionState.currentSessionId = null
       }
 
-      // WebSocket错误处理
+      // WebSocket error handler
       stompClient.onWebSocketError = (error) => {
-        console.error('WebSocket错误:', error)
-        connectionState.error = 'WebSocket连接错误'
+        console.error('WebSocket error:', error)
+        connectionState.error = 'WebSocket connection error'
         connectionState.connecting = false
         connectionState.isConnected = false
       }
 
-      // 激活连接
+      // Activate connection
       stompClient.activate()
 
-      // 返回Promise，等待连接完成
+      // Return Promise, wait for connection completion
       return new Promise((resolve, reject) => {
         const originalOnConnect = stompClient.onConnect
         const originalOnStompError = stompClient.onStompError
@@ -209,15 +187,15 @@ export function useConnectionManager() {
 
         stompClient.onStompError = (frame) => {
           originalOnStompError(frame)
-          reject(new Error(frame.headers.message || '连接失败'))
+          reject(new Error(frame.headers.message || 'Connection failed'))
         }
 
-        // 设置超时
+        // Set timeout
         setTimeout(() => {
           if (connectionState.connecting) {
             connectionState.connecting = false
-            connectionState.error = '连接超时'
-            reject(new Error('连接超时'))
+            connectionState.error = 'Connection timeout'
+            reject(new Error('Connection timeout'))
           }
         }, 10000)
       })
@@ -229,14 +207,14 @@ export function useConnectionManager() {
     }
   }
 
-  // 断开连接
+  // Disconnect
   const disconnect = async () => {
     if (stompClient && stompClient.connected) {
       try {
         stompClient.deactivate()
-        console.log('STOMP连接已断开')
+        console.log('STOMP connection disconnected')
       } catch (error) {
-        console.warn('断开连接时出错:', error)
+        console.warn('Error during disconnect:', error)
       }
     }
 
@@ -247,7 +225,7 @@ export function useConnectionManager() {
     stompClient = null
   }
 
-  // 检查连接状态
+  // Check connection status
   const checkConnection = async () => {
     if (!stompClient) {
       connectionState.isConnected = false
@@ -272,7 +250,7 @@ export function useConnectionManager() {
     }
   }
 
-  // 删除历史连接
+  // Remove connection from history
   const removeConnection = (connectionId) => {
     connectionState.connectionHistory = connectionState.connectionHistory.filter(
       conn => conn.id !== connectionId
@@ -280,7 +258,7 @@ export function useConnectionManager() {
     localStorage.setItem('ssh-connections', JSON.stringify(connectionState.connectionHistory))
   }
 
-  // 计算属性
+  // Computed properties
   const connectionStatus = computed(() => {
     if (connectionState.connecting) return 'connecting'
     if (connectionState.isConnected) return 'connected'
@@ -289,28 +267,28 @@ export function useConnectionManager() {
   })
 
   const connectionDisplay = computed(() => {
-    if (!connectionState.connectionInfo) return '未连接'
+    if (!connectionState.connectionInfo) return 'Not connected'
     const { user, host, port } = connectionState.connectionInfo
     return `${user}@${host}:${port || 22}`
   })
 
   return {
-    // 状态
+    // State
     connectionState: readonly(connectionState),
     connectionStatus,
     connectionDisplay,
 
-    // 方法
+    // Methods
     connect,
     disconnect,
     checkConnection,
     saveConnection,
     removeConnection,
 
-    // STOMP客户端访问
+    // STOMP client access
     getStompClient: () => stompClient
   }
 }
 
-// 单例模式，确保全局状态一致
+// Singleton pattern, ensure global state consistency
 export default useConnectionManager

@@ -105,7 +105,7 @@ public class PackageManagerService {
         String codename = osInfo.getOsVersionCodename();
         // 备份现有源文件
         progressCallback.accept("备份当前 sources.list...");
-        sshCommandService.executeCommand(connection.getJschSession(),
+        sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%%s)");
         String sourcesContent = null;
         String mirrorName = OFFICIAL;
@@ -143,13 +143,13 @@ public class PackageManagerService {
         // 如果有新的源内容，则写入文件
         if (sourcesContent != null) {
             String command = String.format("echo '%s' | sudo tee /etc/apt/sources.list > /dev/null", sourcesContent);
-            sshCommandService.executeCommand(connection.getJschSession(), command);
+            sshCommandService.executeInternal(connection.getJschSession(), command);
             progressCallback.accept("镜像源文件已更新。");
         } else {
             progressCallback.accept("使用官方源，无需替换。");
         }
         progressCallback.accept("刷新软件包索引...");
-        CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false");
         return buildResult(updateResult.exitStatus() == 0, "镜像源配置完成", mirrorName, "/etc/apt/sources.list.bak");
     }
@@ -234,7 +234,7 @@ public class PackageManagerService {
         }
         // 使用 heredoc 方式写入文件，更安全可靠
         String command = String.format("sudo tee /etc/apt/sources.list > /dev/null <<'EOF'\n%s\nEOF", sourcesContent);
-        CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+        CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
         if (result.exitStatus() != 0) {
             throw new RuntimeException("写入 sources.list 文件失败: " + result.stderr());
         }
@@ -262,7 +262,7 @@ public class PackageManagerService {
                 codename, codename, codename, codename, codename, codename, codename, codename);
 
         String command = String.format("sudo tee /etc/apt/sources.list > /dev/null <<'EOF'\n%s\nEOF", sourcesContent);
-        sshCommandService.executeCommand(connection.getJschSession(), command);
+        sshCommandService.executeInternal(connection.getJschSession(), command);
     }
 
     /**
@@ -281,30 +281,30 @@ public class PackageManagerService {
         String pkgManager = "fedora".equals(osId) ? "dnf" : "yum";
 
         // 检查是否已是国内源
-        CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "grep -q -E \"aliyun|tuna|ustc|163\" /etc/yum.repos.d/*.repo");
 
         if (checkResult.exitStatus() == 0) {
             progressCallback.accept("/etc/yum.repos.d/ 已使用国内镜像，跳过替换");
-            sshCommandService.executeCommand(connection.getJschSession(),
+            sshCommandService.executeInternal(connection.getJschSession(),
                     String.format("sudo %s clean all && sudo %s makecache", pkgManager, pkgManager));
             return buildResult(true, "已使用国内镜像源", ALIYUN, null);
         }
 
         progressCallback.accept("备份当前 yum repo 文件...");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo mkdir -p /etc/yum.repos.d/bak");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/bak/ || true");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo mkdir -p /etc/yum.repos.d/bak");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/bak/ || true");
 
         String repoUrl = "fedora".equals(osId)
                 ? "https://mirrors.aliyun.com/fedora/fedora-$(rpm -E %fedora).repo"
                 : String.format("https://mirrors.aliyun.com/repo/Centos-%s.repo", osInfo.getOsVersionId());
 
         progressCallback.accept("下载新的 repo 文件从 " + repoUrl);
-        CommandResult downloadResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult downloadResult = sshCommandService.executeInternal(connection.getJschSession(),
                 String.format("sudo curl -o /etc/yum.repos.d/aliyun-mirror.repo %s", repoUrl));
 
         progressCallback.accept("刷新软件包缓存...");
-        CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(),
                 String.format("sudo %s clean all && sudo %s makecache", pkgManager, pkgManager));
 
         return buildResult(downloadResult.exitStatus() == 0 && updateResult.exitStatus() == 0,
@@ -321,23 +321,23 @@ public class PackageManagerService {
      */
     private PackageManagerConfigResult configureArchMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         // 检查是否已包含清华大学镜像
-        CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "grep -q \"tuna.tsinghua.edu.cn\" /etc/pacman.d/mirrorlist");
 
         if (checkResult.exitStatus() == 0) {
             progressCallback.accept("pacman mirrorlist 已包含清华大学镜像，跳过");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo pacman -Syy --noconfirm");
+            sshCommandService.executeInternal(connection.getJschSession(), "sudo pacman -Syy --noconfirm");
             return buildResult(true, "已使用国内镜像源", TUNA, null);
         }
 
         progressCallback.accept("备份 pacman mirrorlist...");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak");
 
         progressCallback.accept("将清华大学镜像源置顶...");
-        sshCommandService.executeCommand(connection.getJschSession(),
+        sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo sed -i '1s|^|Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/\\$repo/os/\\$arch\\n|' /etc/pacman.d/mirrorlist");
 
-        CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo pacman -Syy --noconfirm");
+        CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo pacman -Syy --noconfirm");
 
         return buildResult(updateResult.exitStatus() == 0, "清华大学镜像源配置完成", TUNA, "/etc/pacman.d/mirrorlist.bak");
     }
@@ -352,23 +352,23 @@ public class PackageManagerService {
      */
     private PackageManagerConfigResult configureAlpineMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         // 检查是否已使用阿里云镜像
-        CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "grep -q \"aliyun\" /etc/apk/repositories");
 
         if (checkResult.exitStatus() == 0) {
             progressCallback.accept("apk repositories 已使用国内镜像，跳过");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo apk update");
+            sshCommandService.executeInternal(connection.getJschSession(), "sudo apk update");
             return buildResult(true, "已使用国内镜像源", ALIYUN, null);
         }
 
         progressCallback.accept("备份 apk repositories...");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo cp /etc/apk/repositories /etc/apk/repositories.bak");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo cp /etc/apk/repositories /etc/apk/repositories.bak");
 
         progressCallback.accept("替换为阿里云镜像源...");
-        sshCommandService.executeCommand(connection.getJschSession(),
+        sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories");
 
-        CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo apk update");
+        CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo apk update");
 
         return buildResult(updateResult.exitStatus() == 0, "阿里云镜像源配置完成", ALIYUN, "/etc/apk/repositories.bak");
     }

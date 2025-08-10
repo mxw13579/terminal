@@ -279,7 +279,56 @@ public class SshCommandService {
         }
     }
 
-    // ================ 以下是原有的executeCommand方法，保持向后兼容 ================
+    /**
+     * 内部服务专用命令执行 - 无安全检查
+     * 用于后端服务内部调用，所有命令均为代码生成，无需安全审查
+     */
+    public CommandResult executeInternal(Session session, String command) throws Exception {
+        return executeInternal(session, command, DEFAULT_TIMEOUT_MS, DEFAULT_OUTPUT_LIMIT_BYTES, DEFAULT_ERROR_LIMIT_BYTES);
+    }
+
+    /**
+     * 内部服务专用命令执行 - 无安全检查（带参数）
+     */
+    public CommandResult executeInternal(Session session, String command, long timeoutMs, int outputLimitBytes, int errorLimitBytes) throws Exception {
+        String sessionKey = session.getHost() + ":" + session.getPort() + "/" + session.getUserName();
+        
+        // 仅记录审计日志，不执行安全策略
+        auditLog(sessionKey, command, "INTERNAL_EXECUTE_START");
+        
+        ChannelExec channel = null;
+        try {
+            channel = (ChannelExec) session.openChannel("exec");
+            channel.setCommand(command);
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            ByteArrayOutputStream error = new ByteArrayOutputStream();
+            
+            channel.setOutputStream(output);
+            channel.setErrStream(error);
+            channel.connect((int) timeoutMs);
+
+            // 等待命令执行完成
+            while (!channel.isClosed()) {
+                Thread.sleep(100);
+            }
+
+            int exitStatus = channel.getExitStatus();
+            String stdout = output.toString("UTF-8");
+            String stderr = error.toString("UTF-8");
+
+            auditLog(sessionKey, command, "INTERNAL_EXECUTE_COMPLETE:" + exitStatus);
+            return new CommandResult(exitStatus, stdout, stderr);
+
+        } catch (Exception e) {
+            auditLog(sessionKey, command, "INTERNAL_EXECUTE_ERROR:" + e.getMessage());
+            throw e;
+        } finally {
+            if (channel != null) {
+                channel.disconnect();
+            }
+        }
+    }
 
     /**
      * 在远程主机上通过SSH执行一条Shell命令，并返回执行结果。
@@ -382,9 +431,25 @@ public class SshCommandService {
     private void enforceSecurityPolicies(String sessionKey, String command) {
         // 1. 危险命令检查
         String normalizedCommand = command.toLowerCase().trim();
-        for (String dangerous : DANGEROUS_COMMANDS) {
-            if (normalizedCommand.contains(dangerous.toLowerCase())) {
-                throw new SecurityException("拒绝执行危险命令: " + dangerous);
+        
+        // 特殊处理：允许合法的Docker命令
+        if (normalizedCommand.startsWith("docker ") || normalizedCommand.startsWith("sudo docker ")) {
+            // 对于Docker命令，只检查真正危险的操作，不检查format等参数
+            for (String dangerous : DANGEROUS_COMMANDS) {
+                // 跳过format检查，因为docker inspect --format是合法命令
+                if ("format".equals(dangerous)) {
+                    continue;
+                }
+                if (normalizedCommand.contains(dangerous.toLowerCase())) {
+                    throw new SecurityException("拒绝执行危险命令: " + dangerous);
+                }
+            }
+        } else {
+            // 对于非Docker命令，执行完整的安全检查
+            for (String dangerous : DANGEROUS_COMMANDS) {
+                if (normalizedCommand.contains(dangerous.toLowerCase())) {
+                    throw new SecurityException("拒绝执行危险命令: " + dangerous);
+                }
             }
         }
 

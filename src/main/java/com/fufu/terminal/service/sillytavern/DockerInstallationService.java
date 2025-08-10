@@ -53,18 +53,18 @@ public class DockerInstallationService {
                 log.debug("检查 Docker 安装状态");
 
                 // 检查 docker 命令是否存在
-                CommandResult dockerCheck = sshCommandService.executeCommand(connection.getJschSession(), "command -v docker &> /dev/null");
+                CommandResult dockerCheck = sshCommandService.executeInternal(connection.getJschSession(), "command -v docker &> /dev/null");
 
                 if (dockerCheck.exitStatus() != 0) {
                     return DockerInstallationStatus.builder().installed(false).version("未安装").serviceRunning(false).message("Docker 未安装").build();
                 }
 
                 // 获取 Docker 版本信息
-                CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
+                CommandResult versionResult = sshCommandService.executeInternal(connection.getJschSession(), DOCKER_VERSION_COMMAND);
                 String version = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本信息获取失败";
 
                 // 检查 Docker 服务状态
-                CommandResult serviceCheck = sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl is-active docker");
+                CommandResult serviceCheck = sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl is-active docker");
                 boolean serviceRunning = serviceCheck.exitStatus() == 0 && "active".equals(serviceCheck.stdout().trim());
 
                 return DockerInstallationStatus.builder().installed(true).version(version).serviceRunning(serviceRunning).message(serviceRunning ? "Docker 已安装且运行正常" : "Docker 已安装但服务未启动").build();
@@ -135,7 +135,7 @@ public class DockerInstallationService {
      * @throws Exception 命令执行失败时抛出异常
      */
     private void executeCommandOrThrow(SshConnection connection, String command, String errorPrefix) throws Exception {
-        CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+        CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
         if (result.exitStatus() != 0) {
             throw new RuntimeException(errorPrefix + ": " + result.stderr());
         }
@@ -182,7 +182,7 @@ public class DockerInstallationService {
             }
         }
 
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
+        CommandResult versionResult = sshCommandService.executeInternal(connection.getJschSession(), DOCKER_VERSION_COMMAND);
         String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
 
         return DockerInstallationResult.builder().success(versionResult.exitStatus() == 0).message("Docker 安装成功").installedVersion(installedVersion).installationMethod(pkgManager.toUpperCase() + " 官方仓库").build();
@@ -204,7 +204,7 @@ public class DockerInstallationService {
         progressCallback.accept(String.format("在 %s 系统上安装 Docker...", methodDescription));
         executeCommandOrThrow(connection, installCommand, "Docker 安装失败");
 
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
+        CommandResult versionResult = sshCommandService.executeInternal(connection.getJschSession(), DOCKER_VERSION_COMMAND);
         String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
 
         return DockerInstallationResult.builder().success(versionResult.exitStatus() == 0).message("Docker 安装成功").installedVersion(installedVersion).installationMethod(methodDescription).build();
@@ -232,7 +232,7 @@ public class DockerInstallationService {
         // 步骤 3: 添加 Docker 官方 GPG 密钥和软件源
         progressCallback.accept("添加 Docker 官方 GPG 密钥和软件源...");
         String dockerRepoUrl = useChineseMirror ? "https://mirrors.aliyun.com/docker-ce" : "https://download.docker.com";
-        String osVersionCodename = sshCommandService.executeCommand(connection.getJschSession(), "lsb_release -cs").stdout().trim();
+        String osVersionCodename = sshCommandService.executeInternal(connection.getJschSession(), "lsb_release -cs").stdout().trim();
 
         String setupRepoCommands = String.join(" && ", "sudo install -m 0755 -d /etc/apt/keyrings", String.format("curl -fsSL \"%s/linux/%s/gpg\" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg", dockerRepoUrl, osName), "sudo chmod a+r /etc/apt/keyrings/docker.gpg", String.format("echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] %s/linux/%s %s stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null", dockerRepoUrl, osName, osVersionCodename));
         executeCommandOrThrow(connection, setupRepoCommands, "添加 Docker 软件源失败");
@@ -240,7 +240,7 @@ public class DockerInstallationService {
         progressCallback.accept("再次更新包列表并安装 Docker CE...");
         String installCommand = "sudo apt-get update && sudo apt-get install -y " + DOCKER_CE_PACKAGES;
         executeCommandOrThrow(connection, installCommand, "安装 Docker CE 失败");
-        CommandResult versionResult = sshCommandService.executeCommand(connection.getJschSession(), DOCKER_VERSION_COMMAND);
+        CommandResult versionResult = sshCommandService.executeInternal(connection.getJschSession(), DOCKER_VERSION_COMMAND);
         String installedVersion = versionResult.exitStatus() == 0 ? versionResult.stdout().trim() : "版本获取失败";
         return DockerInstallationResult.builder().success(versionResult.exitStatus() == 0).message("Docker 安装成功").installedVersion(installedVersion).installationMethod("APT 官方仓库").build();
     }
@@ -264,18 +264,18 @@ public class DockerInstallationService {
             // 改进的Docker服务启动逻辑，更好的错误处理
             try {
                 // 首先尝试启动和启用服务
-                CommandResult startResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl start docker && sudo systemctl enable docker");
+                CommandResult startResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl start docker && sudo systemctl enable docker");
 
                 if (startResult.exitStatus() != 0) {
                     progressCallback.accept("初次启动失败，尝试重置Docker服务...");
                     // 尝试重置失败的服务状态
-                    sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl reset-failed docker");
+                    sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl reset-failed docker");
 
                     // 重新加载systemd守护进程
-                    sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl daemon-reload");
+                    sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl daemon-reload");
 
                     // 再次尝试启动
-                    CommandResult retryResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl start docker && sudo systemctl enable docker");
+                    CommandResult retryResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl start docker && sudo systemctl enable docker");
 
                     if (retryResult.exitStatus() != 0) {
                         log.warn("Docker 服务启动重试失败: {}", retryResult.stderr());
@@ -291,7 +291,7 @@ public class DockerInstallationService {
                 Thread.sleep(3000);
 
                 // 验证服务状态
-                CommandResult statusCheck = sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl is-active docker");
+                CommandResult statusCheck = sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl is-active docker");
 
                 if (statusCheck.exitStatus() == 0 && "active".equals(statusCheck.stdout().trim())) {
                     progressCallback.accept("Docker 服务验证成功，状态正常");

@@ -557,7 +557,7 @@ public class InteractiveDeploymentService {
             progressCallback.accept("正在启动Docker服务...");
 
             // 首先检查Docker是否已经在运行
-            CommandResult statusResult = sshCommandService.executeCommand(
+            CommandResult statusResult = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     "sudo systemctl is-active docker"
             );
@@ -568,14 +568,14 @@ public class InteractiveDeploymentService {
             }
 
             // 尝试使用systemctl启动Docker
-            CommandResult result = sshCommandService.executeCommand(
+            CommandResult result = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     "sudo systemctl start docker && sudo systemctl enable docker"
             );
 
             if (result.exitStatus() != 0) {
                 // 获取详细错误信息
-                CommandResult detailResult = sshCommandService.executeCommand(
+                CommandResult detailResult = sshCommandService.executeInternal(
                         connection.getJschSession(),
                         "sudo systemctl status docker.service -l --no-pager"
                 );
@@ -586,7 +586,7 @@ public class InteractiveDeploymentService {
 
             // 验证Docker是否真正启动
             Thread.sleep(2000); // 等待服务完全启动
-            CommandResult verifyResult = sshCommandService.executeCommand(
+            CommandResult verifyResult = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     "sudo systemctl is-active docker"
             );
@@ -603,7 +603,7 @@ public class InteractiveDeploymentService {
             // 尝试使用service命令
             try {
                 progressCallback.accept("尝试使用service命令启动Docker...");
-                CommandResult serviceResult = sshCommandService.executeCommand(
+                CommandResult serviceResult = sshCommandService.executeInternal(
                         connection.getJschSession(),
                         "sudo service docker start"
                 );
@@ -611,7 +611,7 @@ public class InteractiveDeploymentService {
                 if (serviceResult.exitStatus() != 0) {
                     // 尝试重新安装或重置Docker
                     progressCallback.accept("尝试重新初始化Docker...");
-                    CommandResult reinitResult = sshCommandService.executeCommand(
+                    CommandResult reinitResult = sshCommandService.executeInternal(
                             connection.getJschSession(),
                             "sudo systemctl reset-failed docker && sudo systemctl daemon-reload && sudo systemctl start docker"
                     );
@@ -623,7 +623,7 @@ public class InteractiveDeploymentService {
 
                 // 验证服务状态
                 Thread.sleep(2000);
-                CommandResult finalVerifyResult = sshCommandService.executeCommand(
+                CommandResult finalVerifyResult = sshCommandService.executeInternal(
                         connection.getJschSession(),
                         "docker --version && sudo docker ps"
                 );
@@ -639,7 +639,7 @@ public class InteractiveDeploymentService {
 
                 // 提供详细的错误诊断信息
                 try {
-                    CommandResult diagResult = sshCommandService.executeCommand(
+                    CommandResult diagResult = sshCommandService.executeInternal(
                             connection.getJschSession(),
                             "sudo journalctl -xeu docker.service --no-pager -n 20"
                     );

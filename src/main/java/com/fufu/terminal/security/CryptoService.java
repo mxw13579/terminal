@@ -6,10 +6,13 @@ import org.springframework.stereotype.Service;
 
 
 import javax.crypto.Cipher;
+import javax.crypto.spec.OAEPParameterSpec;
+import javax.crypto.spec.PSource;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.spec.MGF1ParameterSpec;
 import java.util.Base64;
 
 /**
@@ -27,7 +30,7 @@ public class CryptoService {
 
     private static final int KEY_SIZE = 2048;
     private static final String ALGORITHM = "RSA";
-    private static final String TRANSFORMATION = "RSA/ECB/OAEPWITHSHA-256ANDMGF1PADDING";
+    private static final String TRANSFORMATION = "RSA/ECB/OAEPPadding";
 
     private KeyPair keyPair;
     private PublicKey publicKey;
@@ -36,22 +39,28 @@ public class CryptoService {
     /**
      * 初始化RSA密钥对。
      * 在服务启动时自动执行，生成2048位RSA密钥对用于加密解密操作。
+     *
+     * 使用显式的 SecureRandom 以提升随机性可控性和安全性。
+     *
+     * @throws IllegalStateException 当密钥生成失败时抛出
      */
     @PostConstruct
     public void generateKeys() {
         try {
             log.info("开始生成RSA-{} 密钥对...", KEY_SIZE);
             KeyPairGenerator generator = KeyPairGenerator.getInstance(ALGORITHM);
-            generator.initialize(KEY_SIZE);
-
+            // 显式提供 SecureRandom，避免依赖不明确的默认实现
+            generator.initialize(KEY_SIZE, new java.security.SecureRandom());
             this.keyPair = generator.generateKeyPair();
             this.publicKey = keyPair.getPublic();
             this.privateKey = keyPair.getPrivate();
-
-            log.info("RSA密钥对生成成功，算法: {}，密钥长度: {} bits",
-                    publicKey.getAlgorithm(), KEY_SIZE);
-            log.debug("公钥格式: {}", publicKey.getFormat());
-
+            if (log.isInfoEnabled()) {
+                log.info("RSA密钥对生成成功，算法: {}，密钥长度: {} bits",
+                        publicKey.getAlgorithm(), KEY_SIZE);
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("公钥格式: {}", publicKey.getFormat());
+            }
         } catch (Exception e) {
             log.error("生成RSA密钥对失败: {}", e.getMessage(), e);
             throw new IllegalStateException("无法初始化加密服务", e);
@@ -84,39 +93,51 @@ public class CryptoService {
      * 支持的凭据格式应包含 host、port、user、password 字段。
      * </p>
      *
+     * 变更点：
+     * 1) 使用 String.isBlank 简化判空；
+     * 2) 使用 StandardCharsets.UTF_8 避免字符集查找与潜在异常；
+     * 3) 保持 Base64 的 IllegalArgumentException 独立捕获，边界更清晰。
+     *
      * @param encryptedData Base64编码的加密数据
      * @return 解密后的凭据JSON字符串
      * @throws IllegalArgumentException 如果加密数据无效
      * @throws IllegalStateException 如果解密过程失败
      */
     public String decryptCredentials(String encryptedData) {
-        if (encryptedData == null || encryptedData.trim().isEmpty()) {
+        if (encryptedData == null || encryptedData.isBlank()) {
             throw new IllegalArgumentException("加密数据不能为空");
         }
-
         if (privateKey == null) {
             throw new IllegalStateException("RSA私钥尚未初始化");
         }
-
         try {
-            log.debug("开始解密凭据数据，数据长度: {} 字符", encryptedData.length());
-
+            if (log.isDebugEnabled()) {
+                log.debug("开始解密凭据数据，数据长度: {} 字符", encryptedData.length());
+            }
             // Base64解码
-            byte[] encryptedBytes = Base64.getDecoder().decode(encryptedData);
-            log.debug("解码后的加密数据长度: {} 字节", encryptedBytes.length);
-
-            // RSA解密
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.DECRYPT_MODE, privateKey);
-            byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
-
-            String decryptedData = new String(decryptedBytes, "UTF-8");
-            log.debug("凭据解密成功，解密后数据长度: {} 字符", decryptedData.length());
-
+            final byte[] encryptedBytes = Base64.getDecoder().decode(encryptedData);
+            if (log.isDebugEnabled()) {
+                log.debug("解码后的加密数据长度: {} 字节", encryptedBytes.length);
+            }
+            // RSA解密 - 使用OAEP参数规格以确保与前端Web Crypto API兼容
+            final Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            // 配置OAEP参数以匹配前端RSA-OAEP + SHA-256
+            final OAEPParameterSpec oaepParams = new OAEPParameterSpec(
+                    "SHA-256",
+                    "MGF1",
+                    MGF1ParameterSpec.SHA256,
+                    PSource.PSpecified.DEFAULT
+            );
+            cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
+            final byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
+            final String decryptedData = new String(decryptedBytes, java.nio.charset.StandardCharsets.UTF_8);
+            if (log.isDebugEnabled()) {
+                log.debug("凭据解密成功，解密后数据长度: {} 字符", decryptedData.length());
+            }
             // 注意：不记录解密后的内容，避免敏感信息泄露到日志
             return decryptedData;
-
         } catch (IllegalArgumentException e) {
+            // Base64解码失败
             log.warn("Base64解码失败: {}", e.getMessage());
             throw new IllegalArgumentException("无效的加密数据格式", e);
         } catch (Exception e) {
@@ -128,22 +149,25 @@ public class CryptoService {
     /**
      * 验证密钥是否已正确初始化。
      *
-     * @return 如果密钥对已初始化则返回true
+     * @return 如果公钥和私钥均已初始化则返回true
      */
     public boolean isInitialized() {
-        return keyPair != null && publicKey != null && privateKey != null;
+        return publicKey != null && privateKey != null;
     }
-
     /**
      * 获取密钥算法信息（用于调试和监控）。
      *
-     * @return 包含密钥算法和长度信息的字符串
+     * @return 包含密钥算法和长度信息的字符串；未初始化时返回“密钥未初始化”
      */
     public String getKeyInfo() {
         if (!isInitialized()) {
             return "密钥未初始化";
         }
-        return String.format("算法: %s, 长度: %d bits, 格式: %s",
-                publicKey.getAlgorithm(), KEY_SIZE, publicKey.getFormat());
+        // 避免 String.format 的格式化开销，使用直连/构建更轻量
+        StringBuilder sb = new StringBuilder(32);
+        sb.append("算法: ").append(publicKey.getAlgorithm())
+                .append(", 长度: ").append(KEY_SIZE).append(" bits")
+                .append(", 格式: ").append(publicKey.getFormat());
+        return sb.toString();
     }
 }

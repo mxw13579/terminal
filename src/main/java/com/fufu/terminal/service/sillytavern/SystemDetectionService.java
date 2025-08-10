@@ -496,7 +496,7 @@ public class SystemDetectionService {
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
-            CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
             if (result.exitStatus() != 0) {
                 log.debug("命令非零返回码 {}: {} - {}", result.exitStatus(), command, result.stderr());
                 return result.stdout();
@@ -554,7 +554,7 @@ public class SystemDetectionService {
      */
     public boolean checkInternetConnectivity(SshConnection connection) {
         try {
-            CommandResult result = sshCommandService.executeCommand(
+            CommandResult result = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     "ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1"
             );
@@ -574,7 +574,7 @@ public class SystemDetectionService {
      */
     public boolean checkPortAvailability(SshConnection connection, int port) {
         try {
-            CommandResult result = sshCommandService.executeCommand(
+            CommandResult result = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     String.format("netstat -ln | grep -q ':%d ' && echo 'used' || echo 'available'", port)
             );

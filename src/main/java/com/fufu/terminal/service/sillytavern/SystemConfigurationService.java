@@ -131,13 +131,13 @@ public class SystemConfigurationService {
         executeCommandOrThrow(connection, fixCommand, "修复 Debian 11 源文件失败");
 
         // 写入 apt 配置，允许 insecure 源
-        sshCommandService.executeCommand(
+        sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "echo 'Acquire::AllowInsecureRepositories \"true\";' | sudo tee /etc/apt/apt.conf.d/99no-check-release > /dev/null"
         );
 
         progressCallback.accept("更新软件包索引 (使用归档源)...");
-        CommandResult updateResult = sshCommandService.executeCommand(
+        CommandResult updateResult = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo apt-get update --allow-insecure-repositories -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false"
         );
@@ -215,7 +215,7 @@ public class SystemConfigurationService {
 
         // 备份现有源文件
         progressCallback.accept("备份当前 sources.list...");
-        sshCommandService.executeCommand(
+        sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%%s)"
         );
@@ -244,7 +244,7 @@ public class SystemConfigurationService {
 
         // 写入新的sources.list
         String writeCommand = String.format("echo '%s' | sudo tee /etc/apt/sources.list > /dev/null", sourcesContent);
-        CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeCommand);
+        CommandResult writeResult = sshCommandService.executeInternal(connection.getJschSession(), writeCommand);
         if (writeResult.exitStatus() != 0) {
             progressCallback.accept("写入sources.list失败");
             return false;
@@ -252,7 +252,7 @@ public class SystemConfigurationService {
 
         progressCallback.accept("更新软件包索引...");
         // 为归档源添加特殊参数，对正常源无害
-        CommandResult updateResult = sshCommandService.executeCommand(
+        CommandResult updateResult = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false"
         );
@@ -335,11 +335,11 @@ public class SystemConfigurationService {
      */
     private boolean configureFedoraMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("备份现有仓库配置...");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo mkdir -p /etc/yum.repos.d/backup");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo mkdir -p /etc/yum.repos.d/backup");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/");
 
         progressCallback.accept("下载阿里云Fedora仓库配置...");
-        CommandResult result = sshCommandService.executeCommand(
+        CommandResult result = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo wget -O /etc/yum.repos.d/fedora.repo http://mirrors.aliyun.com/repo/fedora.repo && " +
                 "sudo wget -O /etc/yum.repos.d/fedora-updates.repo http://mirrors.aliyun.com/repo/fedora-updates.repo"
@@ -347,11 +347,11 @@ public class SystemConfigurationService {
 
         if (result.exitStatus() == 0) {
             progressCallback.accept("刷新软件包缓存...");
-            CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo dnf makecache");
+            CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo dnf makecache");
             return updateResult.exitStatus() == 0;
         } else {
             progressCallback.accept("下载仓库配置失败，恢复备份...");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo mv /etc/yum.repos.d/backup/*.repo /etc/yum.repos.d/");
+            sshCommandService.executeInternal(connection.getJschSession(), "sudo mv /etc/yum.repos.d/backup/*.repo /etc/yum.repos.d/");
             return false;
         }
     }
@@ -365,22 +365,22 @@ public class SystemConfigurationService {
      */
     private boolean configureCentOSMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("备份现有仓库配置...");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo mkdir -p /etc/yum.repos.d/backup");
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo mv /etc/yum.repos.d/CentOS-*.repo /etc/yum.repos.d/backup/");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo mkdir -p /etc/yum.repos.d/backup");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo mv /etc/yum.repos.d/CentOS-*.repo /etc/yum.repos.d/backup/");
 
         progressCallback.accept("下载阿里云CentOS仓库配置...");
-        CommandResult result = sshCommandService.executeCommand(
+        CommandResult result = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo"
         );
 
         if (result.exitStatus() == 0) {
             progressCallback.accept("刷新软件包缓存...");
-            CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo yum makecache");
+            CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo yum makecache");
             return updateResult.exitStatus() == 0;
         } else {
             progressCallback.accept("下载仓库配置失败，恢复备份...");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo mv /etc/yum.repos.d/backup/*.repo /etc/yum.repos.d/");
+            sshCommandService.executeInternal(connection.getJschSession(), "sudo mv /etc/yum.repos.d/backup/*.repo /etc/yum.repos.d/");
             return false;
         }
     }
@@ -395,21 +395,21 @@ public class SystemConfigurationService {
     private boolean configureArchMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("配置Arch Linux中国镜像源...");
 
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak");
 
         String mirrorlistContent =
                 "Server = https://mirrors.aliyun.com/archlinux/$repo/os/$arch\n" +
                 "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch\n" +
                 "Server = https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch\n";
 
-        CommandResult result = sshCommandService.executeCommand(
+        CommandResult result = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 String.format("sudo tee /etc/pacman.d/mirrorlist > /dev/null << 'EOF'\n%sEOF", mirrorlistContent)
         );
 
         if (result.exitStatus() == 0) {
             progressCallback.accept("更新软件包数据库...");
-            CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo pacman -Sy");
+            CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo pacman -Sy");
             return updateResult.exitStatus() == 0;
         }
         return false;
@@ -425,9 +425,9 @@ public class SystemConfigurationService {
     private boolean configureAlpineMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("配置Alpine Linux中国镜像源...");
 
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo cp /etc/apk/repositories /etc/apk/repositories.bak");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo cp /etc/apk/repositories /etc/apk/repositories.bak");
 
-        CommandResult versionResult = sshCommandService.executeCommand(
+        CommandResult versionResult = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "cat /etc/alpine-release | cut -d'.' -f1,2"
         );
@@ -440,14 +440,14 @@ public class SystemConfigurationService {
                 version, version
         );
 
-        CommandResult result = sshCommandService.executeCommand(
+        CommandResult result = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 String.format("sudo tee /etc/apk/repositories > /dev/null << 'EOF'\n%sEOF", repositoriesContent)
         );
 
         if (result.exitStatus() == 0) {
             progressCallback.accept("更新软件包索引...");
-            CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo apk update");
+            CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo apk update");
             return updateResult.exitStatus() == 0;
         }
         return false;
@@ -463,7 +463,7 @@ public class SystemConfigurationService {
     private boolean configureSuseMirrors(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("配置SUSE中国镜像源（基本支持）...");
 
-        CommandResult result = sshCommandService.executeCommand(
+        CommandResult result = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo zypper ar -f https://mirrors.aliyun.com/opensuse/distribution/leap/\\$releasever/repo/oss/ aliyun-oss && " +
                 "sudo zypper ar -f https://mirrors.aliyun.com/opensuse/distribution/leap/\\$releasever/repo/non-oss/ aliyun-non-oss"
@@ -471,7 +471,7 @@ public class SystemConfigurationService {
 
         if (result.exitStatus() == 0) {
             progressCallback.accept("刷新软件包缓存...");
-            CommandResult updateResult = sshCommandService.executeCommand(connection.getJschSession(), "sudo zypper refresh");
+            CommandResult updateResult = sshCommandService.executeInternal(connection.getJschSession(), "sudo zypper refresh");
             return updateResult.exitStatus() == 0;
         }
         return false;

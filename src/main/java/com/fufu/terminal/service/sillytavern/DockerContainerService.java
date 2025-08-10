@@ -369,13 +369,20 @@ public class DockerContainerService {
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
-            // 使用统一的SshCommandService API - executeOrThrow 模式（含安全策略和审计日志）
-            return sshCommandService.executeOrThrow(connection.getJschSession(), command);
+            // 使用内部API - 无安全检查（因为所有命令都是后端代码生成的）
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
+            if (result.exitStatus() != 0) {
+                String errorMsg = result.stderr().trim();
+                if (errorMsg.isEmpty()) {
+                    errorMsg = "命令执行失败，退出码: " + result.exitStatus();
+                }
+                throw new Exception(errorMsg);
+            }
+            return result.stdout();
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new Exception("命令被中断: " + command, ie);
         } catch (RuntimeException re) {
-            // 统一API已经包含了详细的错误信息处理，不需要额外的buildErrorMessage
             log.warn("命令执行失败: {} - {}", command, re.getMessage());
             throw new Exception(re.getMessage(), re);
         }

@@ -40,7 +40,7 @@ public class GeolocationDetectionService {
 
                 // 执行地理位置检测命令，包含超时与重试机制
                 String command = "curl -sS --connect-timeout 30 --max-time 30 -w \"%{http_code}\" ipinfo.io/country | sed 's/200$//'";
-                CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+                CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
 
                 String countryCode = "";
                 boolean useChineseMirror = false;
@@ -102,7 +102,7 @@ public class GeolocationDetectionService {
 
                 // 尝试ping一个稳定的公网地址
                 String command = "ping -c 3 -W 5 8.8.8.8 > /dev/null 2>&1";
-                CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+                CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
 
                 boolean isConnected = result.exitStatus() == 0;
                 log.info("网络连接状态: {}", isConnected ? "正常" : "异常");

@@ -112,7 +112,7 @@ public class DockerMirrorService {
      */
     private boolean isDockerMirrorAlreadyConfigured(SshConnection connection) {
         try {
-            CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "grep -q \"registry-mirrors\" /etc/docker/daemon.json 2>/dev/null");
             return checkResult.exitStatus() == 0;
         } catch (Exception e) {
@@ -149,10 +149,10 @@ public class DockerMirrorService {
      */
     private void restartDockerService(SshConnection connection) throws Exception {
         // 重新加载systemd配置
-        sshCommandService.executeCommand(connection.getJschSession(), "sudo systemctl daemon-reload");
+        sshCommandService.executeInternal(connection.getJschSession(), "sudo systemctl daemon-reload");
 
         // 重启Docker服务
-        CommandResult restartResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult restartResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo systemctl restart docker");
 
         if (restartResult.exitStatus() != 0) {
@@ -163,7 +163,7 @@ public class DockerMirrorService {
         Thread.sleep(3000);
 
         // 验证Docker服务状态
-        CommandResult statusResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult statusResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo systemctl is-active docker");
 
         if (statusResult.exitStatus() != 0 || !"active".equals(statusResult.stdout().trim())) {
@@ -182,7 +182,7 @@ public class DockerMirrorService {
         try {
             // 使用 docker info --format 精确获取镜像配置，避免因版本更新导致输出格式变化
             String command = "sudo docker info --format '{{.RegistryConfig.Mirrors}}'";
-            CommandResult infoResult = sshCommandService.executeCommand(connection.getJschSession(), command);
+            CommandResult infoResult = sshCommandService.executeInternal(connection.getJschSession(), command);
 
             // 检查命令是否成功执行，并且输出中是否包含我们配置的镜像之一
             return infoResult.exitStatus() == 0 && infoResult.stdout().contains("hub-mirror.c.163.com");
@@ -206,7 +206,7 @@ public class DockerMirrorService {
             try {
                 // 使用 --format 精确提取镜像列表，比 grep 更稳定
                 String command = "sudo docker info --format '{{json .RegistryConfig.Mirrors}}'";
-                CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+                CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
 
                 if (result.exitStatus() == 0 && !result.stdout().trim().isEmpty()) {
                     // 对输出进行清理，去除可能存在的方括号和引号
@@ -241,7 +241,7 @@ public class DockerMirrorService {
                 long startTime = System.currentTimeMillis();
 
                 // 拉取一个很小的测试镜像（hello-world）
-                CommandResult pullResult = sshCommandService.executeCommand(connection.getJschSession(),
+                CommandResult pullResult = sshCommandService.executeInternal(connection.getJschSession(),
                         "sudo docker pull hello-world:latest");
 
                 long endTime = System.currentTimeMillis();
@@ -256,7 +256,7 @@ public class DockerMirrorService {
 
                 // 清理测试镜像
                 if (success) {
-                    sshCommandService.executeCommand(connection.getJschSession(),
+                    sshCommandService.executeInternal(connection.getJschSession(),
                             "sudo docker rmi hello-world:latest > /dev/null 2>&1 || true");
                 }
 
@@ -389,7 +389,7 @@ public class DockerMirrorService {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 progressCallback.accept("检查Docker配置文件格式...");
-                CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(),
+                CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(),
                         "sudo python3 -m json.tool /etc/docker/daemon.json > /dev/null 2>&1");
                 if (checkResult.exitStatus() == 0) {
                     progressCallback.accept("Docker配置文件格式正确");
@@ -405,7 +405,7 @@ public class DockerMirrorService {
                     return false;
                 }
                 // 备份可能已损坏的配置文件
-                sshCommandService.executeCommand(connection.getJschSession(),
+                sshCommandService.executeInternal(connection.getJschSession(),
                         "sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup_$(date +%s) 2>/dev/null || true");
                 // 重新生成并写入配置文件
                 writeDockerConfig(connection, availableMirrors, progressCallback);
@@ -430,13 +430,13 @@ public class DockerMirrorService {
     private void writeDockerConfig(SshConnection connection, List<String> mirrors, Consumer<String> progressCallback) {
         try {
             progressCallback.accept("创建Docker配置目录...");
-            sshCommandService.executeCommand(connection.getJschSession(), "sudo mkdir -p /etc/docker");
+            sshCommandService.executeInternal(connection.getJschSession(), "sudo mkdir -p /etc/docker");
             String daemonJsonContent = generateDaemonJsonContent(mirrors);
             progressCallback.accept("使用可用镜像源写入Docker配置...");
             // 使用 tee 和 here document 安全地写入多行文本，避免转义问题
             String writeConfigCommand = String.format(
                     "echo '%s' | sudo tee /etc/docker/daemon.json", daemonJsonContent);
-            CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeConfigCommand);
+            CommandResult writeResult = sshCommandService.executeInternal(connection.getJschSession(), writeConfigCommand);
             if (writeResult.exitStatus() != 0) {
                 throw new RuntimeException("写入Docker配置文件失败: " + writeResult.stderr());
             }
@@ -482,7 +482,7 @@ public class DockerMirrorService {
                 // 使用 curl 的 --head 选项进行轻量级检查，-L 跟随重定向，-m 设置5秒超时
                 String command = String.format("curl -s -L --head -m 5 %s", host);
                 progressCallback.accept(String.format("正在检查镜像源 %s 的可用性...", host));
-                CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+                CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
                 // 命令成功执行且有输出，通常表示网络可达
                 if (result.exitStatus() == 0 && !result.stdout().isBlank()) {
                     progressCallback.accept(String.format("镜像源 %s 可用", host));

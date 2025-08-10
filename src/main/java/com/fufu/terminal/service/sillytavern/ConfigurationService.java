@@ -44,7 +44,7 @@ public class ConfigurationService {
 
     private static final String DEFAULT_CONFIG_PATH = "/data/docker/sillytavern/config.yaml";
     private static final String BACKUP_PATH_TEMPLATE = "/data/docker/sillytavern/config.yaml.backup.%s";
-    private static final String DEPLOYMENT_INFO_PATH = "/data/docker/sillytavem/deployment-info.json";
+    private static final String DEPLOYMENT_INFO_PATH = "/data/docker/sillytavern/deployment-info.json";
 
     /**
      * 获取指定容器的独占锁。
@@ -112,24 +112,24 @@ public class ConfigurationService {
      */
     private ConfigurationDto parseDeploymentInfo(String deployInfoContent) throws Exception {
         DeploymentInfoDto deploymentInfo = objectMapper.readValue(deployInfoContent, DeploymentInfoDto.class);
-        
+
         ConfigurationDto config = new ConfigurationDto();
-        
+
         if (deploymentInfo.getAuthentication() != null) {
             config.setUsername(deploymentInfo.getAuthentication().getUsername());
             config.setPassword(deploymentInfo.getAuthentication().getPassword());
-            config.setHasPassword(deploymentInfo.getAuthentication().getPassword() != null && 
+            config.setHasPassword(deploymentInfo.getAuthentication().getPassword() != null &&
                                  !deploymentInfo.getAuthentication().getPassword().isEmpty());
         }
-        
+
         if (deploymentInfo.getPorts() != null) {
             // 优先使用NAT外部端口，否则使用外部端口
-            Integer displayPort = deploymentInfo.getPorts().getNatExternal() != null 
+            Integer displayPort = deploymentInfo.getPorts().getNatExternal() != null
                 ? deploymentInfo.getPorts().getNatExternal()
                 : deploymentInfo.getPorts().getExternal();
             config.setPort(displayPort);
         }
-        
+
         // 存储完整的部署信息用于状态显示
         Map<String, String> otherSettings = new HashMap<>();
         if (deploymentInfo.getNetwork() != null) {
@@ -143,7 +143,7 @@ public class ConfigurationService {
             otherSettings.put("environment", deploymentInfo.getDeployment().getEnvironment());
         }
         config.setOtherSettings(otherSettings);
-        
+
         return config;
     }
 
@@ -497,8 +497,16 @@ public class ConfigurationService {
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
-            // 使用统一的SshCommandService API - executeOrThrow 模式
-            return sshCommandService.executeOrThrow(connection.getJschSession(), command);
+            // 使用内部API - 无安全检查（因为所有命令都是后端代码生成的）
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
+            if (result.exitStatus() != 0) {
+                String errorMsg = result.stderr().trim();
+                if (errorMsg.isEmpty()) {
+                    errorMsg = "命令执行失败，退出码: " + result.exitStatus();
+                }
+                throw new Exception(errorMsg);
+            }
+            return result.stdout();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Exception("命令执行被中断: " + command, e);

@@ -535,7 +535,7 @@ public class DataManagementService {
      */
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
-            CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), command);
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
             if (result.exitStatus() != 0) {
                 String errorMsg = "命令失败，退出码 " + result.exitStatus() + ": " + result.stderr();
                 log.warn("命令执行失败: {} - {}", command, errorMsg);

@@ -18,7 +18,9 @@
       "Bash(npm run build:*)",
       "Bash(mkdir:*)",
       "Bash(npm:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(powershell:*)",
+      "Bash(dir:*)"
     ],
     "deny": []
   }

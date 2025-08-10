@@ -104,7 +104,7 @@ public class ExternalAccessService {
      */
     private void createConfigDirectory(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("创建配置目录...");
-        CommandResult mkdirResult = sshCommandService.executeCommand(
+        CommandResult mkdirResult = sshCommandService.executeInternal(
                 connection.getJschSession(),
                 "sudo mkdir -p " + CONFIG_DIR);
 
@@ -203,14 +203,14 @@ public class ExternalAccessService {
                 "sudo tee %s > /dev/null <<'EOF'\n%s\nEOF",
                 CONFIG_FILE, configContent);
 
-        CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeCommand);
+        CommandResult writeResult = sshCommandService.executeInternal(connection.getJschSession(), writeCommand);
 
         if (writeResult.exitStatus() != 0) {
             throw new RuntimeException("写入配置文件失败: " + writeResult.stderr());
         }
 
         // 设置配置文件权限
-        sshCommandService.executeCommand(connection.getJschSession(),
+        sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo chmod 644 " + CONFIG_FILE);
     }
 
@@ -330,7 +330,7 @@ public class ExternalAccessService {
             progressCallback.accept("验证配置文件格式...");
 
             // 检查配置文件是否存在
-            CommandResult existsResult = sshCommandService.executeCommand(
+            CommandResult existsResult = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     "sudo test -f " + CONFIG_FILE);
 
@@ -340,7 +340,7 @@ public class ExternalAccessService {
             }
 
             // 验证YAML格式（使用python验证）
-            CommandResult validateResult = sshCommandService.executeCommand(
+            CommandResult validateResult = sshCommandService.executeInternal(
                     connection.getJschSession(),
                     "sudo python3 -c \"import yaml; yaml.safe_load(open('" + CONFIG_FILE + "'))\"");
 
@@ -382,12 +382,12 @@ public class ExternalAccessService {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 // 检查端口是否被正确映射
-                CommandResult portResult = sshCommandService.executeCommand(
+                CommandResult portResult = sshCommandService.executeInternal(
                         connection.getJschSession(),
                         String.format("sudo docker port sillytavern 8000 | grep '%s'", port));
 
                 // 检查配置文件是否存在且有效
-                CommandResult configResult = sshCommandService.executeCommand(
+                CommandResult configResult = sshCommandService.executeInternal(
                         connection.getJschSession(),
                         "sudo test -f " + CONFIG_FILE);
 

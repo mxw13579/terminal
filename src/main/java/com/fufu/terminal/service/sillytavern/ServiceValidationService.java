@@ -98,7 +98,7 @@ public class ServiceValidationService {
     private boolean validateContainerStatus(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("检查Docker容器状态...");
 
-        CommandResult statusResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult statusResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo docker ps --filter name=sillytavern --format \"{{.Status}}\"");
 
         if (statusResult.exitStatus() == 0 && statusResult.stdout().contains("Up")) {
@@ -108,7 +108,7 @@ public class ServiceValidationService {
             progressCallback.accept("❌ SillyTavern容器未运行或状态异常");
 
             // 获取容器详细状态
-            CommandResult detailResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult detailResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "sudo docker ps -a --filter name=sillytavern --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\"");
 
             if (detailResult.exitStatus() == 0) {
@@ -132,14 +132,14 @@ public class ServiceValidationService {
         progressCallback.accept("检查端口监听状态...");
 
         // 检查容器端口映射
-        CommandResult portMappingResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult portMappingResult = sshCommandService.executeInternal(connection.getJschSession(),
                 String.format("sudo docker port sillytavern 8000 2>/dev/null | grep ':%s'", expectedPort));
 
         if (portMappingResult.exitStatus() == 0) {
             progressCallback.accept("✅ 端口映射正常: " + portMappingResult.stdout().trim());
 
             // 进一步检查系统端口监听
-            CommandResult systemPortResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult systemPortResult = sshCommandService.executeInternal(connection.getJschSession(),
                     String.format("sudo netstat -tuln | grep ':%s '", expectedPort));
 
             if (systemPortResult.exitStatus() == 0) {
@@ -168,7 +168,7 @@ public class ServiceValidationService {
         progressCallback.accept("测试HTTP服务响应...");
 
         // 测试本地访问
-        CommandResult httpResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult httpResult = sshCommandService.executeInternal(connection.getJschSession(),
                 String.format("curl -s -o /dev/null -w \"%%{http_code}\" --connect-timeout 10 http://localhost:%s/ 2>/dev/null", expectedPort));
 
         if (httpResult.exitStatus() == 0) {
@@ -198,14 +198,14 @@ public class ServiceValidationService {
         progressCallback.accept("验证配置文件...");
 
         // 检查配置文件是否存在
-        CommandResult configExistsResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult configExistsResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo test -f /data/docker/sillytavern/config/config.yaml");
 
         if (configExistsResult.exitStatus() == 0) {
             progressCallback.accept("✅ 配置文件存在");
 
             // 验证配置文件格式
-            CommandResult yamlValidResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult yamlValidResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "sudo python3 -c \"import yaml; yaml.safe_load(open('/data/docker/sillytavern/config/config.yaml'))\" 2>/dev/null");
 
             if (yamlValidResult.exitStatus() == 0) {
@@ -260,7 +260,7 @@ public class ServiceValidationService {
      */
     private String getPublicIp(SshConnection connection) {
         try {
-            CommandResult ipResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult ipResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "curl -sS --connect-timeout 10 ipinfo.io | grep '\"ip\":' | cut -d'\"' -f4");
 
             if (ipResult.exitStatus() == 0 && !ipResult.stdout().trim().isEmpty()) {
@@ -280,7 +280,7 @@ public class ServiceValidationService {
      */
     private String getPrivateIp(SshConnection connection) {
         try {
-            CommandResult ipResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult ipResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "hostname -I | awk '{print $1}'");
 
             if (ipResult.exitStatus() == 0 && !ipResult.stdout().trim().isEmpty()) {
@@ -300,7 +300,7 @@ public class ServiceValidationService {
      */
     private boolean checkBasicAuthConfig(SshConnection connection) {
         try {
-            CommandResult authResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult authResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "sudo grep -q 'basicAuthMode: true' /data/docker/sillytavern/config/config.yaml 2>/dev/null");
 
             return authResult.exitStatus() == 0;
@@ -345,7 +345,7 @@ public class ServiceValidationService {
     public CompletableFuture<Boolean> quickHealthCheck(SshConnection connection) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                CommandResult statusResult = sshCommandService.executeCommand(connection.getJschSession(),
+                CommandResult statusResult = sshCommandService.executeInternal(connection.getJschSession(),
                         "sudo docker ps --filter name=sillytavern --format \"{{.Status}}\"");
 
                 return statusResult.exitStatus() == 0 && statusResult.stdout().contains("Up");

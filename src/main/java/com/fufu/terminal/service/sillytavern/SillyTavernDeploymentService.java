@@ -55,13 +55,13 @@ public class SillyTavernDeploymentService {
         }
         try {
             // 优先检测 docker compose
-            CommandResult result = sshCommandService.executeCommand(connection.getJschSession(), "docker compose version");
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), "docker compose version");
             if (result.exitStatus() == 0) {
                 cachedComposeCommand = "docker compose";
                 return cachedComposeCommand;
             }
             // 再检测 docker-compose
-            result = sshCommandService.executeCommand(connection.getJschSession(), "docker-compose version");
+            result = sshCommandService.executeInternal(connection.getJschSession(), "docker-compose version");
             if (result.exitStatus() == 0) {
                 cachedComposeCommand = "docker-compose";
                 return cachedComposeCommand;
@@ -136,7 +136,7 @@ public class SillyTavernDeploymentService {
     private void createDeploymentDirectory(SshConnection connection, Consumer<String> progressCallback) throws Exception {
         progressCallback.accept("创建SillyTavern部署目录...");
 
-        CommandResult mkdirResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult mkdirResult = sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo mkdir -p " + DEPLOYMENT_PATH);
 
         if (mkdirResult.exitStatus() != 0) {
@@ -144,7 +144,7 @@ public class SillyTavernDeploymentService {
         }
 
         // 设置目录权限
-        sshCommandService.executeCommand(connection.getJschSession(),
+        sshCommandService.executeInternal(connection.getJschSession(),
                 "sudo chmod 755 " + DEPLOYMENT_PATH);
     }
 
@@ -184,7 +184,7 @@ public class SillyTavernDeploymentService {
                 "sudo tee %s > /dev/null <<'EOF'\n%s\nEOF",
                 DOCKER_COMPOSE_FILE, dockerComposeContent);
 
-        CommandResult writeResult = sshCommandService.executeCommand(connection.getJschSession(), writeCommand);
+        CommandResult writeResult = sshCommandService.executeInternal(connection.getJschSession(), writeCommand);
 
         if (writeResult.exitStatus() != 0) {
             throw new RuntimeException("写入docker-compose.yaml失败: " + writeResult.stderr());
@@ -246,7 +246,7 @@ public class SillyTavernDeploymentService {
         String composeCmd = detectDockerComposeCommand(connection);
         // 切换到部署目录并拉取镜像
         String pullCommand = String.format("cd %s && sudo %s pull", DEPLOYMENT_PATH, composeCmd);
-        CommandResult pullResult = sshCommandService.executeCommand(connection.getJschSession(), pullCommand);
+        CommandResult pullResult = sshCommandService.executeInternal(connection.getJschSession(), pullCommand);
         if (pullResult.exitStatus() == 0) {
             progressCallback.accept("✅ 镜像拉取成功");
         } else {
@@ -269,7 +269,7 @@ public class SillyTavernDeploymentService {
         // 检测 compose 命令
         String composeCmd = detectDockerComposeCommand(connection);
         String startCommand = String.format("cd %s && sudo %s up -d", DEPLOYMENT_PATH, composeCmd);
-        CommandResult startResult = sshCommandService.executeCommand(connection.getJschSession(), startCommand);
+        CommandResult startResult = sshCommandService.executeInternal(connection.getJschSession(), startCommand);
         if (startResult.exitStatus() != 0) {
             throw new RuntimeException("启动容器失败: " + startResult.stderr());
         }
@@ -294,7 +294,7 @@ public class SillyTavernDeploymentService {
         progressCallback.accept("验证部署结果...");
 
         // 检查容器状态
-        CommandResult statusResult = sshCommandService.executeCommand(connection.getJschSession(),
+        CommandResult statusResult = sshCommandService.executeInternal(connection.getJschSession(),
                 String.format("sudo docker ps --filter name=%s --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\"", CONTAINER_NAME));
 
         boolean containerRunning = statusResult.exitStatus() == 0 &&
@@ -327,7 +327,7 @@ public class SillyTavernDeploymentService {
      */
     private String getServerPublicIp(SshConnection connection) {
         try {
-            CommandResult ipResult = sshCommandService.executeCommand(connection.getJschSession(),
+            CommandResult ipResult = sshCommandService.executeInternal(connection.getJschSession(),
                     "curl -sS ipinfo.io | grep '\"ip\":' | cut -d'\"' -f4");
 
             if (ipResult.exitStatus() == 0 && !ipResult.stdout().trim().isEmpty()) {
@@ -382,7 +382,7 @@ public class SillyTavernDeploymentService {
             try {
                 // 检查端口是否被占用，若无输出则可用
                 String checkCmd = String.format("sudo netstat -tuln | awk '{print $4}' | grep -w ':%s$'", port);
-                CommandResult checkResult = sshCommandService.executeCommand(connection.getJschSession(), checkCmd);
+                CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(), checkCmd);
 
                 // 如果命令返回结果，说明端口被占用
                 return checkResult.exitStatus() != 0 || checkResult.stdout().trim().isEmpty();

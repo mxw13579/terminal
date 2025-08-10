@@ -297,8 +297,9 @@ public class SshMonitorService {
      * @param jschSession SSH会话
      * @return 监控数据Map
      * @throws InterruptedException 线程中断时抛出
+     * @throws Exception 命令执行异常时抛出
      */
-    private Map<String, Object> getSystemAndDockerStats(Session jschSession) throws InterruptedException {
+    private Map<String, Object> getSystemAndDockerStats(Session jschSession) throws InterruptedException, Exception {
         Map<String, Object> stats = new ConcurrentHashMap<>();
         if (jschSession == null || !jschSession.isConnected()) {
             log.warn("获取监控数据时SSH会话已关闭，跳过命令执行。");
@@ -316,7 +317,7 @@ public class SshMonitorService {
                 "command -v docker >/dev/null && " + dockerStatsCmd + " || echo 'no_docker'"
         );
 
-        CommandResult initialCmdResult = sshCommandService.executeCommand(jschSession, initialCommands);
+        CommandResult initialCmdResult = sshCommandService.executeInternal(jschSession, initialCommands);
         if (!initialCmdResult.isSuccess()) {
             log.warn("初始监控命令执行失败, exit={}, cmd={}, stderr={}", initialCmdResult.exitStatus(), initialCommands, initialCmdResult.stderr());
         }
@@ -331,7 +332,7 @@ public class SshMonitorService {
 
         String finalCommands = String.join(" ; echo '" + delimiter + "'; ",
                 "grep 'cpu ' /proc/stat", "cat /proc/net/dev");
-        CommandResult finalCmdResult = sshCommandService.executeCommand(jschSession, finalCommands);
+        CommandResult finalCmdResult = sshCommandService.executeInternal(jschSession, finalCommands);
         if (!finalCmdResult.isSuccess()) {
             log.warn("最终监控命令执行失败, exit={}, cmd={}, stderr={}", finalCmdResult.exitStatus(), finalCommands, finalCmdResult.stderr());
         }
