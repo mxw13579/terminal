@@ -708,7 +708,21 @@ public class InteractiveDeploymentService {
         String username = getStringValue(customConfig, "username", "");
         String password = getStringValue(customConfig, "password", "");
 
-        // 创建部署配置 - 使用用户提供的配置
+        // 如果启用外网访问但没有提供用户名密码，则生成随机凭据
+        if (enableExternalAccess && (username.isEmpty() || password.isEmpty())) {
+            ExternalAccessService.ExternalAccessCredentials randomCredentials = 
+                externalAccessService.generateRandomCredentials();
+            username = randomCredentials.getUsername();
+            password = randomCredentials.getPassword();
+            
+            // 将生成的凭据保存到customConfig中，以便后续步骤使用
+            customConfig.put("username", username);
+            customConfig.put("password", password);
+            
+            progressCallback.accept("已生成随机访问凭据: 用户名=" + username);
+        }
+
+        // 创建部署配置 - 使用用户提供的配置或生成的随机凭据
         SillyTavernDeploymentService.SillyTavernDeploymentConfig deploymentConfig =
                 SillyTavernDeploymentService.SillyTavernDeploymentConfig.builder()
                         .selectedVersion(selectedVersion)
@@ -765,14 +779,25 @@ public class InteractiveDeploymentService {
         step.setProgress(20);
         sendDeploymentProgress(sessionId);
 
-        // 创建外网访问配置
+        // 从部署状态中获取配置信息（包含已生成的随机凭据）
+        InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
+        Map<String, Object> customConfig = status != null && status.getRequest() != null ?
+            status.getRequest().getCustomConfig() : new HashMap<>();
+
+        // 提取配置信息
+        String port = getStringValue(customConfig, "port", "8000");
+        boolean enableExternalAccess = getBooleanValue(customConfig, "enableExternalAccess", false);
+        String username = getStringValue(customConfig, "username", "");
+        String password = getStringValue(customConfig, "password", "");
+
+        // 创建外网访问配置 - 使用与部署步骤相同的凭据
         ExternalAccessService.ExternalAccessConfig accessConfig =
                 ExternalAccessService.ExternalAccessConfig.builder()
-                        .enableExternalAccess(true)
+                        .enableExternalAccess(enableExternalAccess)
                         .useRandomCredentials(false)
-                        .username("admin")
-                        .password("password123")
-                        .port("8000")
+                        .username(username)
+                        .password(password)
+                        .port(port)
                         .build();
 
         ExternalAccessService.ExternalAccessConfigResult result =

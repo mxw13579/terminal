@@ -697,11 +697,6 @@ export default {
                   step.status = 'running'
                 }
                 
-                // 当步骤状态改变时，滚动到当前步骤
-                this.$nextTick(() => {
-                  this.scrollToCurrentStep()
-                })
-                
                 if (newProgress.progress !== undefined) {
                   step.progress = newProgress.progress
                 }
@@ -902,42 +897,6 @@ export default {
         timestamp: new Date(),
         message,
         type
-      })
-      
-      // 滚动到当前活动步骤
-      this.$nextTick(() => {
-        this.scrollToCurrentStep()
-      })
-    },
-    
-    // 滚动到当前活动步骤的位置
-    scrollToCurrentStep() {
-      const container = this.$refs.stepsContainer
-      if (!container) return
-      
-      // 找到当前正在运行或等待的步骤
-      const activeStepIndex = this.deploymentSteps.findIndex(step => 
-        step.status === 'running' || step.status === 'waiting'
-      )
-      
-      if (activeStepIndex === -1) {
-        // 如果没有活动步骤，滚动到底部
-        container.scrollTop = container.scrollHeight
-        return
-      }
-      
-      // 计算每个步骤卡片的大概高度（包括间距）
-      const stepCardHeight = 200 // 大概高度
-      const gap = 16 // 步骤间的间距
-      const totalHeight = (stepCardHeight + gap) * activeStepIndex
-      
-      // 滚动到当前活动步骤的位置，让它显示在可视区域的中上部
-      const containerHeight = container.clientHeight
-      const scrollPosition = Math.max(0, totalHeight - containerHeight / 3)
-      
-      container.scrollTo({
-        top: scrollPosition,
-        behavior: 'smooth'
       })
     },
     

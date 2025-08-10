@@ -162,7 +162,7 @@ public class SillyTavernStompController {
     }
 
     /**
-     * 处理容器服务控制操作（启动、停止、重启、升级、删除）。
+     * 处理容器服务控制操作（启动、停止、重启、版本切换、删除）。
      *
      * @param request 操作请求参数
      * @param headerAccessor STOMP消息头访问器
@@ -196,13 +196,18 @@ public class SillyTavernStompController {
                     sillyTavernService.restartContainer(connection);
                     sendActionResult(sessionId, true, "容器已重启", null);
                 }
-                case "upgrade" -> {
-                    sillyTavernService.upgradeContainer(connection, progress ->
-                            sendSuccessMessage(sessionId, "upgrade-progress", Map.of("message", progress))
+                case "switch-version" -> {
+                    if (request.getTargetVersion() == null || request.getTargetVersion().trim().isEmpty()) {
+                        sendActionResult(sessionId, false, "版本切换失败", "目标版本不能为空");
+                        return;
+                    }
+                    String containerName = request.getContainerName() != null ? request.getContainerName() : DEFAULT_CONTAINER_NAME;
+                    dockerVersionService.switchToVersion(connection, containerName, request.getTargetVersion(), progress ->
+                            sendSuccessMessage(sessionId, "version-switch-progress", Map.of("message", progress))
                     ).thenRun(() ->
-                            sendActionResult(sessionId, true, "容器升级成功", null)
+                            sendActionResult(sessionId, true, "版本切换成功", "已切换到版本: " + request.getTargetVersion())
                     ).exceptionally(throwable -> {
-                        sendActionResult(sessionId, false, "升级失败", throwable.getMessage());
+                        sendActionResult(sessionId, false, "版本切换失败", throwable.getMessage());
                         return null;
                     });
                 }

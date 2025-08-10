@@ -8,7 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 
 /**
  * 服务控制操作DTO
- * 用于启动、停止、重启、升级或删除容器
+ * 用于启动、停止、重启、版本切换或删除容器
  * 
  * @author lizelin
  */
@@ -19,16 +19,22 @@ public class ServiceActionDto {
     
     /**
      * 操作类型
-     * 服务控制操作类型，可选值："start", "stop", "restart", "upgrade", "delete"
+     * 服务控制操作类型，可选值："start", "stop", "restart", "switch-version", "delete"
      */
     @NotBlank(message = "操作类型不能为空")
-    private String action;  // "start", "stop", "restart", "upgrade", "delete"
+    private String action;  // "start", "stop", "restart", "switch-version", "delete"
     
     /**
      * 容器名称
      * 要操作的目标容器名称，默认为"sillytavern"
      */
     private String containerName = "sillytavern";
+    
+    /**
+     * 目标版本号
+     * 用于版本切换操作，指定要切换到的版本
+     */
+    private String targetVersion;
     
     /**
      * 是否强制操作
@@ -49,7 +55,7 @@ public class ServiceActionDto {
      * @return 启动服务的操作DTO
      */
     public static ServiceActionDto start() {
-        return new ServiceActionDto("start", "sillytavern", false, false);
+        return new ServiceActionDto("start", "sillytavern", null, false, false);
     }
     
     /**
@@ -59,7 +65,7 @@ public class ServiceActionDto {
      * @return 停止服务的操作DTO
      */
     public static ServiceActionDto stop() {
-        return new ServiceActionDto("stop", "sillytavern", false, false);
+        return new ServiceActionDto("stop", "sillytavern", null, false, false);
     }
     
     /**
@@ -69,17 +75,18 @@ public class ServiceActionDto {
      * @return 重启服务的操作DTO
      */
     public static ServiceActionDto restart() {
-        return new ServiceActionDto("restart", "sillytavern", false, false);
+        return new ServiceActionDto("restart", "sillytavern", null, false, false);
     }
     
     /**
-     * 创建升级服务的操作DTO
-     * 创建一个用于升级服务的操作DTO
+     * 创建版本切换服务的操作DTO
+     * 创建一个用于版本切换服务的操作DTO
      * 
-     * @return 升级服务的操作DTO
+     * @param targetVersion 目标版本
+     * @return 版本切换服务的操作DTO
      */
-    public static ServiceActionDto upgrade() {
-        return new ServiceActionDto("upgrade", "sillytavern", false, false);
+    public static ServiceActionDto switchVersion(String targetVersion) {
+        return new ServiceActionDto("switch-version", "sillytavern", targetVersion, false, false);
     }
     
     /**
@@ -90,6 +97,6 @@ public class ServiceActionDto {
      * @return 删除服务的操作DTO
      */
     public static ServiceActionDto delete(boolean removeData) {
-        return new ServiceActionDto("delete", "sillytavern", false, removeData);
+        return new ServiceActionDto("delete", "sillytavern", null, false, removeData);
     }
 }

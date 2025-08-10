@@ -91,6 +91,7 @@ public class DockerVersionService {
 
     /**
      * 获取容器当前版本及可用最新版本信息。
+     * 返回的信息包括当前版本、可用版本列表（最近5个版本），并标识当前版本在列表中的位置。
      *
      * @param connection    SSH 连接信息
      * @param containerName 容器名称
@@ -113,8 +114,17 @@ public class DockerVersionService {
             if (!availableVersions.isEmpty()) {
                 final String latestVersion = availableVersions.get(0);
                 versionInfo.setLatestVersion(latestVersion);
-                versionInfo.setHasUpdate(!currentVersion.equals(latestVersion));
+                
+                // 检查是否有更新 - 当前版本不等于最新版本且当前版本不在最近5个版本中时才认为需要更新
+                boolean hasUpdate = !currentVersion.equals(latestVersion) && 
+                                  !currentVersion.equals("latest") && 
+                                  !currentVersion.equals("unknown");
+                versionInfo.setHasUpdate(hasUpdate);
             }
+            
+            log.debug("版本信息获取完成 - 当前: {}, 最新: {}, 可用版本数: {}", 
+                     currentVersion, versionInfo.getLatestVersion(), availableVersions.size());
+                     
         } catch (Exception e) {
             log.error("获取容器 {} 版本信息失败: {}", containerName, e.getMessage(), e);
             versionInfo.setError("获取版本信息失败: " + e.getMessage());
@@ -147,8 +157,8 @@ public class DockerVersionService {
     /**
      * 从 GitHub Releases API 获取最新的正式版本列表。
      * <p>
-     * 此方法会调用 GitHub API，筛选出非草稿、非预发布的前 {@value #MAX_VERSION_COUNT} 个版本。
-     * 结果会被缓存以减少网络请求。如果 API 调用失败，将返回一个包含默认值的列表。
+     * 此方法会调用 GitHub API，筛选出非草稿、非预发布的前5个版本。
+     * 结果会被缓存30分钟以减少网络请求。如果 API 调用失败，将返回一个包含默认值的列表。
      * </p>
      *
      * @return 可用版本号的列表 (例如 ["1.11.0", "1.10.3"])。
@@ -164,7 +174,7 @@ public class DockerVersionService {
                     .filter(node -> node.has("tag_name") && !node.path("prerelease").asBoolean(true) && !node.path("draft").asBoolean(true))
                     .map(node -> node.get("tag_name").asText())
                     .map(tagName -> tagName.startsWith("v") ? tagName.substring(1) : tagName)
-                    .limit(MAX_VERSION_COUNT)
+                    .limit(5)  // 修改为5个版本
                     .toList(); // JDK 16+
 
             if (versions.isEmpty()) {
@@ -407,17 +417,102 @@ public class DockerVersionService {
     }
 
     /**
-     * 清理指定的旧 Docker 镜像。
+     * 切换容器到指定版本，并清理旧镜像。
+     * <p>
+     * 此操作与upgradeToVersion类似，但专门用于版本切换功能。
+     * 切换流程包括：停止当前容器、拉取目标版本镜像、使用原配置重建容器、启动新容器、清理旧镜像。
+     * 进度会通过 {@code progressCallback} 回调函数实时反馈。
+     * </p>
      *
+     * @param connection       SSH 连接信息
+     * @param containerName    要切换版本的容器名称
+     * @param targetVersion    目标版本号
+     * @param progressCallback 用于接收进度更新的消费者回调
+     * @return 一个代表异步版本切换任务的 {@link CompletableFuture}
+     * @throws IllegalStateException 如果该容器的切换操作已在进行中
+     */
+    public CompletableFuture<Void> switchToVersion(final SshConnection connection, final String containerName,
+                                                   final String targetVersion, final Consumer<String> progressCallback) {
+        return CompletableFuture.runAsync(() -> {
+            final ReentrantLock lock = getUpgradeLock(containerName);
+            if (!lock.tryLock()) {
+                final String errorMsg = "容器 " + containerName + " 的版本切换操作已在进行中，请稍后再试。";
+                log.warn(errorMsg);
+                progressCallback.accept(errorMsg);
+                throw new IllegalStateException(errorMsg);
+            }
+            try {
+                log.info("开始切换容器 {} 到版本 {}", containerName, targetVersion);
+                final String targetImage = SILLYTAVERN_IMAGE_REPO + ":" + targetVersion;
+
+                progressCallback.accept("检查容器状态...");
+                if (!checkContainerExists(connection, containerName)) {
+                    throw new RuntimeException("容器 " + containerName + " 不存在。");
+                }
+
+                final String currentImage = getCurrentImage(connection, containerName);
+
+                progressCallback.accept("停止当前容器...");
+                executeCommand(connection, String.format("sudo docker stop %s", containerName));
+
+                progressCallback.accept("拉取目标版本镜像: " + targetVersion + "...");
+                executeCommand(connection, String.format("sudo docker pull %s", targetImage));
+
+                progressCallback.accept("移除旧容器...");
+                executeCommand(connection, String.format("sudo docker rm %s", containerName));
+
+                progressCallback.accept("使用新镜像重建容器...");
+                final String createCommand = buildCreateCommand(connection, containerName, targetImage);
+                executeCommand(connection, createCommand);
+
+                progressCallback.accept("启动更新后的容器...");
+                executeCommand(connection, String.format("sudo docker start %s", containerName));
+
+                progressCallback.accept("等待容器启动完成...");
+                waitForContainerToStart(connection, containerName);
+
+                progressCallback.accept("清理旧镜像以节省磁盘空间...");
+                if (currentImage != null && !currentImage.equals(targetImage)) {
+                    cleanupOldImageAggressive(connection, currentImage);
+                }
+
+                progressCallback.accept("版本切换完成: " + targetVersion);
+                log.info("容器 {} 成功切换到版本 {}", containerName, targetVersion);
+
+            } catch (Exception e) {
+                final String failureMsg = "版本切换失败: " + e.getMessage();
+                log.error("容器 {} 版本切换失败: {}", containerName, e.getMessage(), e);
+                progressCallback.accept(failureMsg);
+                throw new RuntimeException(failureMsg, e);
+            } finally {
+                lock.unlock();
+                log.debug("容器 {} 的版本切换锁已释放。", containerName);
+            }
+        });
+    }
+
+    /**
+     * 积极清理指定的旧 Docker 镜像及其相关的未使用镜像层。
+     * 
      * @param connection    SSH 连接信息
      * @param imageToRemove 要移除的镜像的完整名称（例如 "repo:tag"）
      */
-    private void cleanupOldImage(final SshConnection connection, final String imageToRemove) {
+    private void cleanupOldImageAggressive(final SshConnection connection, final String imageToRemove) {
         try {
+            // 删除指定镜像
             executeCommand(connection, String.format("sudo docker rmi %s", imageToRemove));
-            log.info("已成功清理旧镜像: {}", imageToRemove);
+            log.info("已成功删除旧镜像: {}", imageToRemove);
+            
+            // 清理未使用的镜像层和悬空镜像以节省磁盘空间
+            try {
+                executeCommand(connection, "sudo docker system prune -f");
+                log.info("已清理Docker系统中的未使用资源");
+            } catch (Exception e) {
+                log.warn("清理Docker系统资源失败: {}", e.getMessage());
+            }
+            
         } catch (Exception e) {
-            log.warn("清理旧镜像 {} 失败 (可能仍有其他容器在使用): {}", imageToRemove, e.getMessage());
+            log.warn("删除旧镜像 {} 失败 (可能仍有其他容器在使用): {}", imageToRemove, e.getMessage());
         }
     }
 

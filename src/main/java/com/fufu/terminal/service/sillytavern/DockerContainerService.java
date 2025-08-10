@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
  * Docker 容器管理服务。
  * 通过 SSH 远程执行 Docker 命令，管理容器生命周期、查询状态及获取日志。
  * 优化了远程命令执行效率，将多次SSH调用合并为单次调用。
+ * 支持 Docker Compose 和传统 Docker 命令。
  */
 @Slf4j
 @Service
@@ -41,6 +42,10 @@ public class DockerContainerService {
     private static final String DOCKER_CMD = "sudo docker";
     private static final String DOCKER_VERSION_CHECK = "docker --version";
     private static final String OUTPUT_DELIMITER = "---FUFU_TERMINAL_DELIMITER---";
+    private static final String DEPLOYMENT_PATH = "/data/docker/sillytavern";
+    
+    /** 缓存的 Docker Compose 命令 */
+    private String cachedComposeCommand = null;
 
     /**
      * 获取指定容器的详细状态信息。
@@ -182,33 +187,153 @@ public class DockerContainerService {
     }
 
     /**
+     * 检测并获取可用的 Docker Compose 命令
+     */
+    private String getDockerComposeCommand(SshConnection connection) {
+        if (cachedComposeCommand != null) {
+            return cachedComposeCommand;
+        }
+        
+        try {
+            // 优先检测 docker compose
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), "docker compose version");
+            if (result.exitStatus() == 0) {
+                cachedComposeCommand = "docker compose";
+                log.debug("检测到 docker compose 命令");
+                return cachedComposeCommand;
+            }
+            
+            // 再检测 docker-compose
+            result = sshCommandService.executeInternal(connection.getJschSession(), "docker-compose version");
+            if (result.exitStatus() == 0) {
+                cachedComposeCommand = "docker-compose";
+                log.debug("检测到 docker-compose 命令");
+                return cachedComposeCommand;
+            }
+        } catch (Exception e) {
+            log.warn("检测 Docker Compose 命令失败: {}", e.getMessage());
+        }
+        
+        // 默认返回 docker compose
+        cachedComposeCommand = "docker compose";
+        return cachedComposeCommand;
+    }
+
+    /**
+     * 使用 Docker Compose 启动服务
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称（用于确定compose文件路径）
+     */
+    public void startContainerWithCompose(SshConnection connection, String containerName) {
+        log.debug("使用 Docker Compose 启动容器: {}", containerName);
+        String composeCmd = getDockerComposeCommand(connection);
+        String cmd = String.format("cd %s && %s up -d", DEPLOYMENT_PATH, composeCmd);
+        executeSimpleDockerCommand(connection, cmd, "启动");
+    }
+
+    /**
+     * 使用 Docker Compose 停止服务
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称（用于确定compose文件路径）
+     */
+    public void stopContainerWithCompose(SshConnection connection, String containerName) {
+        log.debug("使用 Docker Compose 停止容器: {}", containerName);
+        String composeCmd = getDockerComposeCommand(connection);
+        String cmd = String.format("cd %s && %s stop", DEPLOYMENT_PATH, composeCmd);
+        executeSimpleDockerCommand(connection, cmd, "停止");
+    }
+
+    /**
+     * 使用 Docker Compose 重启服务
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称（用于确定compose文件路径）
+     */
+    public void restartContainerWithCompose(SshConnection connection, String containerName) {
+        log.debug("使用 Docker Compose 重启容器: {}", containerName);
+        String composeCmd = getDockerComposeCommand(connection);
+        String cmd = String.format("cd %s && %s restart", DEPLOYMENT_PATH, composeCmd);
+        executeSimpleDockerCommand(connection, cmd, "重启");
+    }
+
+    /**
      * 启动一个已存在的 Docker 容器。
+     * 优先使用 Docker Compose，如果不可用则回退到传统命令
      *
      * @param connection    SSH 连接信息
      * @param containerName 要启动的容器名称
      */
     public void startContainer(SshConnection connection, String containerName) {
-        executeSimpleDockerCommand(connection, String.format("%s start %s", DOCKER_CMD, containerName), "启动");
+        try {
+            // 检查是否存在 docker-compose.yaml 文件
+            String checkComposeFile = String.format("test -f %s/docker-compose.yaml", DEPLOYMENT_PATH);
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), checkComposeFile);
+            
+            if (result.exitStatus() == 0) {
+                // 存在 compose 文件，使用 compose 命令
+                startContainerWithCompose(connection, containerName);
+            } else {
+                // 不存在 compose 文件，使用传统 docker 命令
+                executeSimpleDockerCommand(connection, String.format("%s start %s", DOCKER_CMD, containerName), "启动");
+            }
+        } catch (Exception e) {
+            log.warn("使用 Compose 启动失败，尝试传统命令: {}", e.getMessage());
+            executeSimpleDockerCommand(connection, String.format("%s start %s", DOCKER_CMD, containerName), "启动");
+        }
     }
 
     /**
      * 停止一个正在运行的 Docker 容器。
+     * 优先使用 Docker Compose，如果不可用则回退到传统命令
      *
      * @param connection    SSH 连接信息
      * @param containerName 要停止的容器名称
      */
     public void stopContainer(SshConnection connection, String containerName) {
-        executeSimpleDockerCommand(connection, String.format("%s stop %s", DOCKER_CMD, containerName), "停止");
+        try {
+            // 检查是否存在 docker-compose.yaml 文件
+            String checkComposeFile = String.format("test -f %s/docker-compose.yaml", DEPLOYMENT_PATH);
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), checkComposeFile);
+            
+            if (result.exitStatus() == 0) {
+                // 存在 compose 文件，使用 compose 命令
+                stopContainerWithCompose(connection, containerName);
+            } else {
+                // 不存在 compose 文件，使用传统 docker 命令
+                executeSimpleDockerCommand(connection, String.format("%s stop %s", DOCKER_CMD, containerName), "停止");
+            }
+        } catch (Exception e) {
+            log.warn("使用 Compose 停止失败，尝试传统命令: {}", e.getMessage());
+            executeSimpleDockerCommand(connection, String.format("%s stop %s", DOCKER_CMD, containerName), "停止");
+        }
     }
 
     /**
      * 重启一个 Docker 容器。
+     * 优先使用 Docker Compose，如果不可用则回退到传统命令
      *
      * @param connection    SSH 连接信息
      * @param containerName 要重启的容器名称
      */
     public void restartContainer(SshConnection connection, String containerName) {
-        executeSimpleDockerCommand(connection, String.format("%s restart %s", DOCKER_CMD, containerName), "重启");
+        try {
+            // 检查是否存在 docker-compose.yaml 文件
+            String checkComposeFile = String.format("test -f %s/docker-compose.yaml", DEPLOYMENT_PATH);
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), checkComposeFile);
+            
+            if (result.exitStatus() == 0) {
+                // 存在 compose 文件，使用 compose 命令
+                restartContainerWithCompose(connection, containerName);
+            } else {
+                // 不存在 compose 文件，使用传统 docker 命令
+                executeSimpleDockerCommand(connection, String.format("%s restart %s", DOCKER_CMD, containerName), "重启");
+            }
+        } catch (Exception e) {
+            log.warn("使用 Compose 重启失败，尝试传统命令: {}", e.getMessage());
+            executeSimpleDockerCommand(connection, String.format("%s restart %s", DOCKER_CMD, containerName), "重启");
+        }
     }
 
     /**

@@ -30,6 +30,7 @@ public class ExternalAccessService {
     private final SshCommandService sshCommandService;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String RANDOM_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final String USERNAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"; // 纯英文字符
     private static final String CONFIG_DIR = "/data/docker/sillytavern/config";
     private static final String CONFIG_FILE = CONFIG_DIR + "/config.yaml";
 
@@ -128,8 +129,8 @@ public class ExternalAccessService {
 
         if (accessConfig.isUseRandomCredentials()) {
             progressCallback.accept("生成随机用户名和密码...");
-            username = generateRandomString(16);
-            password = generateRandomString(16);
+            username = generateRandomUsername(8); // 8位纯英文用户名
+            password = generateRandomString(16);   // 16位密码
             progressCallback.accept("已生成随机用户名: " + username);
             progressCallback.accept("已生成随机密码: " + password);
         } else {
@@ -176,6 +177,20 @@ public class ExternalAccessService {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
             sb.append(RANDOM_CHARS.charAt(RANDOM.nextInt(RANDOM_CHARS.length())));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 生成指定长度的随机用户名（纯英文字符）
+     *
+     * @param length 字符串长度
+     * @return 随机用户名
+     */
+    private String generateRandomUsername(int length) {
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(USERNAME_CHARS.charAt(RANDOM.nextInt(USERNAME_CHARS.length())));
         }
         return sb.toString();
     }
@@ -366,8 +381,8 @@ public class ExternalAccessService {
      */
     public ExternalAccessCredentials generateRandomCredentials() {
         return ExternalAccessCredentials.builder()
-                .username(generateRandomString(16))
-                .password(generateRandomString(16))
+                .username(generateRandomUsername(8))  // 8位纯英文用户名
+                .password(generateRandomString(16))   // 16位密码
                 .build();
     }
 
