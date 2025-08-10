@@ -1,7 +1,10 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fufu.terminal.dto.sillytavern.DockerHubVersionDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,9 +16,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Docker Hub API服务
@@ -26,6 +31,19 @@ import java.util.List;
 @Service
 public class DockerHubApiService {
 
+    // 默认的 Docker Hub API 响应数据，用于在 API 请求失败时作为回退。
+    private static final String DEFAULT_DOCKER_HUB_RESPONSE_JSON = """
+            {
+              "results": [
+                {"name": "stable", "last_updated": "2025-07-29T21:57:00.064537Z", "full_size": 201934172},
+                {"name": "1.13.2", "last_updated": "2025-07-29T21:54:39.607579Z", "full_size": 201934172},
+                {"name": "1.13.1", "last_updated": "2025-06-24T18:55:06.901868Z", "full_size": 200996293},
+                {"name": "1.13.0", "last_updated": "2025-06-09T21:07:34.761786Z", "full_size": 198186870},
+                {"name": "1.12.14", "last_updated": "2025-05-02T18:14:11.162645Z", "full_size": 204249032}
+              ]
+            }""";
+
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
@@ -34,6 +52,7 @@ public class DockerHubApiService {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
         this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     /**
@@ -47,88 +66,87 @@ public class DockerHubApiService {
     }
 
     /**
-     * 获取指定仓库的版本信息
+     * 获取指定 Docker 仓库的多个版本信息。
+     * <p>
+     * 该方法会尝试从 Docker Hub API 获取数据。如果请求失败（例如网络问题、超时或服务器错误），
+     * 它将使用预定义的默认 JSON 数据作为回退，以确保总能返回有效的版本列表。
      *
-     * @param repository 仓库名称（如：goolashe/sillytavern）
-     * @param pageSize 获取版本数量
-     * @return 版本信息列表
+     * @param repository 仓库名称 (例如: "goolashe/sillytavern")
+     * @param pageSize   要获取的版本数量
+     * @return 版本信息 DTO 列表
      */
     public List<DockerHubVersionDto> getLatestVersions(String repository, int pageSize) {
-        List<DockerHubVersionDto> versions = new ArrayList<>();
-        String defaultJson = "{\n" +
-                "  \"count\": 32,\n" +
-                "  \"next\": \"https://hub.docker.com/v2/repositories/goolashe/sillytavern/tags/?page=2&page_size=5\",\n" +
-                "  \"previous\": null,\n" +
-                "  \"results\": [\n" +
-                "    {\"creator\":19789527,\"id\":552906122,\"images\":[{\"architecture\":\"amd64\",\"features\":\"\",\"variant\":null,\"digest\":\"sha256:0f1ebb31780716ca5c2a14fa7dfb3bef9212bc531f379d970b880fd3051221ec\",\"os\":\"linux\",\"os_features\":\"\",\"os_version\":null,\"size\":201934172,\"status\":\"active\",\"last_pulled\":\"2025-08-07T15:06:08.009747862Z\",\"last_pushed\":\"2025-07-29T21:54:39.148307553Z\"}],\"last_updated\":\"2025-07-29T21:57:00.064537Z\",\"last_updater\":19789527,\"last_updater_username\":\"goolashe\",\"name\":\"stable\",\"repository\":21987427,\"full_size\":201934172,\"v2\":true,\"tag_status\":\"active\",\"tag_last_pulled\":\"2025-08-07T15:06:08.009747862Z\",\"tag_last_pushed\":\"2025-07-29T21:57:00.064537Z\",\"media_type\":\"application/vnd.docker.container.image.v1+json\",\"content_type\":\"image\",\"digest\":\"sha256:0f1ebb31780716ca5c2a14fa7dfb3bef9212bc531f379d970b880fd3051221ec\"},\n" +
-                "    {\"creator\":19789527,\"id\":944218211,\"images\":[{\"architecture\":\"amd64\",\"features\":\"\",\"variant\":null,\"digest\":\"sha256:0f1ebb31780716ca5c2a14fa7dfb3bef9212bc531f379d970b880fd3051221ec\",\"os\":\"linux\",\"os_features\":\"\",\"os_version\":null,\"size\":201934172,\"status\":\"active\",\"last_pulled\":\"2025-08-07T15:06:08.009747862Z\",\"last_pushed\":\"2025-07-29T21:54:39.148307553Z\"}],\"last_updated\":\"2025-07-29T21:54:39.607579Z\",\"last_updater\":19789527,\"last_updater_username\":\"goolashe\",\"name\":\"1.13.2\",\"repository\":21987427,\"full_size\":201934172,\"v2\":true,\"tag_status\":\"active\",\"tag_last_pulled\":\"2025-08-07T15:06:08.009747862Z\",\"tag_last_pushed\":\"2025-07-29T21:54:39.607579Z\",\"media_type\":\"application/vnd.docker.container.image.v1+json\",\"content_type\":\"image\",\"digest\":\"sha256:0f1ebb31780716ca5c2a14fa7dfb3bef9212bc531f379d970b880fd3051221ec\"},\n" +
-                "    {\"creator\":19789527,\"id\":922673781,\"images\":[{\"architecture\":\"amd64\",\"features\":\"\",\"variant\":null,\"digest\":\"sha256:d0c6eb2bbcf13ba699ecb620bf8ad4b7ee39c072cd990eda7c7bc1bd7b9cec04\",\"os\":\"linux\",\"os_features\":\"\",\"os_version\":null,\"size\":200996293,\"status\":\"active\",\"last_pulled\":\"2025-08-07T15:19:31.293192402Z\",\"last_pushed\":\"2025-06-24T18:55:06.429144707Z\"}],\"last_updated\":\"2025-06-24T18:55:06.901868Z\",\"last_updater\":19789527,\"last_updater_username\":\"goolashe\",\"name\":\"1.13.1\",\"repository\":21987427,\"full_size\":200996293,\"v2\":true,\"tag_status\":\"active\",\"tag_last_pulled\":\"2025-08-07T15:19:31.293192402Z\",\"tag_last_pushed\":\"2025-06-24T18:55:06.901868Z\",\"media_type\":\"application/vnd.docker.container.image.v1+json\",\"content_type\":\"image\",\"digest\":\"sha256:d0c6eb2bbcf13ba699ecb620bf8ad4b7ee39c072cd990eda7c7bc1bd7b9cec04\"},\n" +
-                "    {\"creator\":19789527,\"id\":914013274,\"images\":[{\"architecture\":\"amd64\",\"features\":\"\",\"variant\":null,\"digest\":\"sha256:eeae5fbc667ca6aad81a439ef7ec9c8daba0942caa44065e14809aff050da72c\",\"os\":\"linux\",\"os_features\":\"\",\"os_version\":null,\"size\":198186870,\"status\":\"active\",\"last_pulled\":\"2025-07-31T07:10:17.486574006Z\",\"last_pushed\":\"2025-06-09T21:07:34.250311489Z\"}],\"last_updated\":\"2025-06-09T21:07:34.761786Z\",\"last_updater\":19789527,\"last_updater_username\":\"goolashe\",\"name\":\"1.13.0\",\"repository\":21987427,\"full_size\":198186870,\"v2\":true,\"tag_status\":\"active\",\"tag_last_pulled\":\"2025-07-31T07:10:17.486574006Z\",\"tag_last_pushed\":\"2025-06-09T21:07:34.761786Z\",\"media_type\":\"application/vnd.docker.container.image.v1+json\",\"content_type\":\"image\",\"digest\":\"sha256:eeae5fbc667ca6aad81a439ef7ec9c8daba0942caa44065e14809aff050da72c\"},\n" +
-                "    {\"creator\":19789527,\"id\":892271028,\"images\":[{\"architecture\":\"amd64\",\"features\":\"\",\"variant\":null,\"digest\":\"sha256:b27429fdbbd3d728bea2b68a25ce430f97b7e369fa54fe2ff5a4c880960fa8bd\",\"os\":\"linux\",\"os_features\":\"\",\"os_version\":null,\"size\":204249032,\"status\":\"active\",\"last_pulled\":\"2025-08-02T16:52:53.165001566Z\",\"last_pushed\":\"2025-05-02T18:14:10.728352019Z\"}],\"last_updated\":\"2025-05-02T18:14:11.162645Z\",\"last_updater\":19789527,\"last_updater_username\":\"goolashe\",\"name\":\"1.12.14\",\"repository\":21987427,\"full_size\":204249032,\"v2\":true,\"tag_status\":\"active\",\"tag_last_pulled\":\"2025-08-02T16:52:53.165001566Z\",\"tag_last_pushed\":\"2025-05-02T18:14:11.162645Z\",\"media_type\":\"application/vnd.docker.container.image.v1+json\",\"content_type\":\"image\",\"digest\":\"sha256:b27429fdbbd3d728bea2b68a25ce430f97b7e369fa54fe2ff5a4c880960fa8bd\"}\n" +
-                "  ]\n" +
-                "}";
-        if (!isRepositoryAccessibleWithTimeout(repository, 5)) {
-            log.warn("Docker Hub不可达，直接使用默认数据");
-            parseDefaultJson(versions, defaultJson);
-            return versions;
-        }
-
         try {
-            log.info("开始获取Docker Hub版本信息: {}", repository);
-            String url = String.format("https://hub.docker.com/v2/repositories/%s/tags/?page_size=%d",
-                    repository, pageSize);
-            log.debug("请求URL: {}", url);
+            log.info("开始获取 Docker Hub 版本信息: {}, 数量: {}", repository, pageSize);
+            String url = String.format("https://hub.docker.com/v2/repositories/%s/tags/?page_size=%d", repository, pageSize);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Accept", "application/json")
                     .header("User-Agent", "SillyTavern-Manager/1.0")
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(Duration.ofSeconds(15))
                     .GET()
                     .build();
-            log.debug("发送HTTP请求...");
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
-            log.debug("收到响应，状态码: {}", response.statusCode());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
-                log.debug("解析响应数据...");
-                JsonNode rootNode = objectMapper.readTree(response.body());
-                JsonNode resultsNode = rootNode.get("results");
-                if (resultsNode != null && resultsNode.isArray()) {
-                    log.debug("找到 {} 个标签", resultsNode.size());
-                    for (JsonNode tagNode : resultsNode) {
-                        DockerHubVersionDto version = parseVersionInfo(tagNode);
-                        if (version != null) {
-                            versions.add(version);
-                            log.debug("解析版本: {}", version.getTagName());
-                        }
-                    }
-                } else {
-                    log.warn("响应中未找到results节点或不是数组");
-                }
-                log.info("成功获取 {} 个版本信息", versions.size());
+                log.info("成功从 Docker Hub API 获取版本信息。");
+                return parseResponse(response.body());
             } else {
-                String errorMsg = String.format("Docker Hub API返回错误状态码 %d，使用默认数据", response.statusCode());
-                log.error(errorMsg);
-                // 使用默认JSON数据
-                parseDefaultJson(versions, defaultJson);
+                log.warn("Docker Hub API 返回错误状态码: {}。将使用默认数据。", response.statusCode());
+                return parseResponse(DEFAULT_DOCKER_HUB_RESPONSE_JSON);
             }
         } catch (IOException | InterruptedException e) {
-            String errorMsg = "网络连接失败或请求被中断: " + e.getMessage() + "，使用默认数据";
-            log.error(errorMsg, e);
-            // 使用默认JSON数据
-            parseDefaultJson(versions, defaultJson);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-        } catch (Exception e) {
-            String errorMsg = "获取版本信息时发生未知错误: " + e.getMessage() + "，使用默认数据";
-            log.error(errorMsg, e);
-            // 使用默认JSON数据
-            parseDefaultJson(versions, defaultJson);
+            log.error("获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。", e);
+            return parseResponse(DEFAULT_DOCKER_HUB_RESPONSE_JSON);
         }
-        return versions;
     }
 
+    /**
+     * 解析包含版本信息的 JSON 字符串，并将其转换为 DTO 列表。
+     *
+     * @param jsonResponse JSON 格式的字符串
+     * @return 版本信息 DTO 列表
+     */
+    private List<DockerHubVersionDto> parseResponse(String jsonResponse) {
+        try {
+            DockerHubResponse response = objectMapper.readValue(jsonResponse, DockerHubResponse.class);
+            return Optional.ofNullable(response.results())
+                    .map(List::stream)
+                    .orElseGet(Stream::empty)
+                    .map(this::convertToDto)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+        } catch (IOException e) {
+            log.error("解析 JSON 响应失败: {}", e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 将从 API 获取的单个标签结果转换为应用程序内部使用的 DTO。
+     *
+     * @param tagResult 从 API 获取的原始标签数据
+     * @return 转换后的版本信息 DTO
+     */
+    private DockerHubVersionDto convertToDto(TagResult tagResult) {
+        if (tagResult == null || tagResult.name() == null) {
+            return null;
+        }
+        String formattedSize = formatBytes(tagResult.fullSize());
+        String lastPushedFormatted = Optional.ofNullable(tagResult.lastUpdated())
+                .map(date -> date.format(DATE_TIME_FORMATTER))
+                .orElse("未知");
+        return DockerHubVersionDto.builder()
+                .tagName(tagResult.name())
+                .imageSizeBytes(tagResult.fullSize())
+                .imageSize(formattedSize)
+                .lastPushed(Optional.ofNullable(tagResult.lastUpdated()).map(OffsetDateTime::toLocalDateTime).orElse(null))
+                .lastPushedFormatted(lastPushedFormatted)
+                .isLatest("latest".equalsIgnoreCase(tagResult.name()))
+                .build();
+    }
 
     /**
      * 仓库可访问性探测（指定超时时间，单位秒）
@@ -263,18 +281,16 @@ public class DockerHubApiService {
     }
 
     /**
-     * 格式化字节大小
+     * 将字节大小格式化为更易读的字符串 (B, KB, MB, GB)。
+     *
+     * @param bytes 字节数
+     * @return 格式化后的字符串
      */
     private String formatBytes(long bytes) {
-        if (bytes < 1024) {
-            return bytes + " B";
-        } else if (bytes < 1024 * 1024) {
-            return String.format("%.1f KB", bytes / 1024.0);
-        } else if (bytes < 1024 * 1024 * 1024) {
-            return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-        } else {
-            return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
-        }
+        if (bytes < 1024) return bytes + " B";
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        char pre = "KMGTPE".charAt(exp - 1);
+        return String.format("%.1f %cB", bytes / Math.pow(1024, exp), pre);
     }
 
     /**
@@ -299,5 +315,23 @@ public class DockerHubApiService {
             log.warn("Failed to check repository accessibility: {}", e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * 用于映射 Docker Hub API 响应的顶层结构。
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record DockerHubResponse(List<TagResult> results) {
+    }
+
+    /**
+     * 用于映射 'results' 数组中的每个标签对象。
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record TagResult(
+            String name,
+            @JsonProperty("last_updated") OffsetDateTime lastUpdated,
+            @JsonProperty("full_size") long fullSize
+    ) {
     }
 }

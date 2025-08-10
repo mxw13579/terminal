@@ -78,7 +78,14 @@
                 </h4>
               </div>
               <div class="section-content">
-                <div v-if="containerStatus" class="docker-stats">
+                <!-- Docker not available case -->
+                <div v-if="containerStatus && containerStatus.error" class="docker-unavailable">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  <p>{{ containerStatus.error }}</p>
+                  <small class="text-muted">{{ containerStatus.status }}</small>
+                </div>
+                <!-- Docker available and container exists -->
+                <div v-else-if="containerStatus && containerStatus.exists" class="docker-stats">
                   <div class="stat-item">
                     <span class="stat-label">运行时间</span>
                     <span class="stat-value">{{ containerStatus.uptimeSeconds ? formatUptime(containerStatus.uptimeSeconds) : '未运行' }}</span>
@@ -102,6 +109,13 @@
                     </span>
                   </div>
                 </div>
+                <!-- Container doesn't exist but Docker is available -->
+                <div v-else-if="containerStatus && !containerStatus.exists && !containerStatus.error" class="docker-not-deployed">
+                  <i class="fas fa-info-circle"></i>
+                  <p>Docker已安装，但容器未部署</p>
+                  <small class="text-muted">请先部署SillyTavern容器</small>
+                </div>
+                <!-- Loading state -->
                 <div v-else class="docker-loading">
                   <i class="fas fa-spinner fa-spin"></i>
                   <p>加载Docker信息...</p>
@@ -691,6 +705,46 @@ onUnmounted(() => {
   text-align: center;
   color: #6b7280;
   padding: 20px 0;
+}
+
+.docker-unavailable {
+  text-align: center;
+  color: #ef4444;
+  padding: 20px 0;
+}
+
+.docker-unavailable i {
+  font-size: 2rem;
+  margin-bottom: 12px;
+}
+
+.docker-unavailable p {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.docker-unavailable small {
+  color: #6b7280;
+}
+
+.docker-not-deployed {
+  text-align: center;
+  color: #3b82f6;
+  padding: 20px 0;
+}
+
+.docker-not-deployed i {
+  font-size: 2rem;
+  margin-bottom: 12px;
+}
+
+.docker-not-deployed p {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.docker-not-deployed small {
+  color: #6b7280;
 }
 
 /* 功能导航样式 */
