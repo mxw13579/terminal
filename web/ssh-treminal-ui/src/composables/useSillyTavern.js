@@ -77,8 +77,11 @@ export function useSillyTavern(options = {}) {
 
         // Subscribe to container status responses
         client.subscribe('/user/queue/sillytavern/status', (message) => {
+            console.log('收到STOMP状态消息:', message);
+            console.log('消息体内容:', message.body);
             try {
                 const data = JSON.parse(message.body);
+                console.log('解析后的状态数据:', data);
                 handleStatusResponse(data);
             } catch (e) {
                 console.error('Error processing status response:', e);
@@ -397,10 +400,13 @@ export function useSillyTavern(options = {}) {
     };
 
     const handleStatusResponse = (data) => {
+        console.log('收到状态响应:', data);
         isStatusLoading.value = false;
         if (data.success) {
+            console.log('状态响应成功，payload:', data.payload);
             containerStatus.value = data.payload;
         } else {
+            console.log('状态响应失败，错误:', data.error);
             onShowModal("状态检查失败: " + (data.error || 'Unknown error'));
         }
     };
@@ -757,12 +763,15 @@ export function useSillyTavern(options = {}) {
     };
 
     const getContainerStatus = () => {
+        console.log('请求容器状态...');
         const client = getStompClient();
         if (!client || !client.connected) {
+            console.error('STOMP客户端未连接');
             onShowModal("WebSocket 未连接");
             return;
         }
 
+        console.log('发送容器状态请求到STOMP...');
         isStatusLoading.value = true;
         containerStatus.value = null;
 
@@ -770,6 +779,7 @@ export function useSillyTavern(options = {}) {
             destination: '/app/sillytavern/status',
             body: JSON.stringify({})
         });
+        console.log('容器状态请求已发送');
     };
 
     const deployContainer = (deploymentConfig) => {

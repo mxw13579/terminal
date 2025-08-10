@@ -118,8 +118,12 @@ public class SillyTavernStompController {
                 sendErrorMessage(sessionId, "SSH连接未建立");
                 return;
             }
+            log.debug("开始调用sillyTavernService.getContainerStatus，会话: {}", sessionId);
             ContainerStatusDto status = sillyTavernService.getContainerStatus(connection);
+            log.debug("成功获取容器状态，会话: {}，状态: {}", sessionId, status);
+            log.debug("准备发送STOMP成功消息，会话: {}", sessionId);
             sendSuccessMessage(sessionId, "status", status);
+            log.debug("STOMP成功消息已发送，会话: {}", sessionId);
         } catch (Exception e) {
             log.error("获取容器状态失败，会话 {}: {}", sessionId, e.getMessage(), e);
             sendErrorMessage(sessionId, "获取容器状态失败: " + e.getMessage());
@@ -652,13 +656,15 @@ public class SillyTavernStompController {
      * @param data 负载数据
      */
     private void sendSuccessMessage(String sessionId, String messageType, Object data) {
+        log.debug("sendSuccessMessage被调用，sessionId: {}，messageType: {}，data: {}", sessionId, messageType, data);
         Map<String, Object> message = Map.of(
                 "type", messageType,
                 "success", true,
                 "payload", data
         );
-        // 使用统一的convertAndSendToUser方法，路由到 /user/queue/sillytavern 队列
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern", message);
+        log.debug("准备发送STOMP消息到队列，sessionId: {}，消息: {}", sessionId, message);
+        messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/" + messageType, message);
+        log.debug("STOMP消息已发送到队列，路径: /user/queue/sillytavern/{}, sessionId: {}", messageType, sessionId);
     }
 
     /**

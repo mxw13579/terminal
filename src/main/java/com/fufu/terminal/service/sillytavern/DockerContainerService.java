@@ -64,26 +64,12 @@ public class DockerContainerService {
                 return ContainerStatusDto.dockerNotAvailable();
             }
 
-            // [优化] 将多条命令合并到一次SSH执行中，使用分隔符区分输出
-            String configPath = configurationService.getConfigurationPath(containerName);
-            String combinedCommand = String.format(
-                    "%s inspect --format '{{json .}}' %s 2>/dev/null; echo %s; " +
-                            "%s stats --no-stream --format '{{.MemUsage}}|{{.CPUPerc}}' %s 2>/dev/null; echo %s; " +
-                            "cat %s 2>/dev/null",
-                    DOCKER_CMD, containerName, OUTPUT_DELIMITER,
-                    DOCKER_CMD, containerName, OUTPUT_DELIMITER,
-                    configPath
-            );
-
-            log.debug("执行合并后的状态获取命令: {}", combinedCommand);
-            String combinedOutput = executeCommand(connection, combinedCommand);
-            String[] outputs = combinedOutput.split(OUTPUT_DELIMITER, -1);
-
-            String inspectJson = outputs.length > 0 ? outputs[0].trim() : "";
-            String statsOutput = outputs.length > 1 ? outputs[1].trim() : "";
-            String configJson = outputs.length > 2 ? outputs[2].trim() : "";
-
-            if (inspectJson.isEmpty() || inspectJson.contains("No such object")) {
+            // 简化版本：先只获取 inspect 信息，确保基本功能工作
+            String inspectCmd = String.format("%s inspect --format '{{json .}}' %s", DOCKER_CMD, containerName);
+            log.debug("执行容器检查命令: {}", inspectCmd);
+            
+            String inspectJson = executeCommand(connection, inspectCmd);
+            if (inspectJson.trim().isEmpty() || inspectJson.contains("No such object")) {
                 log.warn("容器 '{}' 不存在。", containerName);
                 return ContainerStatusDto.notExists();
             }
@@ -92,11 +78,19 @@ public class DockerContainerService {
             parseInspectOutput(root, status);
             status.setHostAddress(connection.getSession().getHost());
 
+            // 如果容器正在运行，获取资源使用情况
             if (status.getRunning()) {
-                parseStatsOutput(statsOutput, status);
+                try {
+                    String statsCmd = String.format("%s stats --no-stream --format '{{.MemUsage}}|{{.CPUPerc}}' %s", DOCKER_CMD, containerName);
+                    String statsOutput = executeCommand(connection, statsCmd);
+                    parseStatsOutput(statsOutput, status);
+                } catch (Exception e) {
+                    log.warn("获取资源使用情况失败: {}", e.getMessage());
+                }
             }
 
-            parseSillyTavernConfig(configJson, status);
+            // 设置默认访问凭据（简化版本）
+            setDefaultCredentials(status);
 
             log.debug("容器状态获取完成: {}", status);
             return status;
@@ -378,8 +372,7 @@ public class DockerContainerService {
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
             CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
-            // 对于合并的命令，即使部分失败（如文件不存在），也不应直接抛出异常，而是返回输出供上层解析
-            if (result.exitStatus() != 0 && !command.contains(OUTPUT_DELIMITER)) {
+            if (result.exitStatus() != 0) {
                 String errorMsg = buildErrorMessage(result.stderr(), command, result.exitStatus());
                 throw new IOException(errorMsg);
             }

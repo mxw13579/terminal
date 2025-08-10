@@ -98,7 +98,7 @@ public class DockerHubApiService {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            log.error("获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。", e);
+            log.error("获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。");
             return parseResponse(DEFAULT_DOCKER_HUB_RESPONSE_JSON);
         }
     }

@@ -47,6 +47,17 @@ public class ConfigurationService {
     private static final String DEPLOYMENT_INFO_PATH = "/data/docker/sillytavern/deployment-info.json";
 
     /**
+     * 获取指定容器的配置文件路径。
+     * Get the configuration file path for the specified container.
+     *
+     * @param containerName 容器名称
+     * @return 配置文件路径
+     */
+    public String getConfigurationPath(String containerName) {
+        return DEFAULT_CONFIG_PATH;
+    }
+
+    /**
      * 获取指定容器的独占锁。
      * Get the exclusive lock for a container.
      *
