@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
 /**
@@ -173,7 +174,7 @@ public class SillyTavernDeploymentService {
 
         // 确定镜像地址
         String sillyTavernImage = useChineseMirror ?
-                "ghcr.nju.edu.cn/goolashe/sillytavern:" + config.getSelectedVersion() :
+                "ghcr.nju.edu.cn/sillytavern/sillytavern:" + config.getSelectedVersion() :
                 "goolashe/sillytavern:" + config.getSelectedVersion();
 
         String watchtowerImage = useChineseMirror ?
@@ -240,7 +241,7 @@ public class SillyTavernDeploymentService {
     }
 
     /**
-     * 拉取Docker镜像
+     * 拉取Docker镜像，支持实时进度监控
      *
      * @param connection       SSH连接
      * @param progressCallback 进度回调
@@ -248,19 +249,487 @@ public class SillyTavernDeploymentService {
      */
     private void pullDockerImages(SshConnection connection,
                                   Consumer<String> progressCallback) throws Exception {
-        progressCallback.accept("正在拉取所需镜像...");
+        progressCallback.accept("开始拉取Docker镜像...");
+        
         // 检测 compose 命令
         String composeCmd = detectDockerComposeCommand(connection);
-        // 切换到部署目录并拉取镜像
-        String pullCommand = String.format("cd %s && sudo %s pull", DEPLOYMENT_PATH, composeCmd);
-        CommandResult pullResult = sshCommandService.executeInternal(connection.getJschSession(), pullCommand);
-        if (pullResult.exitStatus() == 0) {
-            progressCallback.accept("✅ 镜像拉取成功");
-        } else {
-            String errorMsg = "❌ 镜像拉取失败，请检查网络连接或镜像地址是否正确";
+        
+        // 使用带进度显示的命令，但增加错误处理
+        String pullCommand = String.format("cd %s && sudo %s pull 2>&1", DEPLOYMENT_PATH, composeCmd);
+        
+        try {
+            // 启动详细进度监控
+            CompletableFuture<Void> progressMonitor = startDetailedProgressMonitoring(connection, progressCallback);
+            
+            // 执行拉取命令
+            CommandResult pullResult = sshCommandService.executeInternal(connection.getJschSession(), pullCommand);
+            
+            // 停止进度监控
+            progressMonitor.cancel(true);
+            
+            if (pullResult.exitStatus() == 0) {
+                progressCallback.accept("✅ 镜像拉取成功");
+            } else {
+                // 详细错误诊断
+                String stderr = pullResult.stderr().trim();
+                String stdout = pullResult.stdout().trim();
+                String output = stdout.isEmpty() ? stderr : stdout;
+                
+                log.error("Docker拉取命令失败，退出码: {}", pullResult.exitStatus());
+                log.error("输出: {}", output);
+                
+                String errorMsg = "❌ 镜像拉取失败";
+                if (output.contains("502") || output.contains("Bad Gateway")) {
+                    errorMsg += "：网络连接问题(502 Bad Gateway)";
+                } else if (output.contains("permission denied")) {
+                    errorMsg += "：权限不足，请检查sudo权限";
+                } else if (output.contains("not found") || output.contains("command not found")) {
+                    errorMsg += "：Docker Compose命令未找到";
+                } else if (!output.isEmpty()) {
+                    errorMsg += "：" + output.substring(0, Math.min(output.length(), 100));
+                }
+                
+                progressCallback.accept(errorMsg);
+                throw new RuntimeException(errorMsg + " (退出码: " + pullResult.exitStatus() + ")");
+            }
+        } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw e;
+            }
+            String errorMsg = "❌ 镜像拉取失败：" + e.getMessage();
             progressCallback.accept(errorMsg);
-            log.error("Docker镜像拉取失败: {}", pullResult.stderr());
-            throw new RuntimeException(errorMsg + ": " + pullResult.stderr());
+            log.error("Docker镜像拉取异常: {}", e.getMessage(), e);
+            throw new RuntimeException(errorMsg, e);
+        }
+    }
+
+    /**
+     * 启动详细的进度监控
+     */
+    private CompletableFuture<Void> startDetailedProgressMonitoring(SshConnection connection, 
+                                                                  Consumer<String> progressCallback) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                long startTime = System.currentTimeMillis();
+                int checkCount = 0;
+                
+                while (!Thread.currentThread().isInterrupted()) {
+                    Thread.sleep(2000); // 每2秒检查一次
+                    checkCount++;
+                    
+                    try {
+                        // 检查Docker pull进程
+                        String processCommand = "ps aux | grep -E '(docker.*pull|docker-compose.*pull)' | grep -v grep";
+                        CommandResult processResult = sshCommandService.executeInternal(connection.getJschSession(), processCommand);
+                        
+                        long elapsedSeconds = (System.currentTimeMillis() - startTime) / 1000;
+                        
+                        if (processResult.exitStatus() == 0 && !processResult.stdout().trim().isEmpty()) {
+                            // 拉取仍在进行中，尝试获取镜像信息
+                            String imageCommand = "sudo docker images --format 'table {{.Repository}}:{{.Tag}}\\t{{.Size}}' | grep -E '(sillytavern|watchtower)' | tail -n +1";
+                            CommandResult imageResult = sshCommandService.executeInternal(connection.getJschSession(), imageCommand);
+                            
+                            if (imageResult.exitStatus() == 0 && !imageResult.stdout().trim().isEmpty()) {
+                                String[] images = imageResult.stdout().trim().split("\n");
+                                if (images.length > 0) {
+                                    // 已经开始下载镜像
+                                    String lastImage = images[images.length - 1];
+                                    progressCallback.accept(String.format("正在下载镜像: %s (已耗时: %s)", 
+                                        lastImage.split("\t")[0], formatDurationHelper(elapsedSeconds)));
+                                } else {
+                                    progressCallback.accept(String.format("正在解析镜像信息... (已耗时: %s)", 
+                                        formatDurationHelper(elapsedSeconds)));
+                                }
+                            } else {
+                                progressCallback.accept(String.format("正在连接镜像仓库... (已耗时: %s)", 
+                                    formatDurationHelper(elapsedSeconds)));
+                            }
+                        } else {
+                            // 进程可能已完成或还未开始
+                            if (elapsedSeconds < 5) {
+                                progressCallback.accept("准备拉取镜像...");
+                            } else {
+                                // 检查是否已经有镜像拉取完成
+                                String completedCommand = "sudo docker images --format 'table {{.Repository}}:{{.Tag}}\\t{{.Size}}' | grep -E '(sillytavern|watchtower)'";
+                                CommandResult completedResult = sshCommandService.executeInternal(connection.getJschSession(), completedCommand);
+                                
+                                if (completedResult.exitStatus() == 0 && !completedResult.stdout().trim().isEmpty()) {
+                                    String[] completedImages = completedResult.stdout().trim().split("\n");
+                                    progressCallback.accept(String.format("已完成 %d 个镜像下载 (总耗时: %s)", 
+                                        completedImages.length, formatDurationHelper(elapsedSeconds)));
+                                } else {
+                                    progressCallback.accept(String.format("正在处理镜像... (已耗时: %s)", 
+                                        formatDurationHelper(elapsedSeconds)));
+                                }
+                            }
+                        }
+                        
+                        // 防止无限循环，最多监控10分钟
+                        if (checkCount > 300) {
+                            progressCallback.accept("镜像拉取时间较长，请耐心等待...");
+                            break;
+                        }
+                        
+                    } catch (Exception e) {
+                        log.debug("进度监控检查失败: {}", e.getMessage());
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    /**
+     * 启动简单的进度监控
+     */
+    private CompletableFuture<Void> startSimpleProgressMonitoring(Consumer<String> progressCallback) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                int seconds = 0;
+                while (!Thread.currentThread().isInterrupted()) {
+                    Thread.sleep(3000); // 每3秒更新一次
+                    seconds += 3;
+                    
+                    if (seconds % 15 == 0) { // 每15秒显示一次进度
+                        progressCallback.accept(String.format("正在拉取镜像... (已耗时 %s)", 
+                            formatDurationHelper(seconds)));
+                    }
+                    
+                    // 最多监控5分钟
+                    if (seconds >= 300) {
+                        progressCallback.accept("镜像拉取时间较长，请耐心等待...");
+                        break;
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    /**
+     * 执行命令并实时解析进度信息
+     *
+     * @param connection       SSH连接
+     * @param command         要执行的命令
+     * @param progressCallback 进度回调
+     * @throws Exception 执行失败时抛出
+     */
+    private void executeCommandWithProgress(SshConnection connection, String command, Consumer<String> progressCallback) throws Exception {
+        // 创建进度跟踪器
+        DockerPullProgressTracker progressTracker = new DockerPullProgressTracker();
+
+        // 使用线程来执行命令并处理输出
+        CompletableFuture<Void> commandFuture = CompletableFuture.runAsync(() -> {
+            try {
+                // 创建临时脚本文件来执行命令并捕获输出
+                String scriptContent = String.format(
+                    "#!/bin/bash\n" +
+                    "set -o pipefail\n" +
+                    "%s | while IFS= read -r line; do\n" +
+                    "  echo \"$line\" >> /tmp/docker_pull_progress_%d.log\n" +
+                    "  echo \"$line\"\n" +
+                    "done\n",
+                    command, System.currentTimeMillis()
+                );
+
+                String logFile = "/tmp/docker_pull_progress_" + System.currentTimeMillis() + ".log";
+                String scriptFile = "/tmp/docker_pull_script_" + System.currentTimeMillis() + ".sh";
+
+                // 写入脚本文件
+                String writeScriptCommand = String.format(
+                    "cat > %s << 'EOF'\n%s\nEOF",
+                    scriptFile, scriptContent
+                );
+                sshCommandService.executeInternal(connection.getJschSession(), writeScriptCommand);
+
+                // 设置执行权限并执行
+                sshCommandService.executeInternal(connection.getJschSession(), "chmod +x " + scriptFile);
+
+                // 启动进度监控
+                CompletableFuture<Void> progressMonitor = startProgressMonitoring(connection, logFile, progressTracker, progressCallback);
+
+                // 执行脚本
+                CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), scriptFile);
+
+                // 停止监控
+                progressMonitor.cancel(true);
+
+                // 清理临时文件
+                sshCommandService.executeInternal(connection.getJschSession(), "rm -f " + scriptFile + " " + logFile);
+
+                if (result.exitStatus() != 0) {
+                    throw new RuntimeException("Command failed: " + result.stderr());
+                }
+
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to execute command with progress", e);
+            }
+        });
+
+        // 等待命令完成
+        commandFuture.get();
+    }
+
+    /**
+     * 启动进度监控
+     */
+    private CompletableFuture<Void> startProgressMonitoring(SshConnection connection, String logFile,
+                                                           DockerPullProgressTracker progressTracker,
+                                                           Consumer<String> progressCallback) {
+        return CompletableFuture.runAsync(() -> {
+            long lastPosition = 0;
+            int noUpdateCount = 0;
+
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    Thread.sleep(2000); // 每2秒检查一次
+
+                    try {
+                        // 读取新的日志内容
+                        String readCommand = String.format("tail -c +%d %s 2>/dev/null || echo ''", lastPosition + 1, logFile);
+                        CommandResult logResult = sshCommandService.executeInternal(connection.getJschSession(), readCommand);
+
+                        if (logResult.exitStatus() == 0 && !logResult.stdout().trim().isEmpty()) {
+                            String[] lines = logResult.stdout().split("\n");
+                            for (String line : lines) {
+                                if (!line.trim().isEmpty()) {
+                                    progressTracker.parseLine(line);
+                                }
+                            }
+
+                            // 更新位置
+                            lastPosition += logResult.stdout().length();
+                            noUpdateCount = 0;
+
+                            // 生成进度消息
+                            String progressMessage = progressTracker.getProgressMessage();
+                            if (progressMessage != null) {
+                                progressCallback.accept(progressMessage);
+                            }
+                        } else {
+                            noUpdateCount++;
+
+                            // 如果超过30秒没有更新，发送心跳消息
+                            if (noUpdateCount > 15) {
+                                long elapsedSeconds = progressTracker.getElapsedSeconds();
+                                progressCallback.accept(String.format("正在拉取镜像... (已耗时 %s)", formatDurationHelper(elapsedSeconds)));
+                                noUpdateCount = 0;
+                            }
+                        }
+
+                    } catch (Exception e) {
+                        log.debug("进度监控检查失败: {}", e.getMessage());
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    /**
+     * Docker拉取进度跟踪器
+     */
+    private static class DockerPullProgressTracker {
+        private final long startTime = System.currentTimeMillis();
+        private long totalBytes = 0;
+        private long downloadedBytes = 0;
+        private String currentImage = "";
+        private String currentLayer = "";
+        private final java.util.Map<String, LayerProgress> layerProgress = new java.util.HashMap<>();
+
+        public void parseLine(String line) {
+            // 解析镜像名称
+            if (line.contains("Pulling from")) {
+                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("Pulling from (.+)");
+                java.util.regex.Matcher matcher = pattern.matcher(line);
+                if (matcher.find()) {
+                    currentImage = matcher.group(1);
+                }
+            }
+
+            // 解析层下载进度
+            // 格式: #1 [internal] load metadata for docker.io/goolashe/sillytavern:latest
+            // 或: #2 [1/2] FROM docker.io/goolashe/sillytavern:latest@sha256:abc123
+            // 或: #3 [2/2] COPY . .
+            if (line.matches("^#\\d+ .*")) {
+                parseLayerProgress(line);
+            }
+
+            // 解析下载进度 (Docker Buildkit格式)
+            // 格式: #2 extracting sha256:abc123 0.1s (5.2MB/50.3MB)
+            if (line.contains("extracting") || line.contains("downloading")) {
+                parseDownloadProgress(line);
+            }
+        }
+
+        private void parseLayerProgress(String line) {
+            // 提取层信息
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("#(\\d+)\\s+(.+)");
+            java.util.regex.Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) {
+                String layerId = matcher.group(1);
+                String layerInfo = matcher.group(2);
+                currentLayer = layerId;
+
+                // 更新层状态
+                if (!layerProgress.containsKey(layerId)) {
+                    layerProgress.put(layerId, new LayerProgress(layerId, layerInfo));
+                }
+            }
+        }
+
+        private void parseDownloadProgress(String line) {
+            // 解析下载进度: (5.2MB/50.3MB) 或 (完整的字节数)
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\(([0-9.]+[KMGT]?B)/([0-9.]+[KMGT]?B)\\)");
+            java.util.regex.Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) {
+                String downloaded = matcher.group(1);
+                String total = matcher.group(2);
+
+                long downloadedBytesValue = parseBytes(downloaded);
+                long totalBytesValue = parseBytes(total);
+
+                if (totalBytesValue > totalBytes) {
+                    totalBytes = totalBytesValue;
+                }
+                if (downloadedBytesValue > downloadedBytes) {
+                    downloadedBytes = downloadedBytesValue;
+                }
+            }
+        }
+
+        private long parseBytes(String sizeStr) {
+            if (sizeStr == null || sizeStr.isEmpty()) return 0;
+
+            sizeStr = sizeStr.toUpperCase();
+            double value = Double.parseDouble(sizeStr.replaceAll("[KMGT]B?", ""));
+
+            if (sizeStr.contains("KB")) {
+                return (long) (value * 1024);
+            } else if (sizeStr.contains("MB")) {
+                return (long) (value * 1024 * 1024);
+            } else if (sizeStr.contains("GB")) {
+                return (long) (value * 1024 * 1024 * 1024);
+            } else if (sizeStr.contains("TB")) {
+                return (long) (value * 1024 * 1024 * 1024 * 1024);
+            } else {
+                return (long) value;
+            }
+        }
+
+        public String getProgressMessage() {
+            if (totalBytes > 0 && downloadedBytes > 0) {
+                double percentage = (double) downloadedBytes / totalBytes * 100;
+                long elapsedSeconds = getElapsedSeconds();
+
+                // 计算剩余时间
+                String remainingTimeStr = "";
+                if (elapsedSeconds > 0 && percentage > 5) { // 避免初期预估不准确
+                    long totalEstimatedSeconds = (long) (elapsedSeconds / (percentage / 100.0));
+                    long remainingSeconds = totalEstimatedSeconds - elapsedSeconds;
+                    remainingTimeStr = " 剩余时间: " + formatDurationInTracker(remainingSeconds);
+                }
+
+                return String.format("正在下载镜像: %s/%s (%.1f%%) 已耗时: %s%s",
+                    formatBytes(downloadedBytes),
+                    formatBytes(totalBytes),
+                    percentage,
+                    formatDurationInTracker(elapsedSeconds),
+                    remainingTimeStr
+                );
+            }
+
+            // 如果没有具体进度，显示活动状态
+            if (!layerProgress.isEmpty()) {
+                int completedLayers = (int) layerProgress.values().stream().filter(LayerProgress::isCompleted).count();
+                int totalLayers = layerProgress.size();
+                return String.format("正在处理镜像层: %d/%d 已完成, 已耗时: %s",
+                    completedLayers, totalLayers, formatDurationInTracker(getElapsedSeconds()));
+            }
+
+            return null;
+        }
+
+        /**
+         * 在跟踪器内部格式化时长
+         */
+        private String formatDurationInTracker(long seconds) {
+            if (seconds < 60) {
+                return seconds + "秒";
+            } else if (seconds < 3600) {
+                return (seconds / 60) + "分" + (seconds % 60) + "秒";
+            } else {
+                return (seconds / 3600) + "小时" + ((seconds % 3600) / 60) + "分钟";
+            }
+        }
+
+        public long getElapsedSeconds() {
+            return (System.currentTimeMillis() - startTime) / 1000;
+        }
+
+        private String formatBytes(long bytes) {
+            if (bytes >= 1024 * 1024 * 1024) {
+                return String.format("%.1fGB", bytes / (1024.0 * 1024.0 * 1024.0));
+            } else if (bytes >= 1024 * 1024) {
+                return String.format("%.1fMB", bytes / (1024.0 * 1024.0));
+            } else if (bytes >= 1024) {
+                return String.format("%.1fKB", bytes / 1024.0);
+            } else {
+                return bytes + "B";
+            }
+        }
+    }
+
+    /**
+     * 层进度信息
+     */
+    private static class LayerProgress {
+        private final String id;
+        private final String info;
+        private boolean completed = false;
+        private long size = 0;
+        private long downloaded = 0;
+
+        public LayerProgress(String id, String info) {
+            this.id = id;
+            this.info = info;
+        }
+
+        public boolean isCompleted() {
+            return completed;
+        }
+
+        public void setCompleted(boolean completed) {
+            this.completed = completed;
+        }
+    }
+
+    /**
+     * 格式化时长
+     */
+    private String formatDuration(long seconds) {
+        if (seconds < 60) {
+            return seconds + "秒";
+        } else if (seconds < 3600) {
+            return (seconds / 60) + "分" + (seconds % 60) + "秒";
+        } else {
+            return (seconds / 3600) + "小时" + ((seconds % 3600) / 60) + "分钟";
+        }
+    }
+
+    /**
+     * 格式化时长 - 辅助方法
+     */
+    private String formatDurationHelper(long seconds) {
+        if (seconds < 60) {
+            return seconds + "秒";
+        } else if (seconds < 3600) {
+            return (seconds / 60) + "分" + (seconds % 60) + "秒";
+        } else {
+            return (seconds / 3600) + "小时" + ((seconds % 3600) / 60) + "分钟";
         }
     }
 
@@ -394,32 +863,19 @@ public class SillyTavernDeploymentService {
             // 将DTO序列化为JSON
             String deploymentInfoJson = objectMapper.writeValueAsString(deploymentInfo);
 
-            // 先写入到宿主机临时文件
-            String tempFilePath = "/tmp/deployment-info-" + System.currentTimeMillis() + ".json";
-            String writeTempCommand = String.format(
+            // 直接写入到宿主机的挂载目录 - 会自动出现在容器内
+            String deploymentInfoPath = DEPLOYMENT_PATH + "/config/deployment-info.json";
+            String writeCommand = String.format(
                     "sudo tee %s > /dev/null <<'EOF'\n%s\nEOF",
-                    tempFilePath, deploymentInfoJson);
+                    deploymentInfoPath, deploymentInfoJson);
 
-            CommandResult writeTempResult = sshCommandService.executeInternal(connection.getJschSession(), writeTempCommand);
-            if (writeTempResult.exitStatus() != 0) {
-                throw new Exception("写入临时文件失败: " + writeTempResult.stderr());
-            }
-
-            // 将临时文件复制到容器内部
-            String copyToContainerCommand = String.format(
-                    "sudo docker cp %s %s:/data/docker/sillytavern/deployment-info.json",
-                    tempFilePath, CONTAINER_NAME);
-
-            CommandResult copyResult = sshCommandService.executeInternal(connection.getJschSession(), copyToContainerCommand);
-
-            // 清理临时文件
-            sshCommandService.executeInternal(connection.getJschSession(), "sudo rm -f " + tempFilePath);
-
-            if (copyResult.exitStatus() != 0) {
-                log.warn("复制部署信息文件到容器失败: {}", copyResult.stderr());
+            CommandResult writeResult = sshCommandService.executeInternal(connection.getJschSession(), writeCommand);
+            
+            if (writeResult.exitStatus() != 0) {
+                log.warn("写入部署信息文件失败: {}", writeResult.stderr());
                 progressCallback.accept("警告：部署信息文件写入失败，但不影响正常使用");
             } else {
-                log.info("成功写入部署信息文件到容器内部");
+                log.info("成功写入部署信息文件到: {}", deploymentInfoPath);
                 progressCallback.accept("部署信息文件写入成功");
             }
 

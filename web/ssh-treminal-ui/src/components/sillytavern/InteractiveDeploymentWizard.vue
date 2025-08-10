@@ -232,14 +232,15 @@
         </button>
       </div>
       
-      <!-- 横向卡片步骤展示 -->
-      <div class="deployment-steps">
-        <div 
-          v-for="step in deploymentSteps" 
-          :key="step.id"
-          class="step-card"
-          :class="getStepCardClass(step)"
-        >
+      <!-- 横向卡片步骤展示 - 添加滚动容器 -->
+      <div class="deployment-steps-container" ref="stepsContainer">
+        <div class="deployment-steps">
+          <div 
+            v-for="step in deploymentSteps" 
+            :key="step.id"
+            class="step-card"
+            :class="getStepCardClass(step)"
+          >
           <div class="step-header">
             <div class="step-status">
               <span class="status-icon">{{ getStepIcon(step.status) }}</span>
@@ -358,6 +359,7 @@
             </div>
           </div>
         </div>
+      </div>
       </div>
       
       <!-- 部署完成信息 -->

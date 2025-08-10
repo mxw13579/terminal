@@ -79,11 +79,12 @@ public class ConfigurationService {
      */
     public ConfigurationDto readConfiguration(SshConnection connection, String containerName) throws Exception {
         log.debug("读取容器配置: {}", containerName);
-        // 1) 优先读取容器内部署信息（纠正了路径与命令构造）
+        // 1) 优先读取容器内部署信息（修复路径问题）
         try {
+            // 先尝试从config目录读取
             String deployInfoContent = executeCommand(
                     connection,
-                    String.format("sudo docker exec %s cat %s", containerName, "/data/docker/sillytavern/deployment-info.json")
+                    String.format("sudo docker exec %s cat /home/node/app/config/deployment-info.json 2>/dev/null || sudo docker exec %s cat /home/node/app/deployment-info.json", containerName, containerName)
             );
             ConfigurationDto config = parseDeploymentInfo(deployInfoContent);
             config.setContainerName(containerName);
