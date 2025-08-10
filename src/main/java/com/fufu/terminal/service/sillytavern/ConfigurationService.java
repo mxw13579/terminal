@@ -68,29 +68,32 @@ public class ConfigurationService {
      */
     public ConfigurationDto readConfiguration(SshConnection connection, String containerName) throws Exception {
         log.debug("读取容器配置: {}", containerName);
-
-        // 1. 优先尝试读取部署信息文件 (更高效)
+        // 1) 优先读取容器内部署信息（纠正了路径与命令构造）
         try {
-            String deployInfoContent = executeCommand(connection, "cat " + DEPLOYMENT_INFO_PATH);
+            String deployInfoContent = executeCommand(
+                    connection,
+                    String.format("sudo docker exec %s cat %s", containerName, "/data/docker/sillytavern/deployment-info.json")
+            );
             ConfigurationDto config = parseDeploymentInfo(deployInfoContent);
             config.setContainerName(containerName);
-            log.debug("成功从部署信息文件读取配置");
+            log.debug("成功从 deployment-info.json 读取配置");
             return config;
         } catch (Exception e) {
-            log.debug("部署信息文件不存在或读取失败，尝试解析config.yaml: {}", e.getMessage());
+            log.debug("部署信息读取失败，将回退解析 config.yaml: {}", e.getMessage());
         }
-
-        // 2. 回退到解析传统的config.yaml文件
+        // 2) 回退解析容器内的 config.yaml（修复了原先 String.format 用法错误）
         try {
-            String configContent = executeCommand(connection,
-                    String.format("cat ", containerName, DEFAULT_CONFIG_PATH));
+            String configContent = executeCommand(
+                    connection,
+                    String.format("sudo docker exec %s cat %s", containerName, DEFAULT_CONFIG_PATH)
+            );
             ConfigurationDto config = parseConfiguration(configContent);
             config.setContainerName(containerName);
-            log.debug("成功从config.yaml解析配置");
+            log.debug("成功从 config.yaml 解析配置");
             return config;
         } catch (Exception e) {
             log.error("读取配置失败: {} - {}", containerName, e.getMessage());
-            // 返回默认配置 Return default config
+            // 返回默认配置
             ConfigurationDto defaultConfig = new ConfigurationDto();
             defaultConfig.setContainerName(containerName);
             defaultConfig.setUsername("admin");
@@ -165,26 +168,48 @@ public class ConfigurationService {
             log.info("开始更新配置并检查是否需要重启容器: {}", containerName);
             ConfigurationDto currentConfig = readConfiguration(connection, containerName);
             boolean needsRestart = isRestartRequired(currentConfig, config);
-
             boolean updated = updateConfiguration(connection, containerName, config);
-
             if (updated && needsRestart) {
                 log.info("配置更新需要重启容器: {}", containerName);
                 if (isContainerRunning(connection, containerName)) {
                     log.info("正在重启容器...");
                     restartContainer(connection, containerName);
+                    // 轮询等待容器运行，提升稳健性与平均等待时间
+                    waitForContainerStartup(connection, containerName, 10_000L);
                     log.info("容器重启完成");
-                    Thread.sleep(3000); // 等待容器启动 Wait for container to start
                 } else {
                     log.info("容器未运行，配置将在下次启动时生效");
                 }
             }
-
             log.info("配置更新操作完成，容器: {}", containerName);
             return updated;
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * 轮询等待容器在重启后进入运行状态，直到超时。
+     *
+     * @param connection    SSH 连接
+     * @param containerName 容器名称
+     * @param timeoutMs     超时时间（毫秒）
+     * @throws Exception 超时或命令执行异常时抛出
+     */
+    private void waitForContainerStartup(SshConnection connection, String containerName, long timeoutMs) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        while (System.nanoTime() < deadline) {
+            if (isContainerRunning(connection, containerName)) {
+                return;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new Exception("等待容器启动被中断", ie);
+            }
+        }
+        throw new Exception("容器在指定时间内未启动: " + containerName);
     }
 
     /**
@@ -228,21 +253,21 @@ public class ConfigurationService {
      * @return true=需要重启 restart required
      */
     private boolean isRestartRequired(ConfigurationDto currentConfig, ConfigurationDto newConfig) {
-        // 用户名、密码、端口、关键设置变更需重启
+        // 用户名变化
         if (!java.util.Objects.equals(currentConfig.getUsername(), newConfig.getUsername())) {
             return true;
         }
-        if (newConfig.getPassword() != null && !newConfig.getPassword().isEmpty()) {
+        // 只要提供了新密码（非空），即认为需要重启
+        if (newConfig.getPassword() != null && !newConfig.getPassword().isBlank()) {
             return true;
         }
+        // 端口变化
         if (!java.util.Objects.equals(currentConfig.getPort(), newConfig.getPort())) {
             return true;
         }
-        if (!java.util.Objects.equals(currentConfig.getEnableExtensions(), newConfig.getEnableExtensions()) ||
-                !java.util.Objects.equals(currentConfig.getAutoConnect(), newConfig.getAutoConnect())) {
-            return true;
-        }
-        return false;
+        // 关键设置变化
+        return !java.util.Objects.equals(currentConfig.getEnableExtensions(), newConfig.getEnableExtensions())
+                || !java.util.Objects.equals(currentConfig.getAutoConnect(), newConfig.getAutoConnect());
     }
 
     /**
@@ -263,12 +288,14 @@ public class ConfigurationService {
             log.info("开始更新配置，容器: {}", containerName);
             String backupPath = createBackup(connection, containerName);
             log.info("创建配置备份: {}", backupPath);
-
             try {
                 String newConfigContent = generateConfigurationContent(config);
                 String tempFile = "/tmp/sillytavern_config_" + System.currentTimeMillis() + ".yaml";
-                String escapedContent = newConfigContent.replace("\"", "\\\"").replace("\n", "\\n");
-                executeCommand(connection, String.format("echo -e \"%s\" > %s", escapedContent, tempFile));
+                // 通过 Base64 写入临时文件，避免特殊字符与换行转义问题
+                String base64 = java.util.Base64.getEncoder()
+                        .encodeToString(newConfigContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                String writeCmd = String.format("printf '%%s' '%s' | base64 -d > %s", base64, tempFile);
+                executeCommand(connection, writeCmd);
                 executeCommand(connection,
                         String.format("sudo docker cp %s %s:%s", tempFile, containerName, DEFAULT_CONFIG_PATH));
                 executeCommand(connection, "rm -f " + tempFile);
@@ -342,20 +369,26 @@ public class ConfigurationService {
 
     /**
      * 密码强度检测：至少包含大小写字母和数字中的两种，且长度>=8。
-     * Password strength check: at least two of upper/lowercase letters and digits, length >= 8.
+     * 通过单次线性扫描替代多次正则匹配，降低常数开销。
      *
      * @param password 密码 Password
      * @return true=强密码 Strong password
      */
     private boolean isPasswordStrong(String password) {
-        boolean hasLower = password.matches(".*[a-z].*");
-        boolean hasUpper = password.matches(".*[A-Z].*");
-        boolean hasDigit = password.matches(".*\\d.*");
-        return password.length() >= 8 && (
-                (hasLower && hasUpper) ||
-                        (hasLower && hasDigit) ||
-                        (hasUpper && hasDigit)
-        );
+        if (password == null || password.length() < 8) {
+            return false;
+        }
+        boolean hasLower = false, hasUpper = false, hasDigit = false;
+        for (int i = 0; i < password.length(); i++) {
+            char ch = password.charAt(i);
+            if (Character.isLowerCase(ch)) hasLower = true;
+            else if (Character.isUpperCase(ch)) hasUpper = true;
+            else if (Character.isDigit(ch)) hasDigit = true;
+            if ((hasLower && hasUpper) || (hasLower && hasDigit) || (hasUpper && hasDigit)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
