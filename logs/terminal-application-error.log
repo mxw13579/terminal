@@ -1,60 +1,30 @@
-2025-08-11 01:47:26.134 [http-nio-8080-exec-4] ERROR [3169e971-3919-7756] c.f.t.c.StompAuthenticationInterceptor - 为会话xgwog2pi建立SSH连接失败: java.net.ConnectException: Connection refused: connect
-com.jcraft.jsch.JSchException: java.net.ConnectException: Connection refused: connect
-	at com.jcraft.jsch.Util.createSocket(Util.java:394)
-	at com.jcraft.jsch.Session.connect(Session.java:215)
-	at com.fufu.terminal.config.StompAuthenticationInterceptor.handleConnect(StompAuthenticationInterceptor.java:149)
-	at com.fufu.terminal.config.StompAuthenticationInterceptor.preSend(StompAuthenticationInterceptor.java:88)
-	at org.springframework.messaging.support.AbstractMessageChannel$ChannelInterceptorChain.applyPreSend(AbstractMessageChannel.java:181)
-	at org.springframework.messaging.support.AbstractMessageChannel.send(AbstractMessageChannel.java:135)
-	at org.springframework.messaging.support.AbstractMessageChannel.send(AbstractMessageChannel.java:125)
-	at org.springframework.web.socket.messaging.StompSubProtocolHandler.handleMessageFromClient(StompSubProtocolHandler.java:310)
-	at org.springframework.web.socket.messaging.SubProtocolWebSocketHandler.handleMessage(SubProtocolWebSocketHandler.java:335)
-	at org.springframework.web.socket.handler.WebSocketHandlerDecorator.handleMessage(WebSocketHandlerDecorator.java:75)
-	at org.springframework.web.socket.handler.LoggingWebSocketHandlerDecorator.handleMessage(LoggingWebSocketHandlerDecorator.java:56)
-	at org.springframework.web.socket.handler.ExceptionWebSocketHandlerDecorator.handleMessage(ExceptionWebSocketHandlerDecorator.java:58)
-	at org.springframework.web.socket.sockjs.transport.session.AbstractSockJsSession.delegateMessages(AbstractSockJsSession.java:386)
-	at org.springframework.web.socket.sockjs.transport.session.WebSocketServerSockJsSession.handleMessage(WebSocketServerSockJsSession.java:195)
-	at org.springframework.web.socket.sockjs.transport.handler.SockJsWebSocketHandler.handleTextMessage(SockJsWebSocketHandler.java:93)
-	at org.springframework.web.socket.handler.AbstractWebSocketHandler.handleMessage(AbstractWebSocketHandler.java:43)
-	at org.springframework.web.socket.adapter.standard.StandardWebSocketHandlerAdapter.handleTextMessage(StandardWebSocketHandlerAdapter.java:113)
-	at org.springframework.web.socket.adapter.standard.StandardWebSocketHandlerAdapter$3.onMessage(StandardWebSocketHandlerAdapter.java:84)
-	at org.springframework.web.socket.adapter.standard.StandardWebSocketHandlerAdapter$3.onMessage(StandardWebSocketHandlerAdapter.java:81)
-	at org.apache.tomcat.websocket.WsFrameBase.sendMessageText(WsFrameBase.java:415)
-	at org.apache.tomcat.websocket.server.WsFrameServer.sendMessageText(WsFrameServer.java:129)
-	at org.apache.tomcat.websocket.WsFrameBase.processDataText(WsFrameBase.java:515)
-	at org.apache.tomcat.websocket.WsFrameBase.processData(WsFrameBase.java:301)
-	at org.apache.tomcat.websocket.WsFrameBase.processInputBuffer(WsFrameBase.java:133)
-	at org.apache.tomcat.websocket.server.WsFrameServer.onDataAvailable(WsFrameServer.java:85)
-	at org.apache.tomcat.websocket.server.WsFrameServer.doOnDataAvailable(WsFrameServer.java:183)
-	at org.apache.tomcat.websocket.server.WsFrameServer.notifyDataAvailable(WsFrameServer.java:162)
-	at org.apache.tomcat.websocket.server.WsHttpUpgradeHandler.upgradeDispatch(WsHttpUpgradeHandler.java:157)
-	at org.apache.coyote.http11.upgrade.UpgradeProcessorInternal.dispatch(UpgradeProcessorInternal.java:60)
-	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:59)
-	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:859)
-	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1734)
-	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)
-	at org.apache.tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1191)
-	at org.apache.tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)
-	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-Caused by: java.net.ConnectException: Connection refused: connect
-	at java.base/sun.nio.ch.Net.connect0(Native Method)
-	at java.base/sun.nio.ch.Net.connect(Net.java:579)
-	at java.base/sun.nio.ch.Net.connect(Net.java:568)
-	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
-	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
-	at java.base/java.net.Socket.connect(Socket.java:633)
-	at java.base/java.net.Socket.connect(Socket.java:583)
-	at java.base/java.net.Socket.<init>(Socket.java:507)
-	at java.base/java.net.Socket.<init>(Socket.java:287)
-	at com.jcraft.jsch.Util$1.run(Util.java:362)
-	... 1 common frames omitted
-2025-08-11 01:49:17.063 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 01:49:17.991 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 01:50:08.103 [clientInboundChannel-33] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
+2025-08-12 00:53:42.231 [ForkJoinPool.commonPool-worker-21] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:53:44.037 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:54:13.361 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:54:15.048 [ForkJoinPool.commonPool-worker-24] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:54:34.585 [ForkJoinPool.commonPool-worker-24] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:54:36.037 [ForkJoinPool.commonPool-worker-26] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:54:59.202 [ForkJoinPool.commonPool-worker-26] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 00:55:01.046 [ForkJoinPool.commonPool-worker-28] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:02:07.325 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:02:08.271 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:06:02.107 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:06:03.110 [ForkJoinPool.commonPool-worker-5] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:11:51.799 [ForkJoinPool.commonPool-worker-7] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:11:53.047 [ForkJoinPool.commonPool-worker-8] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:14:28.146 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:14:29.069 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:15:40.468 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:15:41.473 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:16:07.109 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:16:08.110 [ForkJoinPool.commonPool-worker-6] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:19:40.639 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:19:42.038 [ForkJoinPool.commonPool-worker-8] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:21:01.725 [clientInboundChannel-105] ERROR [] c.f.t.s.s.DockerContainerService - Docker inspect 失败: 命令执行被中断: docker inspect --format '{{json .}}' sillytavern
+2025-08-12 01:21:01.725 [clientInboundChannel-105] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
+java.io.IOException: 命令执行被中断: docker inspect --format '{{json .}}' sillytavern
+	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:689)
+	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:162)
 	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
 	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
 	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
@@ -73,657 +43,74 @@ java.io.IOException: 操作失败：找不到指定的容器或镜像。
 	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
 	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:50:10.555 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.SillyTavernDeploymentService - Docker拉取命令失败，退出码: 1
-2025-08-11 01:50:10.555 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.SillyTavernDeploymentService - 输出: sillytavern Pulling 
- watchtower Pulling 
- 57241801ebfd Pulling fs layer 
- 3d4f475b92a2 Pulling fs layer 
- 1f05004da6d7 Pulling fs layer 
- 57241801ebfd Downloading [=>                                                 ]  3.618kB/123.6kB
- 3d4f475b92a2 Downloading [>                                                  ]  3.599kB/313.3kB
- 57241801ebfd Verifying Checksum 
- 57241801ebfd Download complete 
- 57241801ebfd Extracting [=============>                                     ]  32.77kB/123.6kB
- 57241801ebfd Extracting [==================================================>]  123.6kB/123.6kB
- 57241801ebfd Extracting [==================================================>]  123.6kB/123.6kB
- 57241801ebfd Pull complete 
- 3d4f475b92a2 Verifying Checksum 
- 3d4f475b92a2 Download complete 
- 3d4f475b92a2 Extracting [=====>                                             ]  32.77kB/313.3kB
- 1f05004da6d7 Downloading [>                                                  ]  52.85kB/5.196MB
- 3d4f475b92a2 Extracting [==================================================>]  313.3kB/313.3kB
- 3d4f475b92a2 Extracting [==================================================>]  313.3kB/313.3kB
- sillytavern Error manifest for ghcr.nju.edu.cn/sillytavern/sillytavern:stable not found: manifest unknown: manifest unknown
-Error response from daemon: manifest for ghcr.nju.edu.cn/sillytavern/sillytavern:stable not found: manifest unknown: manifest unknown
-2025-08-11 01:50:10.556 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.SillyTavernDeploymentService - SillyTavern部署过程中发生异常
-java.lang.RuntimeException: ❌ 镜像拉取失败：Docker Compose命令未找到 (退出码: 1)
-	at com.fufu.terminal.service.sillytavern.SillyTavernDeploymentService.pullDockerImages(SillyTavernDeploymentService.java:293)
-	at com.fufu.terminal.service.sillytavern.SillyTavernDeploymentService.lambda$deploySillyTavern$0(SillyTavernDeploymentService.java:103)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1768)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.exec(CompletableFuture.java:1760)
-	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373)
-	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.helpAsyncBlocker(ForkJoinPool.java:1253)
-	at java.base/java.util.concurrent.ForkJoinPool.helpAsyncBlocker(ForkJoinPool.java:2237)
-	at java.base/java.util.concurrent.CompletableFuture.waitingGet(CompletableFuture.java:1887)
-	at java.base/java.util.concurrent.CompletableFuture.join(CompletableFuture.java:2117)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeSillyTavernDeployment(InteractiveDeploymentService.java:742)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeStep(InteractiveDeploymentService.java:335)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeDeploymentSteps(InteractiveDeploymentService.java:271)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.lambda$startInteractiveDeployment$0(InteractiveDeploymentService.java:116)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.exec(CompletableFuture.java:1796)
-	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373)
-	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182)
-	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655)
-	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622)
-	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165)
-2025-08-11 01:50:13.096 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.InteractiveDeploymentService - 步骤执行失败，会话: ntop3iza, 步骤: service_validation
-java.lang.RuntimeException: 服务验证失败: SillyTavern服务验证发现以下问题：
-- 容器未正常运行
-- 端口监听异常
-- HTTP服务无响应
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeServiceValidation(InteractiveDeploymentService.java:823)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeStep(InteractiveDeploymentService.java:341)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeDeploymentSteps(InteractiveDeploymentService.java:271)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.lambda$startInteractiveDeployment$0(InteractiveDeploymentService.java:116)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.exec(CompletableFuture.java:1796)
-	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373)
-	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182)
-	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655)
-	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622)
-	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165)
-2025-08-11 01:50:13.098 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.InteractiveDeploymentService - 部署失败，会话: ntop3iza
-java.lang.RuntimeException: 服务验证失败: SillyTavern服务验证发现以下问题：
-- 容器未正常运行
-- 端口监听异常
-- HTTP服务无响应
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeServiceValidation(InteractiveDeploymentService.java:823)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeStep(InteractiveDeploymentService.java:341)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.executeDeploymentSteps(InteractiveDeploymentService.java:271)
-	at com.fufu.terminal.service.sillytavern.InteractiveDeploymentService.lambda$startInteractiveDeployment$0(InteractiveDeploymentService.java:116)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
-	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.exec(CompletableFuture.java:1796)
-	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373)
-	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182)
-	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655)
-	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622)
-	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165)
-2025-08-11 01:50:38.078 [clientInboundChannel-36] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:51:08.018 [clientInboundChannel-39] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:51:38.084 [clientInboundChannel-42] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:52:08.234 [clientInboundChannel-45] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:52:38.100 [clientInboundChannel-48] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:53:07.343 [clientInboundChannel-51] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:53:37.408 [clientInboundChannel-54] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:54:07.380 [clientInboundChannel-57] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:54:38.955 [clientInboundChannel-60] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:55:07.362 [clientInboundChannel-63] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:55:38.031 [clientInboundChannel-66] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:56:08.079 [clientInboundChannel-69] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:57:17.091 [clientInboundChannel-72] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:58:22.563 [clientInboundChannel-75] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at jdk.internal.reflect.GeneratedMethodAccessor88.invoke(Unknown Source)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:59:27.468 [clientInboundChannel-13] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 01:59:37.165 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 01:59:38.124 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 01:59:57.442 [clientInboundChannel-19] ERROR [] c.f.t.s.s.DockerContainerService - 获取容器 'sillytavern' 状态时发生异常
-java.io.IOException: 操作失败：找不到指定的容器或镜像。
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:406)
-	at com.fufu.terminal.service.sillytavern.DockerContainerService.getContainerStatus(DockerContainerService.java:71)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:64)
-	at com.fufu.terminal.service.sillytavern.SillyTavernService.getContainerStatus(SillyTavernService.java:52)
-	at com.fufu.terminal.controller.SillyTavernStompController.handleStatusRequest(SillyTavernStompController.java:122)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
-	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
-	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
-	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
-	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:842)
-2025-08-11 02:00:28.015 [clientInboundChannel-18] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - cat: can't open '/data/docker/sillytavern/config.yaml': No such file or directory
-2025-08-11 02:16:24.315 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 02:16:25.244 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 02:16:26.788 [clientInboundChannel-14] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 02:16:26.848 [clientInboundChannel-23] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 02:16:44.955 [clientInboundChannel-30] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 02:16:58.436 [clientInboundChannel-3] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 02:16:58.436 [clientInboundChannel-6] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 02:44:26.803 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 02:45:04.734 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 02:45:05.718 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 03:15:45.350 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 03:15:46.289 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 03:31:59.223 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 03:32:00.170 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 03:36:16.789 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 03:36:17.736 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:27:45.085 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:27:45.987 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:37:34.006 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:37:34.947 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:37:59.491 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:38:00.496 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 13:40:29.954 [clientInboundChannel-60] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:40:50.216 [clientInboundChannel-63] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:41:20.585 [clientInboundChannel-66] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:41:50.587 [clientInboundChannel-69] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:43:17.623 [clientInboundChannel-72] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:44:17.566 [clientInboundChannel-75] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:45:17.598 [clientInboundChannel-78] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:45:42.015 [clientInboundChannel-81] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:45:50.601 [clientInboundChannel-84] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:46:20.702 [clientInboundChannel-87] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:46:50.670 [clientInboundChannel-90] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:47:20.647 [clientInboundChannel-93] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:47:50.290 [clientInboundChannel-96] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:48:20.771 [clientInboundChannel-99] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:48:50.320 [clientInboundChannel-102] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:49:20.198 [clientInboundChannel-105] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:49:50.192 [clientInboundChannel-108] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:50:20.213 [clientInboundChannel-111] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:50:50.180 [clientInboundChannel-114] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:51:20.588 [clientInboundChannel-117] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:51:50.528 [clientInboundChannel-120] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:53:17.593 [clientInboundChannel-123] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:54:17.595 [clientInboundChannel-126] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:55:17.586 [clientInboundChannel-129] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:56:17.570 [clientInboundChannel-132] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:57:17.643 [clientInboundChannel-135] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:58:17.730 [clientInboundChannel-138] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 13:59:17.570 [clientInboundChannel-141] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:00:17.693 [clientInboundChannel-144] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:01:17.573 [clientInboundChannel-147] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:02:17.663 [clientInboundChannel-150] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:03:17.603 [clientInboundChannel-153] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:04:17.568 [clientInboundChannel-156] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:05:17.584 [clientInboundChannel-159] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:06:17.622 [clientInboundChannel-162] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:07:17.769 [clientInboundChannel-165] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:08:17.595 [clientInboundChannel-168] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:09:17.562 [clientInboundChannel-171] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:10:17.588 [clientInboundChannel-174] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:11:17.586 [clientInboundChannel-177] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:12:17.614 [clientInboundChannel-180] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:13:17.648 [clientInboundChannel-183] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:14:18.059 [clientInboundChannel-186] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:15:17.578 [clientInboundChannel-189] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:19:18.666 [clientInboundChannel-10] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:19:27.984 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 14:19:28.895 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 14:20:18.554 [clientInboundChannel-28] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:20:48.603 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:21:18.640 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:21:48.598 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:22:18.555 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:22:48.587 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:24:17.640 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:25:17.574 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:26:17.574 [clientInboundChannel-54] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:27:17.661 [clientInboundChannel-57] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:28:17.650 [clientInboundChannel-60] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:29:17.606 [clientInboundChannel-63] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:30:17.742 [clientInboundChannel-66] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:31:17.579 [clientInboundChannel-69] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:32:17.588 [clientInboundChannel-72] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:33:17.518 [clientInboundChannel-75] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:34:17.627 [clientInboundChannel-78] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:35:17.610 [clientInboundChannel-99] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:36:17.633 [clientInboundChannel-118] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:37:17.587 [clientInboundChannel-121] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:38:17.623 [clientInboundChannel-139] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:39:17.594 [clientInboundChannel-142] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:40:17.571 [clientInboundChannel-145] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:41:17.577 [clientInboundChannel-148] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:42:17.584 [clientInboundChannel-151] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:43:17.589 [clientInboundChannel-154] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:44:17.584 [clientInboundChannel-157] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:45:17.606 [clientInboundChannel-160] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 14:46:17.606 [clientInboundChannel-163] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:23:52.160 [clientInboundChannel-13] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:24:01.419 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 15:24:02.352 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 15:24:19.345 [clientInboundChannel-32] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:24:22.030 [clientInboundChannel-31] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:24:52.576 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:25:22.614 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:25:52.044 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:26:22.589 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:26:52.587 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:28:17.621 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:29:17.591 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:30:17.608 [clientInboundChannel-54] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:31:17.557 [clientInboundChannel-57] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:32:17.623 [clientInboundChannel-60] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:33:17.607 [clientInboundChannel-63] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:34:17.606 [clientInboundChannel-66] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:35:17.609 [clientInboundChannel-69] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:36:17.603 [clientInboundChannel-72] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:37:17.633 [clientInboundChannel-75] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:38:17.647 [clientInboundChannel-78] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:39:17.586 [clientInboundChannel-81] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:40:17.623 [clientInboundChannel-84] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:41:17.633 [clientInboundChannel-87] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:42:17.631 [clientInboundChannel-90] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:43:00.194 [clientInboundChannel-93] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:43:22.624 [clientInboundChannel-96] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:43:52.608 [clientInboundChannel-99] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:53:58.997 [clientInboundChannel-5] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:54:08.260 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 15:54:09.187 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 15:54:29.623 [clientInboundChannel-11] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:54:59.619 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:55:29.588 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:55:59.635 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:56:29.598 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:56:59.611 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:58:17.626 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 15:59:17.641 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:00:17.623 [clientInboundChannel-54] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - 命令执行被中断: sudo docker exec sillytavern cat /data/docker/sillytavern/config.yaml
-2025-08-11 16:05:13.142 [clientInboundChannel-10] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:05:22.335 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:05:23.280 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:05:43.195 [clientInboundChannel-15] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:05:50.155 [clientInboundChannel-16] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:06:13.798 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:06:43.794 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:07:13.846 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:07:43.781 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:08:13.818 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:09:17.812 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:10:17.788 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:12:15.582 [clientInboundChannel-10] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:12:24.527 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:12:25.447 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:12:46.033 [clientInboundChannel-11] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:13:07.599 [clientInboundChannel-21] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:13:16.470 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:13:17.924 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:13:38.012 [clientInboundChannel-23] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:14:07.971 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:14:37.964 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:15:08.010 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:15:37.986 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:16:07.981 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:17:18.007 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:18:18.055 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:19:17.950 [clientInboundChannel-54] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:20:18.007 [clientInboundChannel-57] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:21:18.012 [clientInboundChannel-60] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:22:18.024 [clientInboundChannel-63] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:23:18.007 [clientInboundChannel-66] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:23:38.019 [clientInboundChannel-69] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:24:07.963 [clientInboundChannel-72] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:25:18.016 [clientInboundChannel-75] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:26:18.062 [clientInboundChannel-78] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:27:18.006 [clientInboundChannel-81] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:28:05.993 [clientInboundChannel-4] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:28:15.114 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:28:16.037 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:28:36.594 [clientInboundChannel-15] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:29:06.544 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:29:36.623 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:30:06.647 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:30:36.619 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:31:06.643 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:31:36.618 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:32:06.627 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:33:17.603 [clientInboundChannel-54] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:35:59.220 [clientInboundChannel-13] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:36:08.259 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:36:09.171 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:36:29.630 [clientInboundChannel-17] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:36:59.622 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:37:29.635 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:37:59.616 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:38:29.609 [clientInboundChannel-42] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:38:59.610 [clientInboundChannel-45] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:40:17.653 [clientInboundChannel-48] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:41:17.607 [clientInboundChannel-51] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:42:17.638 [clientInboundChannel-54] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:43:17.703 [clientInboundChannel-57] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:44:17.636 [clientInboundChannel-60] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:45:17.641 [clientInboundChannel-63] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:45:55.605 [clientInboundChannel-8] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:46:04.333 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:46:05.261 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 16:46:25.519 [clientInboundChannel-13] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:46:30.839 [clientInboundChannel-14] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:46:56.019 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:47:26.021 [clientInboundChannel-36] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 16:47:56.066 [clientInboundChannel-39] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 18:05:33.685 [clientInboundChannel-522] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 18:05:56.077 [clientInboundChannel-525] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 99ecd623a1564d1d758416be744c3da71ce1699a5b043bc9b7306e422a48c7f0 is not running
-2025-08-11 19:08:38.724 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 19:08:39.640 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 19:08:45.715 [clientInboundChannel-29] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 680a8ab6a96853a60dcc571108b5c429c24c27d455ad967918b3a2f923f1fbd8 is not running
-2025-08-11 19:08:59.718 [clientInboundChannel-4] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 680a8ab6a96853a60dcc571108b5c429c24c27d455ad967918b3a2f923f1fbd8 is not running
-2025-08-11 19:09:30.245 [clientInboundChannel-33] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 680a8ab6a96853a60dcc571108b5c429c24c27d455ad967918b3a2f923f1fbd8 is not running
-2025-08-11 21:55:14.330 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 21:55:15.308 [ForkJoinPool.commonPool-worker-5] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 21:55:23.159 [clientInboundChannel-602] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 0120bfde55bc80747d41e341351c606486d3d1e88f08874c7e338e1471c47aed is not running
-2025-08-11 21:55:35.473 [clientInboundChannel-606] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 0120bfde55bc80747d41e341351c606486d3d1e88f08874c7e338e1471c47aed is not running
-2025-08-11 21:56:06.233 [clientInboundChannel-634] ERROR [] c.f.t.s.s.ConfigurationService - 读取配置失败: sillytavern - Error response from daemon: container 0120bfde55bc80747d41e341351c606486d3d1e88f08874c7e338e1471c47aed is not running
-2025-08-11 22:41:25.763 [ForkJoinPool.commonPool-worker-7] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
-2025-08-11 22:41:26.693 [ForkJoinPool.commonPool-worker-7] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+Caused by: java.lang.InterruptedException: sleep interrupted
+	at java.base/java.lang.Thread.sleep(Native Method)
+	at com.fufu.terminal.service.SshCommandService.executeInternal(SshCommandService.java:313)
+	at com.fufu.terminal.service.SshCommandService.executeInternal(SshCommandService.java:287)
+	at com.fufu.terminal.service.sillytavern.DockerContainerService.executeCommand(DockerContainerService.java:681)
+	... 19 common frames omitted
+2025-08-12 01:22:00.150 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:22:01.082 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:24:44.312 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:24:46.045 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:26:39.586 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:26:41.055 [ForkJoinPool.commonPool-worker-6] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:27:28.454 [ForkJoinPool.commonPool-worker-6] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:27:30.044 [ForkJoinPool.commonPool-worker-8] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:27:48.053 [ForkJoinPool.commonPool-worker-8] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:27:50.062 [ForkJoinPool.commonPool-worker-10] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:28:30.432 [ForkJoinPool.commonPool-worker-10] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:28:32.042 [ForkJoinPool.commonPool-worker-12] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:29:03.231 [ForkJoinPool.commonPool-worker-12] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:29:05.033 [ForkJoinPool.commonPool-worker-14] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:31:09.498 [ForkJoinPool.commonPool-worker-12] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:31:10.455 [ForkJoinPool.commonPool-worker-16] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:33:29.219 [ForkJoinPool.commonPool-worker-17] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:33:31.063 [ForkJoinPool.commonPool-worker-18] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:34:20.072 [ForkJoinPool.commonPool-worker-18] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:34:21.073 [ForkJoinPool.commonPool-worker-20] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:35:56.607 [ForkJoinPool.commonPool-worker-18] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:35:58.049 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:36:54.487 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:36:56.050 [ForkJoinPool.commonPool-worker-18] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:37:09.140 [ForkJoinPool.commonPool-worker-18] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:37:11.050 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:37:33.177 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:37:34.202 [ForkJoinPool.commonPool-worker-18] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:39:29.540 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:39:30.557 [ForkJoinPool.commonPool-worker-23] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:40:14.008 [ForkJoinPool.commonPool-worker-23] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:40:15.049 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:40:31.694 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:40:32.697 [ForkJoinPool.commonPool-worker-23] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:41:11.548 [ForkJoinPool.commonPool-worker-23] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:41:12.555 [ForkJoinPool.commonPool-worker-22] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:42:46.010 [ForkJoinPool.commonPool-worker-23] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:42:47.047 [ForkJoinPool.commonPool-worker-24] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:48:02.164 [ForkJoinPool.commonPool-worker-15] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:48:03.163 [ForkJoinPool.commonPool-worker-25] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:50:30.618 [ForkJoinPool.commonPool-worker-26] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:50:32.051 [ForkJoinPool.commonPool-worker-27] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:51:20.605 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:51:21.534 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:52:04.851 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:52:05.864 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:56:30.294 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:56:32.060 [ForkJoinPool.commonPool-worker-6] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:57:45.825 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:58:12.695 [ForkJoinPool.commonPool-worker-3] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 01:58:13.694 [ForkJoinPool.commonPool-worker-9] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:10:20.612 [ForkJoinPool.commonPool-worker-11] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:10:21.593 [ForkJoinPool.commonPool-worker-12] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:14:26.347 [ForkJoinPool.commonPool-worker-14] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:14:27.326 [ForkJoinPool.commonPool-worker-15] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:14:53.338 [ForkJoinPool.commonPool-worker-15] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:14:55.056 [ForkJoinPool.commonPool-worker-17] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:16:29.702 [ForkJoinPool.commonPool-worker-15] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:16:31.062 [ForkJoinPool.commonPool-worker-19] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:16:44.276 [ForkJoinPool.commonPool-worker-19] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:16:46.061 [ForkJoinPool.commonPool-worker-21] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:23:49.931 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:23:50.879 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:28:23.544 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-12 02:28:24.520 [ForkJoinPool.commonPool-worker-5] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。

@@ -93,6 +93,7 @@
                   
                   <!-- CPU使用率 -->
                   <div class="stat-item">
+                    <!-- 第一行：标签 + 进度条 -->
                     <div class="stat-header">
                       <span class="stat-icon">⚡</span>
                       <span class="stat-label">CPU</span>
@@ -100,11 +101,15 @@
                     <div class="progress-bar">
                       <div class="progress-bar-inner" :style="{ width: getCpuUsage(systemStats) + '%' }"></div>
                     </div>
-                    <span class="stat-percent">{{ getCpuUsage(systemStats).toFixed(1) }}%</span>
+                    <!-- 第二行：百分比 -->
+                    <div class="stat-details">
+                      <span class="stat-percent">{{ getCpuUsage(systemStats).toFixed(1) }}%</span>
+                    </div>
                   </div>
 
                   <!-- 内存使用率 -->
                   <div class="stat-item">
+                    <!-- 第一行：标签 + 进度条 -->
                     <div class="stat-header">
                       <span class="stat-icon">💾</span>
                       <span class="stat-label">内存</span>
@@ -112,6 +117,7 @@
                     <div class="progress-bar">
                       <div class="progress-bar-inner" :style="{ width: (formatMemoryUsage(systemStats).percentage || 0) + '%' }"></div>
                     </div>
+                    <!-- 第二行：百分比 + 容量信息 -->
                     <div class="stat-details">
                       <span class="stat-percent">{{ (formatMemoryUsage(systemStats).percentage || 0).toFixed(1) }}%</span>
                       <span v-if="formatMemoryUsage(systemStats).used !== '未知'" class="stat-usage">
@@ -122,6 +128,7 @@
 
                   <!-- 硬盘使用率 -->
                   <div class="stat-item">
+                    <!-- 第一行：标签 + 进度条 -->
                     <div class="stat-header">
                       <span class="stat-icon">💿</span>
                       <span class="stat-label">硬盘</span>
@@ -129,6 +136,7 @@
                     <div class="progress-bar">
                       <div class="progress-bar-inner" :style="{ width: (formatDiskUsage(systemStats).percentage || 0) + '%' }"></div>
                     </div>
+                    <!-- 第二行：百分比 + 容量信息 -->
                     <div class="stat-details">
                       <span class="stat-percent">{{ (formatDiskUsage(systemStats).percentage || 0).toFixed(1) }}%</span>
                       <span v-if="formatDiskUsage(systemStats).used !== '未知'" class="stat-usage">
@@ -903,9 +911,37 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  console.log('SillyTavernConsole 组件即将卸载，清理资源...')
+  
+  // 清理定时器
   if (statusInterval) {
     clearInterval(statusInterval)
+    console.log('已清理状态刷新定时器')
   }
+  
+  // 停止监控服务
+  if (isMonitoringActive.value) {
+    console.log('停止监控服务...')
+    const stompClient = getStompClient()
+    if (stompClient && stompClient.connected) {
+      try {
+        stompClient.publish({
+          destination: '/app/monitor/stop',
+          body: JSON.stringify({})
+        })
+        console.log('已发送监控停止请求')
+      } catch (error) {
+        console.warn('发送监控停止请求失败:', error)
+      }
+    }
+    isMonitoringActive.value = false
+  }
+  
+  // 清理监控数据
+  systemStats.value = null
+  terminalDockerContainers.value = []
+  
+  console.log('SillyTavernConsole 资源清理完成')
 })
 </script>
 
@@ -1025,6 +1061,8 @@ onUnmounted(() => {
   padding: 12px;
   border: 1px solid #e2e8f0;
   transition: all 0.2s ease;
+  display: block !important;
+  width: 100%;
 }
 
 .stat-item:hover {
@@ -1035,7 +1073,8 @@ onUnmounted(() => {
 .stat-header {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  width: 100%;
 }
 
 .stat-icon {
@@ -1058,6 +1097,9 @@ onUnmounted(() => {
   overflow: hidden;
   margin: 6px 0;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+  width: 100% !important;
+  display: block !important;
+  clear: both;
 }
 
 .progress-bar-inner {
@@ -1067,6 +1109,7 @@ onUnmounted(() => {
   transition: width 0.3s ease;
   position: relative;
   overflow: hidden;
+  display: block;
 }
 
 .progress-bar-inner::after {
@@ -1083,10 +1126,13 @@ onUnmounted(() => {
 /* 删除了重复的shimmer动画定义 */
 
 .stat-details {
-  display: flex;
+  display: flex !important;
   justify-content: space-between;
   align-items: center;
   margin-top: 4px;
+  clear: both;
+  width: 100%;
+  flex-wrap: nowrap;
 }
 
 .stat-percent {

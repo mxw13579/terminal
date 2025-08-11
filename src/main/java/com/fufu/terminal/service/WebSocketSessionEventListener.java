@@ -1,5 +1,7 @@
 package com.fufu.terminal.service;
 
+import com.fufu.terminal.config.StompAuthenticationInterceptor;
+import com.fufu.terminal.model.SshConnection;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -33,6 +35,7 @@ public class WebSocketSessionEventListener {
 
     private final TerminalMetrics terminalMetrics;
     private final StompMonitoringService stompMonitoringService;
+    private final StompAuthenticationInterceptor authInterceptor;
 
     /**
      * 处理 WebSocket 会话连接建立事件。
@@ -70,9 +73,26 @@ public class WebSocketSessionEventListener {
         // 清理监控会话状态（修复会话问题）
         try {
             stompMonitoringService.cleanupMonitoring(sessionId);
-            log.debug("已清理会话 {} 的监控状态", sessionId);
+            log.debug("已清理会话 {} 的STOMP监控状态", sessionId);
         } catch (Exception e) {
-            log.warn("清理会话 {} 的监控状态时发生异常: {}", sessionId, e.getMessage());
+            log.warn("清理会话 {} 的STOMP监控状态时发生异常: {}", sessionId, e.getMessage());
+        }
+        
+        // 清理SSH连接和监控任务（修复刷新后继续监控的问题）
+        try {
+            SshConnection connection = authInterceptor.getConnection(sessionId);
+            if (connection != null) {
+                log.info("发现会话 {} 的SSH连接，清理监控任务...", sessionId);
+                connection.cancelMonitoringTask();
+                log.info("已取消会话 {} 的监控任务", sessionId);
+                
+                // 注意：我们不在这里关闭SSH连接，因为用户可能只是刷新页面
+                // SSH连接应该由用户显式断开或超时机制清理
+            } else {
+                log.debug("会话 {} 没有对应的SSH连接", sessionId);
+            }
+        } catch (Exception e) {
+            log.error("清理会话 {} 的SSH监控任务时发生异常: {}", sessionId, e.getMessage(), e);
         }
         
         log.debug("已记录会话断开指标: sessionId={}, reason={}", sessionId, disconnectReason);

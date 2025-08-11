@@ -240,7 +240,7 @@ export function useTerminal(options = {}) {
         console.log('Starting to subscribe to queues...');
         
         // 订阅终端输出
-        const terminalSub = stompClient.subscribe('/user/queue/terminal/output', (message) => {
+        const terminalSub = stompClient.subscribe('/user/queue/terminal', (message) => {
             console.log('Received terminal output message:', message);
             try {
                 const data = JSON.parse(message.body);
@@ -258,7 +258,7 @@ export function useTerminal(options = {}) {
         console.log('Subscribed to terminal output:', terminalSub);
 
         // 订阅终端错误
-        const errorSub = stompClient.subscribe('/user/queue/terminal/error', (message) => {
+        const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
             try {
                 const data = JSON.parse(message.body);
                 onShowModal("终端错误: " + data.payload);
@@ -540,6 +540,8 @@ export function useTerminal(options = {}) {
                 destination: '/app/terminal/data',
                 body: JSON.stringify({ data: data })
             });
+        } else {
+            console.warn('未连接到STOMP客户端，无法发送终端数据');
         }
     };
     
