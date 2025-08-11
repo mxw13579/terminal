@@ -76,69 +76,103 @@
                   <span class="section-icon">🖥️</span>
                   服务器信息
                 </h4>
+                <button 
+                  v-if="connectionState.isConnected" 
+                  @click="toggleServerInfoExpanded"
+                  class="expand-toggle-btn"
+                  :class="{ 'expanded': isServerInfoExpanded }"
+                  style="width: 24px; height: 24px; border: 1px solid #999; background: #f5f5f5;"
+                  title="展开/收缩详情"
+                >
+                  {{ isServerInfoExpanded ? '−' : '+' }}
+                </button>
               </div>
               <div class="section-content">
                 <!-- 服务器监控数据 -->
                 <div v-if="systemStats" class="server-stats">
-                  <!-- 基本信息 -->
-                  <div class="stats-section">
-                    <div class="section-subtitle">基本信息</div>
-                    <div class="stat-item">
-                      <span class="stat-label">CPU 型号</span>
-                      <span class="stat-value" :title="systemStats.cpuModel">{{ systemStats.cpuModel || '获取中...' }}</span>
+                  
+                  <!-- CPU使用率 -->
+                  <div class="stat-item">
+                    <div class="stat-header">
+                      <span class="stat-icon">⚡</span>
+                      <span class="stat-label">CPU</span>
                     </div>
-                    <div class="stat-item">
-                      <span class="stat-label">系统运行时长</span>
-                      <span class="stat-value">{{ systemStats.uptime || '获取中...' }}</span>
+                    <div class="progress-bar">
+                      <div class="progress-bar-inner" :style="{ width: getCpuUsage(systemStats) + '%' }"></div>
                     </div>
+                    <span class="stat-percent">{{ getCpuUsage(systemStats).toFixed(1) }}%</span>
                   </div>
 
-                  <!-- 资源使用情况 -->
-                  <div class="stats-section">
-                    <div class="section-subtitle">资源使用</div>
-                    <div class="stat-item progress-item">
-                      <span class="stat-label">CPU 使用率</span>
-                      <div class="progress-bar">
-                        <div class="progress-bar-inner" :style="{ width: (systemStats.cpuUsage || 0) + '%' }"></div>
-                      </div>
-                      <span class="stat-percent">{{ (systemStats.cpuUsage || 0).toFixed(1) }}%</span>
+                  <!-- 内存使用率 -->
+                  <div class="stat-item">
+                    <div class="stat-header">
+                      <span class="stat-icon">💾</span>
+                      <span class="stat-label">内存</span>
                     </div>
-                    <div class="stat-item progress-item">
-                      <span class="stat-label">内存使用率</span>
-                      <div class="progress-bar">
-                        <div class="progress-bar-inner" :style="{ width: (systemStats.memUsage || 0) + '%' }"></div>
-                      </div>
-                      <span class="stat-percent">{{ (systemStats.memUsage || 0).toFixed(1) }}%</span>
+                    <div class="progress-bar">
+                      <div class="progress-bar-inner" :style="{ width: (formatMemoryUsage(systemStats).percentage || 0) + '%' }"></div>
                     </div>
-                    <div class="stat-item progress-item">
-                      <span class="stat-label">硬盘使用率 (/)</span>
-                      <div class="progress-bar">
-                        <div class="progress-bar-inner" :style="{ width: (systemStats.diskUsage || 0) + '%' }"></div>
-                      </div>
-                      <span class="stat-percent">{{ (systemStats.diskUsage || 0).toFixed(1) }}%</span>
-                    </div>
-                    <div class="stat-item">
-                      <span class="stat-label">网络 I/O</span>
-                      <span class="stat-value small-text">
-                        接收: {{ systemStats.netRx || '0 B' }} | 发送: {{ systemStats.netTx || '0 B' }}
+                    <div class="stat-details">
+                      <span class="stat-percent">{{ (formatMemoryUsage(systemStats).percentage || 0).toFixed(1) }}%</span>
+                      <span v-if="formatMemoryUsage(systemStats).used !== '未知'" class="stat-usage">
+                        {{ formatMemoryUsage(systemStats).used }}G / {{ formatMemoryUsage(systemStats).total }}G
                       </span>
                     </div>
                   </div>
 
-                  <!-- Docker 容器信息 -->
-                  <div v-if="terminalDockerContainers && terminalDockerContainers.length" class="stats-section">
-                    <div class="section-subtitle">Docker 容器</div>
-                    <div class="docker-list">
-                      <div v-for="container in terminalDockerContainers" :key="container.id" class="docker-item">
-                        <div class="docker-item-header">
-                          <span class="docker-name" :title="container.name">{{ container.name }}</span>
-                          <span class="docker-status" :class="container.status.includes('Up') ? 'up' : 'exited'">
-                            {{ container.status.split(' ')[0] }}
-                          </span>
-                        </div>
-                        <div class="docker-item-body">
-                          <span>CPU: {{ container.cpuPerc }}</span>
-                          <span>内存: {{ container.memPerc }}</span>
+                  <!-- 硬盘使用率 -->
+                  <div class="stat-item">
+                    <div class="stat-header">
+                      <span class="stat-icon">💿</span>
+                      <span class="stat-label">硬盘</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div class="progress-bar-inner" :style="{ width: (formatDiskUsage(systemStats).percentage || 0) + '%' }"></div>
+                    </div>
+                    <div class="stat-details">
+                      <span class="stat-percent">{{ (formatDiskUsage(systemStats).percentage || 0).toFixed(1) }}%</span>
+                      <span v-if="formatDiskUsage(systemStats).used !== '未知'" class="stat-usage">
+                        {{ formatDiskUsage(systemStats).used }}G / {{ formatDiskUsage(systemStats).total }}G
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 展开详情 -->
+                  <div v-if="isServerInfoExpanded" class="expanded-details">
+                    <!-- 基本信息 -->
+                    <div class="detail-section">
+                      <div class="section-subtitle">基本信息</div>
+                      <div class="detail-item">
+                        <span class="detail-label">CPU 型号</span>
+                        <span class="detail-value" :title="systemStats.cpuModel">{{ systemStats.cpuModel || '获取中...' }}</span>
+                      </div>
+                      <div class="detail-item">
+                        <span class="detail-label">系统运行时长</span>
+                        <span class="detail-value">{{ systemStats.uptime || '获取中...' }}</span>
+                      </div>
+                      <div class="detail-item">
+                        <span class="detail-label">网络 I/O</span>
+                        <span class="detail-value">
+                          接收: {{ systemStats.netRx || '0 B' }} | 发送: {{ systemStats.netTx || '0 B' }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <!-- Docker 容器信息 -->
+                    <div v-if="terminalDockerContainers && terminalDockerContainers.length" class="detail-section">
+                      <div class="section-subtitle">Docker 容器</div>
+                      <div class="docker-list">
+                        <div v-for="container in terminalDockerContainers" :key="container.id" class="docker-item">
+                          <div class="docker-item-header">
+                            <span class="docker-name" :title="container.name">{{ container.name }}</span>
+                            <span class="docker-status" :class="container.status.includes('Up') ? 'up' : 'exited'">
+                              {{ container.status.split(' ')[0] }}
+                            </span>
+                          </div>
+                          <div class="docker-item-body">
+                            <span>CPU: {{ container.cpuPerc }}</span>
+                            <span>内存: {{ container.memPerc }}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -153,6 +187,12 @@
                 </div>
                 
                 <!-- 加载状态 -->
+                <div v-else-if="!isMonitoringActive" class="server-loading">
+                  <i class="fas fa-spinner fa-spin"></i>
+                  <p>正在连接监控服务...</p>
+                </div>
+                
+                <!-- 监控中但未收到数据 -->
                 <div v-else class="server-loading">
                   <i class="fas fa-spinner fa-spin"></i>
                   <p>获取服务器信息...</p>
@@ -356,7 +396,7 @@ import { useSillyTavern } from '../composables/useSillyTavern'
 import { useTerminal } from '../composables/useTerminal'
 
 // 连接管理
-const { connectionState, connectionStatus } = useConnectionManager()
+const { connectionState, connectionStatus, getStompClient } = useConnectionManager()
 
 // SillyTavern 管理 - 现在使用统一连接管理器
 const { 
@@ -382,13 +422,11 @@ const {
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
 
-// Terminal 管理 - 获取服务器监控数据
-const {
-  systemStats,
-  dockerContainers: terminalDockerContainers,
-  monitorVisible: terminalMonitorVisible,
-  toggleMonitorPanel
-} = useTerminal()
+// 服务器监控数据状态
+const systemStats = ref(null)
+const terminalDockerContainers = ref([])
+const isMonitoringActive = ref(false)
+const isServerInfoExpanded = ref(false)
 
 // 状态管理
 const showConnectionModal = ref(false)
@@ -547,6 +585,224 @@ const handleServiceAction = async (action, options = {}) => {
   }
 }
 
+// 启动服务器监控
+const startServerMonitoring = () => {
+  const stompClient = getStompClient()
+  
+  if (!stompClient || !stompClient.connected) {
+    console.warn('⚠️ STOMP客户端未连接，无法启动监控')
+    setTimeout(() => startServerMonitoring(), 1000) // 1秒后重试
+    return
+  }
+  
+  console.log('🚀 开始启动服务器监控...')
+  console.log('📡 STOMP客户端状态:', stompClient.connected)
+  console.log('🔗 WebSocket URL:', stompClient.webSocket?.url)
+  
+  // 尝试从URL中提取会话ID
+  let sessionId = 'unknown'
+  if (stompClient.webSocket?.url) {
+    const urlMatch = stompClient.webSocket.url.match(/\/ws\/terminal\/(\w+)\//)
+    if (urlMatch) {
+      sessionId = urlMatch[1]
+    }
+  }
+  console.log('🆔 检测到的会话ID:', sessionId)
+  
+  // 首先订阅监控数据和错误消息
+  try {
+    // 订阅监控数据 - 使用正确的路由
+    console.log('📡 订阅监控数据: /user/queue/monitor')
+    const monitorSub = stompClient.subscribe('/user/queue/monitor', (message) => {
+      try {
+        console.log('📨 收到原始监控消息:', message)
+        const data = JSON.parse(message.body)
+        console.log('🔍 解析后的监控数据:', data)
+        handleMonitorUpdate(data)
+      } catch (e) {
+        console.error('❌ 处理监控数据失败:', e)
+      }
+    })
+    
+    // 订阅错误消息
+    console.log('🚨 订阅错误消息: /user/queue/errors')
+    const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
+      try {
+        const data = JSON.parse(message.body)
+        console.error('🚨 收到监控错误:', data)
+      } catch (e) {
+        console.error('❌ 处理监控错误失败:', e)
+      }
+    })
+    
+    console.log('✅ 监控数据订阅成功:', { 
+      monitorSub: !!monitorSub, 
+      errorSub: !!errorSub
+    })
+    
+    // 发送启动监控请求
+    const startMessage = {
+      frequencySeconds: 5 // 每5秒更新一次
+    }
+    console.log('📤 发送监控启动请求:', startMessage)
+    
+    stompClient.publish({
+      destination: '/app/monitor/start',
+      body: JSON.stringify(startMessage)
+    })
+    
+    isMonitoringActive.value = true
+    console.log('🎯 服务器监控启动请求已发送')
+    
+  } catch (error) {
+    console.error('❌ 启动服务器监控失败:', error)
+    // 3秒后重试
+    setTimeout(() => startServerMonitoring(), 3000)
+  }
+}
+
+// 处理监控数据更新
+const handleMonitorUpdate = (data) => {
+  console.log('🔍 handleMonitorUpdate被调用，数据:', data)
+  if (data.type === 'monitor_update') {
+    console.log('✅ 监控数据类型正确，载荷:', data.payload)
+    systemStats.value = data.payload
+    terminalDockerContainers.value = data.payload.dockerContainers || []
+    console.log('📊 系统统计数据已更新:', systemStats.value)
+    console.log('💾 内存数据详情:', systemStats.value?.memUsage)
+    console.log('💿 硬盘数据详情:', systemStats.value?.diskUsage)
+  } else {
+    console.log('❌ 监控数据类型不匹配:', data.type)
+  }
+}
+
+// 格式化CPU使用率
+const getCpuUsage = (stats) => {
+  if (!stats) return 0
+  return typeof stats.cpuUsage === 'number' ? stats.cpuUsage : 0
+}
+
+// 格式化内存和磁盘使用情况
+const formatMemoryUsage = (stats) => {
+  console.log('formatMemoryUsage 输入:', stats?.memUsage, '类型:', typeof stats?.memUsage)
+  console.log('完整stats对象:', stats)
+  
+  if (!stats || stats.memUsage === undefined) {
+    return { used: '0', total: '0', percentage: 0 }
+  }
+  
+  // 如果是数字，说明只有百分比信息（旧格式兼容）
+  if (typeof stats.memUsage === 'number') {
+    console.log('使用数字格式，百分比:', stats.memUsage)
+    return { used: '未知', total: '未知', percentage: stats.memUsage }
+  }
+  
+  // 如果是对象，说明有详细信息（新格式）
+  const memData = stats.memUsage
+  console.log('使用对象格式，详细信息:', memData)
+  
+  if (!memData || typeof memData !== 'object') {
+    console.log('memData不是有效对象:', memData)
+    return { used: '0', total: '0', percentage: 0 }
+  }
+  
+  return {
+    used: (memData.used / 1024).toFixed(1), // MB->GB (free -m返回MB)
+    total: (memData.total / 1024).toFixed(1), // MB->GB (free -m返回MB)
+    percentage: memData.percentage || 0
+  }
+}
+
+const formatDiskUsage = (stats) => {
+  console.log('formatDiskUsage 输入:', stats?.diskUsage, '类型:', typeof stats?.diskUsage)
+  console.log('完整stats对象:', stats)
+  
+  if (!stats || stats.diskUsage === undefined) {
+    return { used: '0', total: '0', percentage: 0 }
+  }
+  
+  // 如果是数字，说明只有百分比信息（旧格式兼容）
+  if (typeof stats.diskUsage === 'number') {
+    console.log('使用数字格式，百分比:', stats.diskUsage)
+    return { used: '未知', total: '未知', percentage: stats.diskUsage }
+  }
+  
+  // 如果是对象，说明有详细信息（新格式）
+  const diskData = stats.diskUsage
+  console.log('使用对象格式，详细信息:', diskData)
+  
+  if (!diskData || typeof diskData !== 'object') {
+    console.log('diskData不是有效对象:', diskData)
+    return { used: '0', total: '0', percentage: 0 }
+  }
+  
+  return {
+    used: (diskData.used / 1024 / 1024).toFixed(1), // KB->MB->GB (df -P返回KB)
+    total: (diskData.total / 1024 / 1024).toFixed(1), // KB->MB->GB (df -P返回KB)
+    percentage: diskData.percentage || 0
+  }
+}
+
+// 切换服务器信息展开/收缩状态
+const toggleServerInfoExpanded = () => {
+  console.log('toggleServerInfoExpanded 被调用，当前状态:', isServerInfoExpanded.value)
+  isServerInfoExpanded.value = !isServerInfoExpanded.value
+  console.log('新状态:', isServerInfoExpanded.value)
+}
+
+// 调试方法：手动触发监控测试
+const debugMonitoring = () => {
+  console.log('=== 调试监控状态 ===')
+  console.log('连接状态:', connectionState.isConnected)
+  console.log('监控活动状态:', isMonitoringActive.value)
+  console.log('系统统计数据:', systemStats.value)
+  console.log('Docker容器数据:', terminalDockerContainers.value)
+  
+  const stompClient = getStompClient()
+  console.log('STOMP客户端:', stompClient)
+  console.log('STOMP连接状态:', stompClient?.connected)
+  console.log('WebSocket URL:', stompClient?.webSocket?.url)
+  
+  if (stompClient && stompClient.connected) {
+    console.log('手动发送监控启动请求...')
+    
+    // 尝试直接订阅并发送测试
+    const testSub = stompClient.subscribe('/user/queue/monitor', (message) => {
+      console.log('测试订阅收到消息:', message)
+      try {
+        const data = JSON.parse(message.body)
+        console.log('测试订阅解析数据:', data)
+      } catch (e) {
+        console.error('测试订阅解析失败:', e)
+      }
+    })
+    
+    console.log('测试订阅创建:', !!testSub)
+    
+    // 发送监控启动请求
+    stompClient.publish({
+      destination: '/app/monitor/start',
+      body: JSON.stringify({ frequencySeconds: 3 })
+    })
+    
+    // 也尝试直接发送到用户队列（测试）
+    setTimeout(() => {
+      console.log('发送测试消息...')
+      try {
+        stompClient.publish({
+          destination: '/user/queue/monitor',
+          body: JSON.stringify({
+            type: 'test_message',
+            payload: { message: 'This is a test' }
+          })
+        })
+      } catch (error) {
+        console.error('发送测试消息失败:', error)
+      }
+    }, 1000)
+  }
+}
+
 const getActionDisplayName = (action) => {
   const actionNames = {
     'start': '启动容器',
@@ -619,10 +875,10 @@ onMounted(async () => {
       await refreshStatus()
       
       // 启动服务器监控以获取系统信息
-      if (!terminalMonitorVisible.value) {
-        console.log('启动服务器监控...')
-        toggleMonitorPanel()
-      }
+      console.log('启动服务器监控...')
+      setTimeout(() => {
+        startServerMonitoring()
+      }, 2000) // 延迟2秒确保SSH连接完全建立
       
       // 获取可用的Docker版本信息
       console.log('准备获取版本信息...')
@@ -732,6 +988,9 @@ onUnmounted(() => {
   padding: 20px;
   background: #f1f5f9;
   border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .section-title {
@@ -753,57 +1012,147 @@ onUnmounted(() => {
   padding: 20px;
 }
 
-/* 服务器信息样式 */
+/* 服务器信息统一样式 */
 .server-stats {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.stats-section {
-  margin-bottom: 12px;
+.stat-item {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
 }
 
-.section-subtitle {
-  font-weight: 600;
-  color: #6b7280;
+.stat-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.stat-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.stat-icon {
+  font-size: 14px;
+  margin-right: 6px;
+}
+
+.stat-label {
   font-size: 12px;
+  font-weight: 600;
+  color: #374151;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #f1f3f4;
-}
-
-.progress-item {
-  display: grid;
-  grid-template-columns: 1fr 2fr auto;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
 }
 
 .progress-bar {
-  width: 100%;
-  height: 6px;
-  background: #f1f5f9;
-  border-radius: 3px;
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
   overflow: hidden;
+  margin: 6px 0;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .progress-bar-inner {
   height: 100%;
   background: linear-gradient(90deg, #10b981 0%, #f59e0b 70%, #ef4444 90%);
-  border-radius: 3px;
+  border-radius: 2px;
   transition: width 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar-inner::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+  animation: shimmer 2s infinite;
+}
+
+/* 删除了重复的shimmer动画定义 */
+
+.stat-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
 }
 
 .stat-percent {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.stat-usage {
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* 展开详情样式 */
+.expanded-details {
+  margin-top: 16px;
+  animation: expandIn 0.3s ease-out;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detail-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.detail-item:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
   font-size: 11px;
-  font-weight: 600;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 11px;
   color: #374151;
-  min-width: 35px;
+  font-weight: 500;
+  max-width: 60%;
   text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .docker-list {
@@ -885,6 +1234,37 @@ onUnmounted(() => {
   font-size: 10px;
   line-height: 1.2;
 }
+
+/* 展开/收缩按钮样式 */
+.expand-toggle-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.expand-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #374151;
+}
+
+.expand-toggle-btn i {
+  transition: transform 0.2s ease;
+}
+
+.expand-toggle-btn.expanded i {
+  transform: rotate(180deg);
+}
+
+/* 删除了重复的最小化和展开视图样式，现在使用统一的UI设计 */
+
+/* 进度条统一样式（已清理重复定义）*/
 
 /* Docker信息样式 */
 .docker-stats {

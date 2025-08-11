@@ -73,7 +73,7 @@ import Modal from '@/components/Modal.vue'
 import MonitorPanel from "@/components/MonitorPanel.vue"
 
 // 使用统一连接管理器
-const { connectionState, connect, disconnect } = useConnectionManager()
+const { connectionState, connect, disconnect, getStompClient } = useConnectionManager()
 
 // Modal state remains in the component as it's a pure UI concern
 const modal = ref({ visible: false, title: '', message: '' })
@@ -109,7 +109,9 @@ const {
   toggleSftpPanel, toggleMonitorPanel,
   fetchSftpList, downloadSftpFiles, uploadSftpFile
 } = useTerminal({
-  onShowModal: showModal
+  onShowModal: showModal,
+  // 复用连接管理器创建的 STOMP 客户端，避免重复连接导致页面无响应
+  getStompClient
 })
 
 // 检查现有连接状态
@@ -137,19 +139,22 @@ onMounted(() => {
   --accent-color-2: #843b69;
   --selection-bg-color: rgba(99, 102, 241, 0.3);
 }
-
-body, html, #app {
-  margin: 0; padding: 0; width: 100%; height: 100%;
-  font-family: 'Poppins', sans-serif;
+.terminal-root-bg {
   background-color: var(--bg-color-dark);
   color: #e0e0e0;
-  overflow: hidden;
 }
 .app-container {
-  width: 100%; height: 100%; position: relative;
+  width: 100%;
+  /* 使用视口高度，避免受全局 height:auto !important 影响 */
+  min-height: 100vh;
+  height: 100vh;
+  position: relative;
   background-image: radial-gradient(circle at 1% 1%, var(--accent-color-1), transparent 30%),
   radial-gradient(circle at 99% 99%, var(--accent-color-2), transparent 40%);
   display: flex; flex-direction: column;
+}
+@supports (height: 100dvh) {
+  .app-container { height: 100dvh; }
 }
 .terminal-content {
   flex: 1;
@@ -178,7 +183,7 @@ body, html, #app {
 .workspace-controls { display: flex; gap: 10px; }
 .workspace-content { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; gap: 15px; overflow: hidden; }
 .terminal-container-main {
-  flex: 1 1 0; min-width: 0; min-height: 0; width: 100%;
+  flex: 1 1 auto; min-width: 0; min-height: 0; width: 100%;
   background: var(--card-bg-color); border: 1px solid var(--border-color);
   border-radius: 12px; overflow: hidden; padding: 10px; box-sizing: border-box; display: flex;
   /* Ensure minimum dimensions for terminal */
@@ -186,7 +191,7 @@ body, html, #app {
   position: relative;
 }
 .terminal-wrapper { 
-  flex: 1; min-width: 0; min-height: 0;
+  flex: 1 1 auto; min-width: 0; min-height: 0;
   /* Ensure the wrapper takes full available space */
   width: 100%;
   height: 100%;

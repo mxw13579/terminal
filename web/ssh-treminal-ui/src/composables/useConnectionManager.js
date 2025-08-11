@@ -73,7 +73,7 @@ export function useConnectionManager() {
     try {
       // Step 1: Encrypt credentials using CryptoService (auto-fetches public key)
       console.log('[Security Auth] Encrypting SSH credentials...');
-      const { CryptoService } = await import('../services/crypto.ts');
+      const { CryptoService } = await import('../services/crypto.js');
       const encryptedCredentialsString = await CryptoService.encryptCredentials({
         host: connectionInfo.host,
         port: connectionInfo.port?.toString() || '22',

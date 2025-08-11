@@ -343,8 +343,8 @@ public class SshMonitorService {
         stats.put("cpuModel", getPart(initialParts, 0, "N/A"));
         stats.put("uptime", getPart(initialParts, 1, "N/A").replace("up ", "").trim());
         stats.put("cpuUsage", parseCpuUsage(getPart(initialParts, 2, ""), getPart(finalParts, 0, "")));
-        stats.put("memUsage", parseMemUsage(getPart(initialParts, 3, "")));
-        stats.put("diskUsage", parseDiskUsage(getPart(initialParts, 4, "")));
+        stats.put("memUsage", parseMemUsageDetailed(getPart(initialParts, 3, "")));
+        stats.put("diskUsage", parseDiskUsageDetailed(getPart(initialParts, 4, "")));
         Map<String, String> net = parseNetUsage(getPart(initialParts, 5, ""), getPart(finalParts, 1, ""));
         stats.put("netRx", net.get("rx"));
         stats.put("netTx", net.get("tx"));
@@ -589,6 +589,109 @@ public class SshMonitorService {
         } catch (Exception e) {
             log.warn("解析网络流量失败", e);
             return Map.of("rx", "N/A", "tx", "N/A");
+        }
+    }
+
+    /**
+     * 解析内存使用率（详细版本，返回详细信息）。
+     *
+     * @param freeOutput free 命令输出
+     * @return 包含used、total、percentage的Map
+     */
+    private Map<String, Object> parseMemUsageDetailed(String freeOutput) {
+        Map<String, Object> result = new HashMap<>();
+        if (freeOutput.isEmpty()) {
+            result.put("used", 0L);
+            result.put("total", 0L);
+            result.put("percentage", 0.0);
+            return result;
+        }
+        
+        try {
+            Optional<String[]> memLine = Arrays.stream(freeOutput.split("\\n"))
+                    .filter(line -> line.startsWith("Mem:"))
+                    .map(line -> line.trim().split("\\s+"))
+                    .filter(parts -> parts.length > 2)
+                    .findFirst();
+                    
+            if (memLine.isPresent()) {
+                String[] parts = memLine.get();
+                long total = Long.parseLong(parts[1]);
+                long used = Long.parseLong(parts[2]);
+                double percentage = total > 0 ? (used / (double) total) * 100.0 : 0.0;
+                
+                result.put("used", used);
+                result.put("total", total);
+                result.put("percentage", percentage);
+                
+                log.debug("内存详细信息: used={}KB, total={}KB, percentage={}%", used, total, percentage);
+            } else {
+                result.put("used", 0L);
+                result.put("total", 0L);
+                result.put("percentage", 0.0);
+            }
+            
+            return result;
+        } catch (Exception e) {
+            log.warn("解析内存详细信息失败", e);
+            result.put("used", 0L);
+            result.put("total", 0L);
+            result.put("percentage", 0.0);
+            return result;
+        }
+    }
+
+    /**
+     * 解析磁盘使用率（详细版本，返回详细信息）。
+     *
+     * @param dfOutput df 命令输出
+     * @return 包含used、total、percentage的Map
+     */
+    private Map<String, Object> parseDiskUsageDetailed(String dfOutput) {
+        Map<String, Object> result = new HashMap<>();
+        if (dfOutput == null || dfOutput.isBlank()) {
+            result.put("used", 0L);
+            result.put("total", 0L);
+            result.put("percentage", 0.0);
+            return result;
+        }
+        
+        try {
+            String[] lines = dfOutput.trim().split("\\n");
+            if (lines.length < 2) {
+                log.warn("df输出无效，期望至少2行，实际: {}", lines.length);
+                result.put("used", 0L);
+                result.put("total", 0L);
+                result.put("percentage", 0.0);
+                return result;
+            }
+            
+            String dataLine = lines[1];
+            String[] parts = dataLine.trim().split("\\s+");
+            if (parts.length >= 6) {
+                long total = Long.parseLong(parts[1]); // 总容量（KB）
+                long used = Long.parseLong(parts[2]);  // 已使用（KB）
+                double percentage = Double.parseDouble(parts[4].replace("%", "")); // 使用百分比
+                
+                result.put("used", used);
+                result.put("total", total);
+                result.put("percentage", percentage);
+                
+                log.debug("磁盘详细信息: used={}KB, total={}KB, percentage={}%", used, total, percentage);
+            } else {
+                log.warn("无法解析磁盘详细信息: '{}'", dataLine);
+                result.put("used", 0L);
+                result.put("total", 0L);
+                result.put("percentage", 0.0);
+            }
+            
+            return result;
+        } catch (Exception e) {
+            log.warn("解析磁盘详细信息失败", e);
+            result.put("used", 0L);
+            result.put("total", 0L);
+            result.put("percentage", 0.0);
+            return result;
         }
     }
 

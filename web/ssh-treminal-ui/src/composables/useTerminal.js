@@ -7,7 +7,7 @@ import { StreamingFileService } from '../services/streamingFile.js';
 
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
 export function useTerminal(options = {}) {
-    const { onShowModal = () => {} } = options;
+    const { onShowModal = () => {}, getStompClient: getExternalClient } = options;
 
     // --- State ---
     const host = ref('');
@@ -43,10 +43,58 @@ export function useTerminal(options = {}) {
     let uploadStartTime = 0;
     let uploadBytesSent = 0;
     let currentCredentials = null; // 存储当前连接凭据，用于重连
+    // 外部 STOMP 客户端复用标记与订阅状态
+    let usingExternalClient = false;
+    let subscriptionsReady = false;
+    let externalAttachTimer = null;
     const streamingFileService = new StreamingFileService();
+
+    // 若外部提供了 STOMP 客户端获取方法，尝试复用并在连接后订阅
+    const tryAttachExternalClient = () => {
+        if (!getExternalClient) return;
+        const client = getExternalClient();
+        if (!client) return;
+        if (client !== stompClient) {
+            stompClient = client;
+            usingExternalClient = true;
+            subscriptionsReady = false;
+        }
+        if (stompClient && stompClient.connected && !subscriptionsReady) {
+            subscribeToQueues();
+            startTerminalOutputForwarding();
+            subscriptionsReady = true;
+            if (externalAttachTimer) {
+                clearInterval(externalAttachTimer);
+                externalAttachTimer = null;
+            }
+        }
+    };
+
+    const scheduleExternalAttach = () => {
+        if (!getExternalClient) return;
+        // 立即尝试一次并短暂轮询等待外部连接就绪
+        tryAttachExternalClient();
+        let attempts = 0;
+        externalAttachTimer = setInterval(() => {
+            attempts += 1;
+            tryAttachExternalClient();
+            if (subscriptionsReady || attempts > 60) { // ~30s (500ms * 60)
+                clearInterval(externalAttachTimer);
+                externalAttachTimer = null;
+            }
+        }, 500);
+    };
 
     // --- STOMP Connection Logic ---
     const connect = async (details) => {
+        // 若复用外部连接，则不在此创建新连接
+        if (getExternalClient) {
+            host.value = details.host;
+            port.value = details.port;
+            user.value = details.user;
+            isConnecting.value = true;
+            return;
+        }
         try {
             host.value = details.host;
             port.value = details.port;
@@ -277,8 +325,13 @@ export function useTerminal(options = {}) {
         });
     };
 
+    // 如果由外部连接管理器提供 STOMP 客户端，则开始轮询等待其就绪并订阅
+    if (getExternalClient) {
+        scheduleExternalAttach();
+    }
+
     const disconnect = () => {
-        if (stompClient) {
+        if (stompClient && !usingExternalClient) {
             stompClient.deactivate();
         }
         if (term) {

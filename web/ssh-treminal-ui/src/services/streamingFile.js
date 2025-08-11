@@ -20,7 +20,7 @@ export class StreamingFileService {
     async downloadFiles(paths, onProgress = null, signal = null) {
         try {
             // 获取认证令牌
-            const token = AuthService.getToken();
+            const token = AuthService.getCurrentToken();
             if (!token) {
                 throw new Error('未找到有效的认证令牌');
             }
@@ -157,7 +157,7 @@ export class StreamingFileService {
             }
 
             // 获取认证令牌
-            const token = AuthService.getToken();
+            const token = AuthService.getCurrentToken();
             if (!token) {
                 throw new Error('未找到有效的认证令牌');
             }
@@ -271,7 +271,7 @@ export class StreamingFileService {
 
         // 通知服务器取消
         try {
-            const token = AuthService.getToken();
+            const token = AuthService.getCurrentToken();
             if (!token) return false;
 
             const response = await fetch(`/api/files/upload/${uploadId}/cancel`, {
@@ -294,7 +294,7 @@ export class StreamingFileService {
      */
     async getUploadProgress(uploadId) {
         try {
-            const token = AuthService.getToken();
+            const token = AuthService.getCurrentToken();
             if (!token) {
                 throw new Error('未找到有效的认证令牌');
             }

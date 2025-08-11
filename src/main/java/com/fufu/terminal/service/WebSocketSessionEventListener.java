@@ -32,6 +32,7 @@ import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 public class WebSocketSessionEventListener {
 
     private final TerminalMetrics terminalMetrics;
+    private final StompMonitoringService stompMonitoringService;
 
     /**
      * 处理 WebSocket 会话连接建立事件。
@@ -65,6 +66,14 @@ public class WebSocketSessionEventListener {
         // 记录会话销毁指标
         terminalMetrics.recordSessionDestroyed(sessionId);
         terminalMetrics.recordWebSocketDisconnect(disconnectReason);
+        
+        // 清理监控会话状态（修复会话问题）
+        try {
+            stompMonitoringService.cleanupMonitoring(sessionId);
+            log.debug("已清理会话 {} 的监控状态", sessionId);
+        } catch (Exception e) {
+            log.warn("清理会话 {} 的监控状态时发生异常: {}", sessionId, e.getMessage());
+        }
         
         log.debug("已记录会话断开指标: sessionId={}, reason={}", sessionId, disconnectReason);
     }
