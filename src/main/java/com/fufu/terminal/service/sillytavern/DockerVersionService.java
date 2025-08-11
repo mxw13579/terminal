@@ -9,7 +9,6 @@ import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
@@ -57,6 +56,12 @@ public class DockerVersionService {
     private final RestTemplate restTemplate;
     /** Jackson对象映射器 */
     private final ObjectMapper objectMapper;
+    /** 版本缓存服务 */
+    private final VersionCacheService versionCacheService;
+    /** Docker容器管理服务 */
+    private final DockerContainerService dockerContainerService;
+    /** 配置管理服务 */
+    private final ConfigurationService configurationService;
 
     /** 并发控制：每个容器独立锁，防止重复升级 */
     private final Map<String, ReentrantLock> upgradeLocks = new ConcurrentHashMap<>();
@@ -114,17 +119,17 @@ public class DockerVersionService {
             if (!availableVersions.isEmpty()) {
                 final String latestVersion = availableVersions.get(0);
                 versionInfo.setLatestVersion(latestVersion);
-                
+
                 // 检查是否有更新 - 当前版本不等于最新版本且当前版本不在最近5个版本中时才认为需要更新
-                boolean hasUpdate = !currentVersion.equals(latestVersion) && 
-                                  !currentVersion.equals("latest") && 
+                boolean hasUpdate = !currentVersion.equals(latestVersion) &&
+                                  !currentVersion.equals("latest") &&
                                   !currentVersion.equals("unknown");
                 versionInfo.setHasUpdate(hasUpdate);
             }
-            
-            log.debug("版本信息获取完成 - 当前: {}, 最新: {}, 可用版本数: {}", 
+
+            log.debug("版本信息获取完成 - 当前: {}, 最新: {}, 可用版本数: {}",
                      currentVersion, versionInfo.getLatestVersion(), availableVersions.size());
-                     
+
         } catch (Exception e) {
             log.error("获取容器 {} 版本信息失败: {}", containerName, e.getMessage(), e);
             versionInfo.setError("获取版本信息失败: " + e.getMessage());
@@ -163,9 +168,18 @@ public class DockerVersionService {
      *
      * @return 可用版本号的列表 (例如 ["1.11.0", "1.10.3"])。
      */
-    @Cacheable(value = "sillytavern-versions", unless = "#result == null || #result.isEmpty()")
     public List<String> getAvailableVersions() {
-        log.debug("正在从 GitHub API 获取可用版本列表...");
+        log.debug("正在获取可用版本列表...");
+
+        // 先尝试从缓存获取
+        List<String> cachedVersions = versionCacheService.getCachedVersions();
+        if (cachedVersions != null) {
+            log.debug("返回缓存的版本信息，共 {} 个版本", cachedVersions.size());
+            return cachedVersions;
+        }
+
+        // 缓存未命中，从GitHub API获取
+        log.debug("缓存未命中，正在从 GitHub API 获取版本信息...");
         try {
             final String response = restTemplate.getForObject(GITHUB_API_URL + "?per_page=10", String.class);
             final JsonNode releasesNode = objectMapper.readTree(response);
@@ -174,19 +188,26 @@ public class DockerVersionService {
                     .filter(node -> node.has("tag_name") && !node.path("prerelease").asBoolean(true) && !node.path("draft").asBoolean(true))
                     .map(node -> node.get("tag_name").asText())
                     .map(tagName -> tagName.startsWith("v") ? tagName.substring(1) : tagName)
-                    .limit(5)  // 修改为5个版本
+                    .limit(5)  // 最近5个版本
                     .toList(); // JDK 16+
 
             if (versions.isEmpty()) {
                 log.warn("未能从 GitHub API 获取到任何有效的正式版本，将使用默认版本。");
-                return List.of(DEFAULT_VERSION);
+                final List<String> defaultVersions = List.of(DEFAULT_VERSION);
+                versionCacheService.cacheVersions(defaultVersions);
+                return defaultVersions;
             }
 
-            log.info("成功获取到 {} 个可用版本。", versions.size());
+            log.info("成功从GitHub API获取到 {} 个可用版本", versions.size());
+            // 缓存获取到的版本信息
+            versionCacheService.cacheVersions(versions);
             return versions;
+
         } catch (Exception e) {
             log.error("从 GitHub API 获取可用版本失败，将返回默认列表: {}", e.getMessage(), e);
-            return List.of(DEFAULT_VERSION, "staging", "release");
+            final List<String> defaultVersions = List.of(DEFAULT_VERSION, "staging", "release");
+            versionCacheService.cacheVersions(defaultVersions);
+            return defaultVersions;
         }
     }
 
@@ -441,46 +462,92 @@ public class DockerVersionService {
                 progressCallback.accept(errorMsg);
                 throw new IllegalStateException(errorMsg);
             }
+
+            final long startTime = System.currentTimeMillis();
+
             try {
                 log.info("开始切换容器 {} 到版本 {}", containerName, targetVersion);
                 final String targetImage = SILLYTAVERN_IMAGE_REPO + ":" + targetVersion;
 
-                progressCallback.accept("检查容器状态...");
+                progressCallback.accept("步骤 1/8: 检查容器状态...");
                 if (!checkContainerExists(connection, containerName)) {
                     throw new RuntimeException("容器 " + containerName + " 不存在。");
                 }
 
                 final String currentImage = getCurrentImage(connection, containerName);
 
-                progressCallback.accept("停止当前容器...");
-                executeCommand(connection, String.format("sudo docker stop %s", containerName));
+                // 动态检测镜像仓库地址
+                String actualTargetImage = targetImage;
+                if (currentImage != null && !currentImage.equals("null")) {
+                    // 从当前镜像中提取仓库地址
+                    final String currentRepo;
+                    if (currentImage.contains(":")) {
+                        currentRepo = currentImage.substring(0, currentImage.lastIndexOf(":"));
+                    } else {
+                        currentRepo = currentImage;
+                    }
 
-                progressCallback.accept("拉取目标版本镜像: " + targetVersion + "...");
-                executeCommand(connection, String.format("sudo docker pull %s", targetImage));
+                    // 如果目标镜像没有包含实际仓库地址，则使用当前仓库地址
+                    if (!targetImage.contains(currentRepo)) {
+                        if (targetImage.contains(":")) {
+                            final String targetVersionFromImage = targetImage.substring(targetImage.lastIndexOf(":") + 1);
+                            actualTargetImage = currentRepo + ":" + targetVersionFromImage;
+                        } else {
+                            actualTargetImage = currentRepo + ":" + targetVersion;
+                        }
+                    }
 
-                progressCallback.accept("移除旧容器...");
-                executeCommand(connection, String.format("sudo docker rm %s", containerName));
-
-                progressCallback.accept("使用新镜像重建容器...");
-                final String createCommand = buildCreateCommand(connection, containerName, targetImage);
-                executeCommand(connection, createCommand);
-
-                progressCallback.accept("启动更新后的容器...");
-                executeCommand(connection, String.format("sudo docker start %s", containerName));
-
-                progressCallback.accept("等待容器启动完成...");
-                waitForContainerToStart(connection, containerName);
-
-                progressCallback.accept("清理旧镜像以节省磁盘空间...");
-                if (currentImage != null && !currentImage.equals(targetImage)) {
-                    cleanupOldImageAggressive(connection, currentImage);
+                    log.info("动态检测镜像仓库 - 当前: {}, 目标: {}", currentImage, actualTargetImage);
                 }
 
-                progressCallback.accept("版本切换完成: " + targetVersion);
-                log.info("容器 {} 成功切换到版本 {}", containerName, targetVersion);
+                progressCallback.accept("步骤 2/8: 正在停止当前容器...");
+                dockerContainerService.stopContainer(connection, containerName);
+                progressCallback.accept("步骤 2/8: 当前容器已停止");
+
+                progressCallback.accept("步骤 3/8: 正在切换配置文件中的版本...");
+                updateContainerToNewVersion(connection, containerName, actualTargetImage);
+                progressCallback.accept("步骤 3/8: 切换配置中的版本完成");
+
+                progressCallback.accept("步骤 4/8: 正在下载 " + targetVersion + " 版本的镜像...");
+                final long downloadStartTime = System.currentTimeMillis();
+                pullImageWithProgress(connection, actualTargetImage, targetVersion, progressCallback);
+                final long downloadEndTime = System.currentTimeMillis();
+                final long downloadDuration = (downloadEndTime - downloadStartTime) / 1000;
+                progressCallback.accept("步骤 4/8: 镜像下载完成，耗时 " + downloadDuration + " 秒");
+
+                progressCallback.accept("步骤 5/8: 正在启动新版本容器...");
+                dockerContainerService.startContainer(connection, containerName);
+
+                progressCallback.accept("步骤 6/8: 等待容器启动完成...");
+                waitForContainerToStart(connection, containerName);
+                progressCallback.accept("步骤 6/8: 容器启动完成");
+
+                progressCallback.accept("步骤 7/8: 正在清理历史镜像...");
+                if (currentImage != null && !currentImage.equals(actualTargetImage)) {
+                    cleanupOldImageAggressive(connection, currentImage);
+                }
+                progressCallback.accept("步骤 7/8: 历史镜像清理完成");
+
+                final long endTime = System.currentTimeMillis();
+                final long totalDuration = (endTime - startTime) / 1000;
+
+                final String completionMessage = "步骤 8/8: 版本切换完成！切换到版本 " + targetVersion + "，总耗时 " + totalDuration + " 秒";
+                progressCallback.accept(completionMessage);
+                
+                // 更新deployment-info.json中的版本信息
+                try {
+                    configurationService.updateDeploymentVersion(connection, containerName, targetVersion);
+                    log.info("成功更新deployment-info.json中的版本信息: {}", targetVersion);
+                } catch (Exception e) {
+                    log.warn("更新deployment-info.json失败，但版本切换已完成: {}", e.getMessage());
+                }
+                
+                log.info("容器 {} 成功切换到版本 {}，总耗时 {} 秒", containerName, targetVersion, totalDuration);
 
             } catch (Exception e) {
-                final String failureMsg = "版本切换失败: " + e.getMessage();
+                final long endTime = System.currentTimeMillis();
+                final long totalDuration = (endTime - startTime) / 1000;
+                final String failureMsg = "版本切换失败: " + e.getMessage() + "，耗时 " + totalDuration + " 秒";
                 log.error("容器 {} 版本切换失败: {}", containerName, e.getMessage(), e);
                 progressCallback.accept(failureMsg);
                 throw new RuntimeException(failureMsg, e);
@@ -493,7 +560,7 @@ public class DockerVersionService {
 
     /**
      * 积极清理指定的旧 Docker 镜像及其相关的未使用镜像层。
-     * 
+     *
      * @param connection    SSH 连接信息
      * @param imageToRemove 要移除的镜像的完整名称（例如 "repo:tag"）
      */
@@ -502,7 +569,7 @@ public class DockerVersionService {
             // 删除指定镜像
             executeCommand(connection, String.format("sudo docker rmi %s", imageToRemove));
             log.info("已成功删除旧镜像: {}", imageToRemove);
-            
+
             // 清理未使用的镜像层和悬空镜像以节省磁盘空间
             try {
                 executeCommand(connection, "sudo docker system prune -f");
@@ -510,10 +577,263 @@ public class DockerVersionService {
             } catch (Exception e) {
                 log.warn("清理Docker系统资源失败: {}", e.getMessage());
             }
-            
+
         } catch (Exception e) {
             log.warn("删除旧镜像 {} 失败 (可能仍有其他容器在使用): {}", imageToRemove, e.getMessage());
         }
+    }
+
+    /**
+     * 清理指定的旧 Docker 镜像（简单版本，用于升级功能）。
+     *
+     * @param connection    SSH 连接信息
+     * @param imageToRemove 要移除的镜像的完整名称（例如 "repo:tag"）
+     */
+    private void cleanupOldImage(final SshConnection connection, final String imageToRemove) {
+        try {
+            executeCommand(connection, String.format("sudo docker rmi %s", imageToRemove));
+            log.info("已成功清理旧镜像: {}", imageToRemove);
+        } catch (Exception e) {
+            log.warn("清理旧镜像 {} 失败 (可能仍有其他容器在使用): {}", imageToRemove, e.getMessage());
+        }
+    }
+
+    /**
+     * 更新容器到新版本。
+     * 自动检测是否使用Docker Compose，如果是则更新compose文件，否则重建容器
+     *
+     * @param connection SSH 连接信息
+     * @param containerName 容器名称
+     * @param targetImage 目标镜像（包含版本）
+     */
+    private void updateContainerToNewVersion(final SshConnection connection, final String containerName, final String targetImage) {
+        try {
+            // 检查是否存在 docker-compose.yaml 文件
+            final String deploymentPath = "/data/docker/sillytavern";
+            final String checkComposeFile = String.format("test -f %s/docker-compose.yaml", deploymentPath);
+            final CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), checkComposeFile);
+
+            if (result.exitStatus() == 0) {
+                // 存在 compose 文件，更新 compose 文件中的镜像版本
+                log.info("检测到Docker Compose配置，使用Compose方式更新");
+                updateDockerComposeImage(connection, deploymentPath, targetImage);
+            } else {
+                // 不存在 compose 文件，使用传统方式重建容器
+                log.info("未检测到Docker Compose配置，使用传统Docker方式重建容器");
+                executeCommand(connection, String.format("sudo docker rm %s", containerName));
+                final String createCommand = buildCreateCommand(connection, containerName, targetImage);
+                executeCommand(connection, createCommand);
+            }
+        } catch (Exception e) {
+            log.warn("更新容器配置失败，回退到传统重建方式: {}", e.getMessage());
+            // 回退到传统方式
+            try {
+                executeCommand(connection, String.format("sudo docker rm %s", containerName));
+                final String createCommand = buildCreateCommand(connection, containerName, targetImage);
+                executeCommand(connection, createCommand);
+            } catch (Exception fallbackError) {
+                throw new RuntimeException("容器重建失败: " + fallbackError.getMessage(), fallbackError);
+            }
+        }
+    }
+
+    /**
+     * 更新docker-compose.yaml文件中的镜像版本
+     *
+     * @param connection SSH 连接信息
+     * @param deploymentPath 部署路径
+     * @param targetImage 目标镜像
+     */
+    private void updateDockerComposeImage(final SshConnection connection, final String deploymentPath, final String targetImage) {
+        try {
+            // 首先读取当前的docker-compose.yaml文件，找到当前使用的镜像
+            final String readComposeCommand = String.format("cat %s/docker-compose.yaml", deploymentPath);
+            final CommandResult readResult = sshCommandService.executeInternal(connection.getJschSession(), readComposeCommand);
+
+            if (readResult.exitStatus() != 0) {
+                throw new RuntimeException("无法读取docker-compose.yaml文件: " + readResult.stderr());
+            }
+
+            final String composeContent = readResult.stdout();
+            log.debug("docker-compose.yaml内容: {}", composeContent);
+
+            // 解析当前使用的镜像仓库和版本
+            String currentImageRepo = null;
+            final String[] lines = composeContent.split("\n");
+            for (String line : lines) {
+                final String trimmedLine = line.trim();
+                if (trimmedLine.startsWith("image:")) {
+                    // 提取镜像行，格式如 "image: ghcr.nju.edu.cn/sillytavern/sillytavern:latest"
+                    final String imageLine = trimmedLine.substring(6).trim(); // 去掉 "image:"
+                    if (imageLine.contains("sillytavern")) {
+                        // 提取仓库部分（去掉版本号）
+                        if (imageLine.contains(":")) {
+                            currentImageRepo = imageLine.substring(0, imageLine.lastIndexOf(":"));
+                        } else {
+                            currentImageRepo = imageLine;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (currentImageRepo == null) {
+                log.warn("未能从docker-compose.yaml中找到SillyTavern镜像，使用默认仓库");
+                currentImageRepo = SILLYTAVERN_IMAGE_REPO.substring(0, SILLYTAVERN_IMAGE_REPO.lastIndexOf(":"));
+            }
+
+            log.info("检测到当前镜像仓库: {}", currentImageRepo);
+
+            // 构建目标镜像（使用检测到的仓库地址 + 目标版本）
+            final String actualTargetImage;
+            if (targetImage.contains(currentImageRepo)) {
+                // 目标镜像已包含正确的仓库地址
+                actualTargetImage = targetImage;
+            } else {
+                // 从targetImage中提取版本号，与检测到的仓库地址组合
+                final String targetVersion;
+                if (targetImage.contains(":")) {
+                    targetVersion = targetImage.substring(targetImage.lastIndexOf(":") + 1);
+                } else {
+                    targetVersion = "latest";
+                }
+                actualTargetImage = currentImageRepo + ":" + targetVersion;
+            }
+
+            log.info("实际目标镜像: {}", actualTargetImage);
+
+            // 使用sed命令更新docker-compose.yaml中的镜像版本
+            // 匹配任何包含sillytavern的镜像行
+            final String sedCommand = String.format(
+                "sed -i 's|image: %s:[^[:space:]]*|image: %s|g' %s/docker-compose.yaml",
+                currentImageRepo.replaceAll("/", "\\/"), // 转义斜杠
+                actualTargetImage.replaceAll("/", "\\/"), // 转义斜杠
+                deploymentPath
+            );
+
+            log.info("更新Docker Compose镜像版本，命令: {}", sedCommand);
+            executeCommand(connection, sedCommand);
+
+            // 验证更新是否成功
+            final String checkCommand = String.format("grep 'image: %s' %s/docker-compose.yaml", actualTargetImage, deploymentPath);
+            final CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(), checkCommand);
+
+            if (checkResult.exitStatus() == 0) {
+                log.info("Docker Compose文件已成功更新到镜像: {}", actualTargetImage);
+            } else {
+                log.warn("Docker Compose文件更新验证失败，但继续执行");
+                // 再次读取文件内容查看实际结果
+                final CommandResult verifyResult = sshCommandService.executeInternal(connection.getJschSession(), readComposeCommand);
+                if (verifyResult.exitStatus() == 0) {
+                    log.debug("更新后的docker-compose.yaml内容: {}", verifyResult.stdout());
+                }
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("更新Docker Compose文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 拉取Docker镜像并显示详细进度信息
+     *
+     * @param connection SSH 连接信息
+     * @param targetImage 目标镜像（包含版本）
+     * @param targetVersion 目标版本
+     * @param progressCallback 进度回调函数
+     */
+    private void pullImageWithProgress(final SshConnection connection, final String targetImage,
+                                     final String targetVersion, final Consumer<String> progressCallback) {
+        try {
+            // 首先检查镜像是否已经存在
+            progressCallback.accept("检查本地镜像: " + targetVersion);
+            final String checkImageCommand = String.format("sudo docker images %s --format '{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}'", targetImage);
+
+            try {
+                final CommandResult checkResult = sshCommandService.executeInternal(connection.getJschSession(), checkImageCommand);
+                if (checkResult.exitStatus() == 0 && !checkResult.stdout().trim().isEmpty()) {
+                    final String[] imageInfo = checkResult.stdout().trim().split("\t");
+                    if (imageInfo.length >= 2) {
+                        progressCallback.accept("发现本地镜像 " + targetVersion + " (大小: " + imageInfo[1] +
+                                              (imageInfo.length > 2 ? ", 创建: " + imageInfo[2] + ")" : ")"));
+                    } else {
+                        progressCallback.accept("发现本地镜像 " + targetVersion);
+                    }
+                    return; // 镜像已存在，无需下载
+                }
+            } catch (Exception e) {
+                log.debug("检查本地镜像失败，将继续下载: {}", e.getMessage());
+            }
+
+            // 镜像不存在，开始下载
+            progressCallback.accept("开始下载镜像: " + targetVersion + " (这可能需要几分钟时间)");
+
+            // 获取镜像大小信息（从Docker Hub API或者registry）
+            try {
+                final String manifestCommand = String.format(
+                    "sudo docker manifest inspect %s 2>/dev/null | grep -o '\"size\":[0-9]*' | head -1 | cut -d':' -f2",
+                    targetImage
+                );
+                final CommandResult manifestResult = sshCommandService.executeInternal(connection.getJschSession(), manifestCommand);
+                if (manifestResult.exitStatus() == 0 && !manifestResult.stdout().trim().isEmpty()) {
+                    final long sizeBytes = Long.parseLong(manifestResult.stdout().trim());
+                    final String sizeStr = formatBytes(sizeBytes);
+                    progressCallback.accept("镜像大小约: " + sizeStr + ", 正在下载...");
+                }
+            } catch (Exception e) {
+                log.debug("获取镜像大小失败: {}", e.getMessage());
+                progressCallback.accept("正在下载镜像 " + targetVersion + "...");
+            }
+
+            // 执行拉取命令，超时时间设为10分钟
+            final long startTime = System.currentTimeMillis();
+            //将 targetImage 按照:切割取后面的值
+            final String[] imageParts = targetImage.split(":");
+            final String imageVer = imageParts[imageParts.length - 1];
+
+
+            progressCallback.accept("执行 下载镜像 镜像版本号为" + imageVer);
+
+            try {
+                executeCommand(connection, String.format("sudo docker pull %s", targetImage));
+
+                final long endTime = System.currentTimeMillis();
+                final long durationSeconds = (endTime - startTime) / 1000;
+                progressCallback.accept("镜像下载完成 " + targetVersion + " (耗时: " + durationSeconds + "秒)");
+
+                // 获取下载后的镜像信息
+                try {
+                    final CommandResult imageInfoResult = sshCommandService.executeInternal(connection.getJschSession(), checkImageCommand);
+                    if (imageInfoResult.exitStatus() == 0 && !imageInfoResult.stdout().trim().isEmpty()) {
+                        final String[] imageInfo = imageInfoResult.stdout().trim().split("\t");
+                        if (imageInfo.length >= 2) {
+                            progressCallback.accept("镜像信息: " + targetVersion + " - 大小: " + imageInfo[1] +
+                                                  (imageInfo.length > 2 ? ", 创建: " + imageInfo[2] : ""));
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("获取镜像信息失败: {}", e.getMessage());
+                }
+
+            } catch (Exception e) {
+                progressCallback.accept("镜像下载失败: " + e.getMessage());
+                throw e;
+            }
+
+        } catch (Exception e) {
+            log.error("拉取镜像失败: {}", e.getMessage(), e);
+            throw new RuntimeException("拉取镜像失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 格式化字节数为可读的大小字符串
+     */
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        String pre = "KMGTPE".charAt(exp - 1) + "";
+        return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
 
     /**

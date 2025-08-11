@@ -70,6 +70,85 @@
               <p>{{ selectedMode === 'trusted' ? '自动安装模式：无需用户确认' : '交互确认模式：每个安装步骤需要您的确认' }}</p>
             </div>
           </div>
+
+          <!-- 服务器信息面板 -->
+          <div class="server-info-panel">
+            <div class="panel-header">
+              <span class="panel-icon">🖥️</span>
+              <span class="panel-title">服务器信息</span>
+            </div>
+            
+            <div v-if="serverStats" class="server-stats">
+              <!-- 基本信息 -->
+              <div class="stats-section">
+                <div class="section-title">基本信息</div>
+                <div class="stat-item">
+                  <span class="stat-label">CPU 型号</span>
+                  <span class="stat-value" :title="serverStats.cpuModel">{{ serverStats.cpuModel || '获取中...' }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">系统运行时长</span>
+                  <span class="stat-value">{{ serverStats.uptime || '获取中...' }}</span>
+                </div>
+              </div>
+
+              <!-- 资源使用情况 -->
+              <div class="stats-section">
+                <div class="section-title">资源使用</div>
+                <div class="stat-item progress-item">
+                  <span class="stat-label">CPU 使用率</span>
+                  <div class="progress-bar">
+                    <div class="progress-bar-inner" :style="{ width: (serverStats.cpuUsage || 0) + '%' }"></div>
+                  </div>
+                  <span class="stat-percent">{{ (serverStats.cpuUsage || 0).toFixed(2) }}%</span>
+                </div>
+                <div class="stat-item progress-item">
+                  <span class="stat-label">内存使用率</span>
+                  <div class="progress-bar">
+                    <div class="progress-bar-inner" :style="{ width: (serverStats.memUsage || 0) + '%' }"></div>
+                  </div>
+                  <span class="stat-percent">{{ (serverStats.memUsage || 0).toFixed(2) }}%</span>
+                </div>
+                <div class="stat-item progress-item">
+                  <span class="stat-label">硬盘使用率 (/)</span>
+                  <div class="progress-bar">
+                    <div class="progress-bar-inner" :style="{ width: (serverStats.diskUsage || 0) + '%' }"></div>
+                  </div>
+                  <span class="stat-percent">{{ (serverStats.diskUsage || 0).toFixed(2) }}%</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">网络 I/O</span>
+                  <span class="stat-value small-text">
+                    接收: {{ serverStats.netRx || '0 B' }} | 发送: {{ serverStats.netTx || '0 B' }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Docker 容器信息 -->
+              <div v-if="dockerContainers && dockerContainers.length" class="stats-section">
+                <div class="section-title">Docker 容器</div>
+                <div class="docker-list">
+                  <div v-for="container in dockerContainers" :key="container.id" class="docker-item">
+                    <div class="docker-item-header">
+                      <span class="docker-name" :title="container.name">{{ container.name }}</span>
+                      <span class="docker-status" :class="container.status.includes('Up') ? 'up' : 'exited'">
+                        {{ container.status.split(' ')[0] }}
+                      </span>
+                    </div>
+                    <div class="docker-item-body">
+                      <span>CPU: {{ container.cpuPerc }}</span>
+                      <span>内存: {{ container.memPerc }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="server-stats-loading">
+              <div class="spinner-small"></div>
+              <p>正在获取服务器信息...</p>
+            </div>
+          </div>
         </div>
         
         <div v-else class="status-loading">
@@ -487,6 +566,14 @@ export default {
     versionError: {
       type: String,
       default: null
+    },
+    serverStats: {
+      type: Object,
+      default: null
+    },
+    dockerContainers: {
+      type: Array,
+      default: () => []
     }
   },
   
@@ -1087,6 +1174,191 @@ export default {
   margin: 4px 0;
   color: #0d47a1;
   font-size: 14px;
+}
+
+/* 服务器信息面板样式 */
+.server-info-panel {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.panel-icon {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.panel-title {
+  font-weight: 600;
+  color: #495057;
+  font-size: 16px;
+}
+
+.server-stats {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.stats-section {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-weight: 600;
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.stat-item:last-child {
+  border-bottom: none;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #6c757d;
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 13px;
+  color: #495057;
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-value.small-text {
+  font-size: 11px;
+}
+
+.progress-item {
+  align-items: center;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e9ecef;
+  border-radius: 4px;
+  margin: 0 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #28a745 0%, #ffc107 70%, #dc3545 90%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.stat-percent {
+  font-size: 12px;
+  font-weight: 600;
+  color: #495057;
+  min-width: 45px;
+  text-align: right;
+}
+
+.docker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docker-item {
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.docker-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.docker-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #495057;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.docker-status.up {
+  background: #d4edda;
+  color: #155724;
+}
+
+.docker-status.exited {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.docker-item-body {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #6c757d;
+}
+
+.server-stats-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  flex-direction: column;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 8px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .status-loading {

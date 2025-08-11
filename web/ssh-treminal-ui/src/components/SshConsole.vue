@@ -51,11 +51,21 @@ let resizeObserver;
 
 onMounted(async () => {
   await nextTick();
-  initializeTerminal();
-  setupResizeObserver();
-  // 通知父组件终端已就绪，并传递实例
-  emit('terminal-ready', term);
-  safeFit();
+  
+  // Wait for DOM to be fully rendered and styled
+  setTimeout(async () => {
+    initializeTerminal();
+    setupResizeObserver();
+    
+    // Emit terminal ready event
+    if (term) {
+      emit('terminal-ready', term);
+    }
+    
+    // Wait a bit more for CSS transitions to complete, then fit
+    await nextTick();
+    setTimeout(() => safeFit(), 100);
+  }, 50);
 });
 
 onBeforeUnmount(() => {
@@ -71,24 +81,51 @@ watch(() => [props.sftpVisible, props.monitorVisible], () => {
 });
 
 const initializeTerminal = () => {
-  if (!terminalRef.value) return;
-  term = new Terminal({
-    cursorBlink: true, fontSize: 14, fontFamily: '"Fira Code", Consolas, "Courier New", monospace',
-    theme: { background: 'rgba(0, 0, 0, 0)', foreground: '#d4d4d4', cursor: '#d4d4d4', selectionBackground: '#264f78' },
-    allowTransparency: true,
-  });
-  fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  term.open(terminalRef.value);
-
-  if (term.element) {
-    term.element.style.width = '100%';
-    term.element.style.height = '100%';
+  if (!terminalRef.value) {
+    console.warn('Terminal ref not available for initialization');
+    return false;
   }
+  
+  try {
+    term = new Terminal({
+      cursorBlink: true, 
+      fontSize: 14, 
+      fontFamily: '"Fira Code", Consolas, "Courier New", monospace',
+      theme: { 
+        background: 'rgba(0, 0, 0, 0)', 
+        foreground: '#d4d4d4', 
+        cursor: '#d4d4d4', 
+        selectionBackground: '#264f78' 
+      },
+      allowTransparency: true,
+      // Add scroll buffer
+      scrollback: 1000,
+      // Enable selection
+      rightClickSelectsWord: true
+    });
+    
+    fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(terminalRef.value);
 
-  term.onData(data => {
-    emit('terminal-data', data);
-  });
+    // Ensure terminal element has proper styling
+    if (term.element) {
+      term.element.style.width = '100%';
+      term.element.style.height = '100%';
+      term.element.style.display = 'block';
+    }
+
+    // Add data handler
+    term.onData(data => {
+      emit('terminal-data', data);
+    });
+    
+    console.log('Terminal initialized successfully');
+    return true;
+  } catch (error) {
+    console.error('Failed to initialize terminal:', error);
+    return false;
+  }
 };
 
 const setupResizeObserver = () => {
@@ -101,11 +138,36 @@ const setupResizeObserver = () => {
 
 const safeFit = () => {
   try {
-    if (fitAddon && term?.element?.clientWidth > 0) {
-      fitAddon.fit();
-      const { cols, rows } = term;
-      emit('terminal-resize', { cols, rows });
+    if (!fitAddon || !term || !term.element) {
+      console.warn('Terminal not ready for fitting');
+      return;
     }
-  } catch (e) { /* 忽略 fit() 在隐藏元素上可能抛出的错误 */ }
+    
+    // Check if element has dimensions
+    const container = terminalContainerRef.value;
+    if (!container) {
+      console.warn('Terminal container ref not available');
+      return;
+    }
+    
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      console.warn('Terminal container has no dimensions:', { width: rect.width, height: rect.height });
+      // Retry after a short delay
+      setTimeout(() => safeFit(), 100);
+      return;
+    }
+    
+    // Perform fit
+    fitAddon.fit();
+    const { cols, rows } = term;
+    emit('terminal-resize', { cols, rows });
+    
+    console.log('Terminal fitted:', { cols, rows, width: rect.width, height: rect.height });
+  } catch (error) {
+    console.error('Error during terminal fit:', error);
+    // Retry after a delay in case of temporary issues
+    setTimeout(() => safeFit(), 200);
+  }
 };
 </script>

@@ -39,13 +39,54 @@ public class DockerContainerService {
     private final ObjectMapper objectMapper;
     private final ConfigurationService configurationService;
 
-    private static final String DOCKER_CMD = "sudo docker";
+    private static final String DOCKER_CMD_WITH_SUDO = "sudo docker";
+    private static final String DOCKER_CMD_WITHOUT_SUDO = "docker";
     private static final String DOCKER_VERSION_CHECK = "docker --version";
     private static final String OUTPUT_DELIMITER = "---FUFU_TERMINAL_DELIMITER---";
     private static final String DEPLOYMENT_PATH = "/data/docker/sillytavern";
     
     /** 缓存的 Docker Compose 命令 */
     private String cachedComposeCommand = null;
+    /** 缓存的最佳Docker命令（是否需要sudo） */
+    private String cachedDockerCommand = null;
+
+    /**
+     * 获取最佳的Docker命令（自动检测是否需要sudo）
+     */
+    private String getBestDockerCommand(SshConnection connection) {
+        if (cachedDockerCommand != null) {
+            return cachedDockerCommand;
+        }
+        
+        try {
+            // 先尝试不使用sudo的docker命令
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), "docker version --format '{{.Server.Version}}'");
+            if (result.exitStatus() == 0) {
+                cachedDockerCommand = DOCKER_CMD_WITHOUT_SUDO;
+                log.info("检测到Docker可以直接访问（无需sudo）");
+                return cachedDockerCommand;
+            }
+        } catch (Exception e) {
+            log.debug("直接访问Docker失败，尝试使用sudo: {}", e.getMessage());
+        }
+        
+        try {
+            // 尝试使用sudo的docker命令
+            CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), "sudo docker version --format '{{.Server.Version}}'");
+            if (result.exitStatus() == 0) {
+                cachedDockerCommand = DOCKER_CMD_WITH_SUDO;
+                log.info("检测到Docker需要使用sudo访问");
+                return cachedDockerCommand;
+            }
+        } catch (Exception e) {
+            log.debug("sudo访问Docker也失败: {}", e.getMessage());
+        }
+        
+        // 默认使用sudo
+        cachedDockerCommand = DOCKER_CMD_WITH_SUDO;
+        log.warn("无法检测最佳Docker命令，默认使用sudo");
+        return cachedDockerCommand;
+    }
 
     /**
      * 获取指定容器的详细状态信息。
@@ -69,18 +110,117 @@ public class DockerContainerService {
                 return ContainerStatusDto.dockerNotAvailable();
             }
 
+            // 获取最佳的Docker命令
+            String dockerCmd = getBestDockerCommand(connection);
+            log.info("使用Docker命令: {}", dockerCmd);
+
             // 简化版本：先只获取 inspect 信息，确保基本功能工作
-            String inspectCmd = String.format("%s inspect --format '{{json .}}' %s", DOCKER_CMD, containerName);
-            log.debug("执行容器检查命令: {}", inspectCmd);
+            String inspectCmd = String.format("%s inspect --format '{{json .}}' %s", dockerCmd, containerName);
+            log.info("执行容器检查命令: {}", inspectCmd);
+            log.info("检查的容器名称: [{}]", containerName);
+            log.info("使用的Docker命令: [{}]", dockerCmd);
             
-            String inspectJson = executeCommand(connection, inspectCmd);
+            String inspectJson;
+            try {
+                // 添加环境诊断信息
+                log.info("=== 开始环境诊断 ===");
+                
+                // 检查环境变量和PATH
+                try {
+                    String envCheck = executeCommand(connection, "echo \"USER=$USER, HOME=$HOME, PATH=$PATH\"");
+                    log.info("SSH环境变量: {}", envCheck);
+                } catch (Exception e) {
+                    log.warn("获取环境变量失败: {}", e.getMessage());
+                }
+                
+                // 检查docker命令的实际路径
+                try {
+                    String dockerPath = executeCommand(connection, "which docker");
+                    log.info("Docker命令路径: {}", dockerPath);
+                } catch (Exception e) {
+                    log.warn("获取Docker路径失败: {}", e.getMessage());
+                }
+                
+                // 检查当前目录
+                try {
+                    String pwd = executeCommand(connection, "pwd");
+                    log.info("当前工作目录: {}", pwd);
+                } catch (Exception e) {
+                    log.warn("获取工作目录失败: {}", e.getMessage());
+                }
+                
+                // 检查Docker版本和客户端信息
+                try {
+                    String dockerInfo = executeCommand(connection, dockerCmd + " version --format '{{.Client.Version}}-{{.Server.Version}}'");
+                    log.info("Docker版本信息: {}", dockerInfo);
+                } catch (Exception e) {
+                    log.warn("获取Docker版本失败: {}", e.getMessage());
+                }
+                
+                log.info("=== 环境诊断结束 ===");
+                
+                inspectJson = executeCommand(connection, inspectCmd);
+                log.info("Docker inspect 输出长度: {}, 内容前200字符: {}", 
+                        inspectJson.length(), 
+                        inspectJson.length() > 200 ? inspectJson.substring(0, 200) : inspectJson);
+            } catch (Exception e) {
+                log.error("Docker inspect 失败: {}", e.getMessage());
+                throw e;
+            }
+            
+            // 同时执行 docker ps 来交叉验证
+            String psCmd = String.format("%s ps -a --filter name=^%s$ --format '{{.Names}}\\t{{.Status}}'", dockerCmd, containerName);
+            try {
+                String psOutput = executeCommand(connection, psCmd);
+                log.info("Docker ps 验证输出: {}", psOutput);
+                
+            } catch (Exception e) {
+                log.warn("执行 docker ps 命令失败: {}", e.getMessage());
+            }
+            
             if (inspectJson.trim().isEmpty() || inspectJson.contains("No such object")) {
                 log.warn("容器 '{}' 不存在。", containerName);
                 return ContainerStatusDto.notExists();
             }
 
             JsonNode root = objectMapper.readTree(inspectJson);
+            log.info("解析后的JSON状态节点: {}", root.path("State"));
+            log.info("State节点详细信息 - Status: {}, Running: {}", 
+                    root.path("State").path("Status").asText("unknown"),
+                    root.path("State").path("Running").asBoolean(false));
+            
+            // 测试JSON解析逻辑
+            try {
+                log.info("开始测试JSON解析...");
+                String testJson = inspectJson.length() > 1000 ? inspectJson.substring(0, 1000) + "..." : inspectJson;
+                log.info("测试用的JSON片段: {}", testJson);
+                
+                // 直接测试状态字段
+                JsonNode testState = root.path("State");
+                if (testState.isMissingNode()) {
+                    log.error("State节点缺失!");
+                } else {
+                    log.info("State节点存在，类型: {}", testState.getNodeType());
+                    JsonNode statusNode = testState.path("Status");
+                    JsonNode runningNode = testState.path("Running");
+                    
+                    log.info("Status节点: 存在={}, 值={}, 类型={}", 
+                            !statusNode.isMissingNode(), 
+                            statusNode.asText("NULL"), 
+                            statusNode.getNodeType());
+                    log.info("Running节点: 存在={}, 值={}, 类型={}", 
+                            !runningNode.isMissingNode(), 
+                            runningNode.asBoolean(false), 
+                            runningNode.getNodeType());
+                }
+            } catch (Exception e) {
+                log.error("测试JSON解析时出错: {}", e.getMessage(), e);
+            }
+            
             parseInspectOutput(root, status);
+            
+            log.info("parseInspectOutput执行后的状态 - exists: {}, running: {}, status: {}", 
+                    status.getExists(), status.getRunning(), status.getStatus());
             
             // 优先从部署信息文件获取访问信息（解决NAT环境问题）
             try {
@@ -118,7 +258,7 @@ public class DockerContainerService {
             // 如果容器正在运行，获取资源使用情况
             if (status.getRunning()) {
                 try {
-                    String statsCmd = String.format("%s stats --no-stream --format '{{.MemUsage}}|{{.CPUPerc}}' %s", DOCKER_CMD, containerName);
+                    String statsCmd = String.format("%s stats --no-stream --format '{{.MemUsage}}|{{.CPUPerc}}' %s", dockerCmd, containerName);
                     String statsOutput = executeCommand(connection, statsCmd);
                     parseStatsOutput(statsOutput, status);
                 } catch (Exception e) {
@@ -126,7 +266,7 @@ public class DockerContainerService {
                 }
             }
 
-            log.debug("容器状态获取完成: {}", status);
+            log.info("容器状态获取完成: 存在={}, 运行={}, 状态={}", status.getExists(), status.getRunning(), status.getStatus());
             return status;
 
         } catch (Exception e) {
@@ -151,7 +291,8 @@ public class DockerContainerService {
         return CompletableFuture.runAsync(() -> {
             try {
                 progressCallback.accept("正在拉取镜像: " + image);
-                String cmd = String.format("%s pull %s", DOCKER_CMD, image);
+                String dockerCmd = getBestDockerCommand(connection);
+                String cmd = String.format("%s pull %s", dockerCmd, image);
                 // 对于 pull 这种长时间运行的命令，使用流式输出更佳，但此处为简化，保持原有逻辑
                 executeCommand(connection, cmd);
                 progressCallback.accept("镜像拉取完成: " + image);
@@ -174,6 +315,7 @@ public class DockerContainerService {
      */
     public void createContainer(SshConnection connection, String containerName, String image, Integer port, String workingDir) {
         log.debug("创建容器: {}, 镜像: {}, 端口: {}", containerName, image, port);
+        String dockerCmd = getBestDockerCommand(connection);
         String portMapping = (port != null) ? String.format("-p %d:8000", port) : "";
         String workDirParam = StringUtils.hasText(workingDir) ? String.format("-w %s", workingDir) : "";
 
@@ -182,7 +324,7 @@ public class DockerContainerService {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.joining(" "));
 
-        String cmd = String.format("%s run -d --name %s %s %s", DOCKER_CMD, containerName, options, image);
+        String cmd = String.format("%s run -d --name %s %s %s", dockerCmd, containerName, options, image);
         executeSimpleDockerCommand(connection, cmd, "创建");
     }
 
@@ -276,11 +418,13 @@ public class DockerContainerService {
                 startContainerWithCompose(connection, containerName);
             } else {
                 // 不存在 compose 文件，使用传统 docker 命令
-                executeSimpleDockerCommand(connection, String.format("%s start %s", DOCKER_CMD, containerName), "启动");
+                String dockerCmd = getBestDockerCommand(connection);
+                executeSimpleDockerCommand(connection, String.format("%s start %s", dockerCmd, containerName), "启动");
             }
         } catch (Exception e) {
             log.warn("使用 Compose 启动失败，尝试传统命令: {}", e.getMessage());
-            executeSimpleDockerCommand(connection, String.format("%s start %s", DOCKER_CMD, containerName), "启动");
+            String dockerCmd = getBestDockerCommand(connection);
+            executeSimpleDockerCommand(connection, String.format("%s start %s", dockerCmd, containerName), "启动");
         }
     }
 
@@ -302,11 +446,13 @@ public class DockerContainerService {
                 stopContainerWithCompose(connection, containerName);
             } else {
                 // 不存在 compose 文件，使用传统 docker 命令
-                executeSimpleDockerCommand(connection, String.format("%s stop %s", DOCKER_CMD, containerName), "停止");
+                String dockerCmd = getBestDockerCommand(connection);
+                executeSimpleDockerCommand(connection, String.format("%s stop %s", dockerCmd, containerName), "停止");
             }
         } catch (Exception e) {
             log.warn("使用 Compose 停止失败，尝试传统命令: {}", e.getMessage());
-            executeSimpleDockerCommand(connection, String.format("%s stop %s", DOCKER_CMD, containerName), "停止");
+            String dockerCmd = getBestDockerCommand(connection);
+            executeSimpleDockerCommand(connection, String.format("%s stop %s", dockerCmd, containerName), "停止");
         }
     }
 
@@ -328,11 +474,13 @@ public class DockerContainerService {
                 restartContainerWithCompose(connection, containerName);
             } else {
                 // 不存在 compose 文件，使用传统 docker 命令
-                executeSimpleDockerCommand(connection, String.format("%s restart %s", DOCKER_CMD, containerName), "重启");
+                String dockerCmd = getBestDockerCommand(connection);
+                executeSimpleDockerCommand(connection, String.format("%s restart %s", dockerCmd, containerName), "重启");
             }
         } catch (Exception e) {
             log.warn("使用 Compose 重启失败，尝试传统命令: {}", e.getMessage());
-            executeSimpleDockerCommand(connection, String.format("%s restart %s", DOCKER_CMD, containerName), "重启");
+            String dockerCmd = getBestDockerCommand(connection);
+            executeSimpleDockerCommand(connection, String.format("%s restart %s", dockerCmd, containerName), "重启");
         }
     }
 
@@ -344,8 +492,9 @@ public class DockerContainerService {
      * @param force         是否强制删除（即使容器正在运行）
      */
     public void removeContainer(SshConnection connection, String containerName, boolean force) {
+        String dockerCmd = getBestDockerCommand(connection);
         String forceParam = force ? "-f" : "";
-        String cmd = String.format("%s rm %s %s", DOCKER_CMD, forceParam, containerName).trim();
+        String cmd = String.format("%s rm %s %s", dockerCmd, forceParam, containerName).trim();
         executeSimpleDockerCommand(connection, cmd, "删除");
     }
 
@@ -361,10 +510,11 @@ public class DockerContainerService {
     public List<String> getContainerLogs(SshConnection connection, String containerName, Integer days, Integer tailLines) {
         log.debug("获取容器日志: {}, 天数: {}, 行数: {}", containerName, days, tailLines);
         try {
+            String dockerCmd = getBestDockerCommand(connection);
             String sinceParam = (days != null && days > 0) ? String.format("--since %dh", days * 24) : "";
             String tailParam = (tailLines != null && tailLines > 0) ? String.format("--tail %d", tailLines) : "";
 
-            String cmd = String.format("%s logs %s %s %s", DOCKER_CMD, sinceParam, tailParam, containerName).trim();
+            String cmd = String.format("%s logs %s %s %s", dockerCmd, sinceParam, tailParam, containerName).trim();
             String output = executeCommand(connection, cmd);
 
             // [优化] 使用 Stream API，更现代且具表达力
@@ -384,8 +534,13 @@ public class DockerContainerService {
         JsonNode network = root.path("NetworkSettings").path("Ports");
 
         status.setExists(true);
-        status.setStatus(state.path("Status").asText("unknown"));
-        status.setRunning(state.path("Running").asBoolean(false));
+        String statusValue = state.path("Status").asText("unknown");
+        boolean isRunning = state.path("Running").asBoolean(false);
+        
+        log.info("容器状态解析 - Status: {}, Running: {}", statusValue, isRunning);
+        
+        status.setStatus(statusValue);
+        status.setRunning(isRunning);
         status.setImage(config.path("Image").asText(""));
         String id = root.path("Id").asText("");
         status.setContainerId(id.length() > 12 ? id.substring(0, 12) : id);
@@ -502,13 +657,11 @@ public class DockerContainerService {
      */
     private boolean isDockerAvailable(SshConnection connection) {
         log.debug("检查Docker可用性...");
-        // [优化] 将两个命令组合到一次SSH调用中，如果任一成功，则返回"OK"
-        String checkCmd = String.format("(%s || %s --version) > /dev/null 2>&1 && echo OK", DOCKER_VERSION_CHECK, DOCKER_CMD);
         try {
-            String output = executeCommand(connection, checkCmd);
-            boolean available = output.trim().equals("OK");
-            log.debug("Docker可用性检查结果: {}", available);
-            return available;
+            // 尝试获取最佳Docker命令，如果成功则说明Docker可用
+            String dockerCmd = getBestDockerCommand(connection);
+            log.debug("Docker可用性检查结果: true, 使用命令: {}", dockerCmd);
+            return true;
         } catch (Exception e) {
             log.warn("Docker可用性检查命令执行失败: {}", e.getMessage());
             return false;

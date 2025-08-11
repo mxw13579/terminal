@@ -207,6 +207,7 @@ public class SillyTavernStompController {
                     ).thenRun(() ->
                             sendActionResult(sessionId, true, "版本切换成功", "已切换到版本: " + request.getTargetVersion())
                     ).exceptionally(throwable -> {
+                        log.error("版本切换失败，会话 {}: {}", sessionId, throwable.getMessage(), throwable);
                         sendActionResult(sessionId, false, "版本切换失败", throwable.getMessage());
                         return null;
                     });

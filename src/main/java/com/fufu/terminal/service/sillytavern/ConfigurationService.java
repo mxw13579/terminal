@@ -560,4 +560,83 @@ public class ConfigurationService {
             throw new Exception(re.getMessage(), re);
         }
     }
+
+    /**
+     * 更新deployment-info.json中的版本信息
+     * Update the version information in deployment-info.json
+     *
+     * @param connection SSH 连接 SSH connection
+     * @param containerName 容器名称 Container name
+     * @param newVersion 新版本号 New version
+     * @throws Exception 更新失败时抛出 Thrown if update fails
+     */
+    public void updateDeploymentVersion(SshConnection connection, String containerName, String newVersion) throws Exception {
+        log.info("更新deployment-info.json中的版本信息: {} -> {}", containerName, newVersion);
+        
+        ReentrantLock lock = getContainerLock(containerName);
+        lock.lock();
+        try {
+            // 读取现有的deployment-info.json
+            DeploymentInfoDto deploymentInfo = null;
+            try {
+                String deployInfoContent = executeCommand(connection,
+                        String.format("sudo docker exec %s sh -c 'cat /home/node/app/config/deployment-info.json 2>/dev/null || cat /home/node/app/deployment-info.json 2>/dev/null'", containerName)
+                );
+                
+                if (!deployInfoContent.trim().isEmpty()) {
+                    deploymentInfo = objectMapper.readValue(deployInfoContent, DeploymentInfoDto.class);
+                    log.debug("成功读取现有deployment-info.json");
+                }
+            } catch (Exception e) {
+                log.warn("读取现有deployment-info.json失败，将创建新的配置: {}", e.getMessage());
+            }
+            
+            // 如果没有现有配置，创建基本结构
+            if (deploymentInfo == null) {
+                deploymentInfo = DeploymentInfoDto.builder()
+                        .deployment(DeploymentInfoDto.DeploymentInfo.builder()
+                                .version(newVersion)
+                                .time(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                                .environment("direct")
+                                .build())
+                        .build();
+            } else {
+                // 更新现有配置中的版本信息
+                if (deploymentInfo.getDeployment() != null) {
+                    deploymentInfo.getDeployment().setVersion(newVersion);
+                    deploymentInfo.getDeployment().setTime(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                } else {
+                    deploymentInfo.setDeployment(DeploymentInfoDto.DeploymentInfo.builder()
+                            .version(newVersion)
+                            .time(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                            .environment("direct")
+                            .build());
+                }
+            }
+            
+            // 将更新后的配置写入文件
+            String updatedJson = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(deploymentInfo);
+            
+            // 创建临时文件并写入更新后的配置
+            String tempFile = "/tmp/deployment-info-" + System.currentTimeMillis() + ".json";
+            executeCommand(connection, String.format("echo '%s' > %s", 
+                    updatedJson.replace("'", "'\"'\"'"), tempFile));
+            
+            // 将临时文件复制到容器中
+            executeCommand(connection, String.format(
+                    "sudo docker cp %s %s:/home/node/app/config/deployment-info.json", tempFile, containerName));
+            
+            // 确保备份到 /home/node/app/ 根目录
+            executeCommand(connection, String.format(
+                    "sudo docker exec %s cp /home/node/app/config/deployment-info.json /home/node/app/deployment-info.json", containerName));
+            
+            // 清理临时文件
+            executeCommand(connection, String.format("rm -f %s", tempFile));
+            
+            log.info("成功更新deployment-info.json中的版本信息: {}", newVersion);
+            
+        } finally {
+            lock.unlock();
+        }
+    }
 }

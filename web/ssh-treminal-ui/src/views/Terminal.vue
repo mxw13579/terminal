@@ -181,8 +181,19 @@ body, html, #app {
   flex: 1 1 0; min-width: 0; min-height: 0; width: 100%;
   background: var(--card-bg-color); border: 1px solid var(--border-color);
   border-radius: 12px; overflow: hidden; padding: 10px; box-sizing: border-box; display: flex;
+  /* Ensure minimum dimensions for terminal */
+  min-height: 300px;
+  position: relative;
 }
-.terminal-wrapper { flex: 1; min-width: 0; min-height: 0; }
+.terminal-wrapper { 
+  flex: 1; min-width: 0; min-height: 0;
+  /* Ensure the wrapper takes full available space */
+  width: 100%;
+  height: 100%;
+  position: relative;
+  /* Fix potential display issues */
+  display: block;
+}
 .sftp-panel {
   width: 0; opacity: 0; transform: translateX(20px);
   transition: width 0.3s ease, opacity 0.3s ease, transform 0.3s ease;

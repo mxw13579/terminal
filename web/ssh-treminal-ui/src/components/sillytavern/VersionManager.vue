@@ -6,7 +6,7 @@
           <i class="fab fa-docker me-2"></i>
           Docker版本管理
         </h5>
-        <small class="text-muted">查看当前版本，升级到最新版本或清理旧镜像</small>
+        <small class="text-muted">查看当前版本，切换到指定版本或清理旧镜像</small>
       </div>
       
       <div class="card-body">
@@ -58,7 +58,7 @@
           <div class="available-versions mb-4" v-if="versionInfo.availableVersions && versionInfo.availableVersions.length > 0">
             <h6 class="fw-bold text-primary mb-3">
               <i class="fas fa-list me-2"></i>
-              可用版本（最新3个）
+              可用版本（最新5个）
             </h6>
             <div class="row">
               <div 
@@ -77,8 +77,8 @@
                     :disabled="isUpgrading"
                     class="btn btn-sm btn-outline-primary"
                   >
-                    <i class="fas fa-download me-1"></i>
-                    升级
+                    <i class="fas fa-exchange-alt me-1"></i>
+                    切换
                   </button>
                 </div>
               </div>
@@ -116,8 +116,8 @@
                   class="btn btn-success"
                 >
                   <span v-if="isUpgrading" class="spinner-border spinner-border-sm me-2" role="status"></span>
-                  <i v-else class="fas fa-arrow-up me-1"></i>
-                  {{ isUpgrading ? '升级中...' : '升级到最新版本' }}
+                  <i v-else class="fas fa-exchange-alt me-1"></i>
+                  {{ isUpgrading ? '切换中...' : '切换到最新版本' }}
                 </button>
               </div>
               
@@ -145,9 +145,9 @@
           </button>
         </div>
 
-        <!-- 升级进度 -->
+        <!-- 版本切换进度 -->
         <div v-if="upgradeProgress" class="upgrade-progress mt-3">
-          <h6 class="fw-bold mb-2">升级进度</h6>
+          <h6 class="fw-bold mb-2">版本切换进度</h6>
           <div class="progress mb-2">
             <div 
               class="progress-bar progress-bar-striped progress-bar-animated" 
@@ -197,7 +197,9 @@ export default {
     let versionSubscription = null
     let upgradeSubscription = null
     let upgradeProgressSubscription = null
+    let versionSwitchProgressSubscription = null
     let cleanupSubscription = null
+    let serviceActionSubscription = null
     
     const formatDate = (dateString) => {
       if (!dateString) return ''
@@ -210,9 +212,9 @@ export default {
       if (progress.includes('检查')) return 10
       if (progress.includes('停止')) return 30
       if (progress.includes('拉取')) return 50
-      if (progress.includes('更新')) return 70
+      if (progress.includes('更新') || progress.includes('重建')) return 70
       if (progress.includes('启动')) return 90
-      if (progress.includes('完成')) return 100
+      if (progress.includes('完成') || progress.includes('切换完成')) return 100
       return 20
     }
     
@@ -240,21 +242,22 @@ export default {
         return
       }
       
-      if (confirm(`确定要升级到版本 ${targetVersion} 吗？此操作会重启容器。`)) {
+      if (confirm(`确定要切换到版本 ${targetVersion} 吗？此操作会重启容器。`)) {
         isUpgrading.value = true
         upgradeProgress.value = ''
         errorMessage.value = ''
         successMessage.value = ''
         
         const request = {
-          targetVersion: targetVersion,
-          containerName: 'sillytavern'
+          action: 'switch-version',
+          containerName: 'sillytavern',
+          targetVersion: targetVersion
         }
         
         try {
-          stompClient.value.send('/app/sillytavern/upgrade-version', {}, JSON.stringify(request))
+          stompClient.value.send('/app/sillytavern/service-action', {}, JSON.stringify(request))
         } catch (error) {
-          errorMessage.value = '发送升级请求失败: ' + error.message
+          errorMessage.value = '发送版本切换请求失败: ' + error.message
           isUpgrading.value = false
         }
       }
@@ -308,11 +311,11 @@ export default {
     const handleUpgradeProgressResponse = (message) => {
       try {
         const response = JSON.parse(message.body)
-        if (response.type === 'version-upgrade-progress' && response.message) {
+        if ((response.type === 'version-upgrade-progress' || response.type === 'version-switch-progress') && response.message) {
           upgradeProgress.value = response.message
         }
       } catch (error) {
-        console.error('处理升级进度响应失败:', error)
+        console.error('处理版本切换进度响应失败:', error)
       }
     }
     
@@ -323,17 +326,17 @@ export default {
         upgradeProgress.value = ''
         
         if (response.success) {
-          successMessage.value = response.message || '版本升级成功'
+          successMessage.value = response.message || '版本切换成功'
           // 刷新版本信息
           setTimeout(() => {
             refreshVersionInfo()
           }, 2000)
         } else {
-          errorMessage.value = response.error || response.message || '版本升级失败'
+          errorMessage.value = response.error || response.message || '版本切换失败'
         }
       } catch (error) {
-        console.error('处理升级响应失败:', error)
-        errorMessage.value = '处理升级响应失败'
+        console.error('处理版本切换响应失败:', error)
+        errorMessage.value = '处理版本切换响应失败'
         isUpgrading.value = false
       }
     }
@@ -357,8 +360,20 @@ export default {
     
     onMounted(() => {
       if (isConnected.value && stompClient.value) {
-        const sessionId = stompClient.value.ws._websocket?.extensions?.sessionId || 
-                          Math.random().toString(36).substr(2, 9)
+        let sessionId = 'default'
+        try {
+          const client = stompClient.value
+          if (client?.ws?._url) {
+            // 尝试从URL中提取sessionId
+            const urlParams = new URLSearchParams(client.ws._url.split('?')[1] || '')
+            sessionId = urlParams.get('sessionId') || Math.random().toString(36).substr(2, 9)
+          } else {
+            sessionId = Math.random().toString(36).substr(2, 9)
+          }
+        } catch (error) {
+          console.warn('无法获取WebSocket sessionId, 使用随机值:', error)
+          sessionId = Math.random().toString(36).substr(2, 9)
+        }
         
         // 订阅各种响应
         versionSubscription = stompClient.value.subscribe(
@@ -371,6 +386,12 @@ export default {
           handleUpgradeProgressResponse
         )
         
+        // 订阅版本切换进度响应
+        versionSwitchProgressSubscription = stompClient.value.subscribe(
+          `/user/queue/sillytavern/version-switch-progress`,
+          handleUpgradeProgressResponse  // 重用进度响应处理函数
+        )
+        
         upgradeSubscription = stompClient.value.subscribe(
           `/queue/sillytavern/version-upgrade-user${sessionId}`,
           handleUpgradeResponse
@@ -379,6 +400,12 @@ export default {
         cleanupSubscription = stompClient.value.subscribe(
           `/queue/sillytavern/cleanup-images-user${sessionId}`,
           handleCleanupResponse
+        )
+        
+        // 订阅 service-action 响应（用于版本切换）
+        serviceActionSubscription = stompClient.value.subscribe(
+          `/queue/sillytavern/action-result-user${sessionId}`,
+          handleUpgradeResponse  // 重用升级响应处理函数
         )
         
         // 初始加载版本信息
@@ -390,7 +417,9 @@ export default {
       if (versionSubscription) versionSubscription.unsubscribe()
       if (upgradeSubscription) upgradeSubscription.unsubscribe()
       if (upgradeProgressSubscription) upgradeProgressSubscription.unsubscribe()
+      if (versionSwitchProgressSubscription) versionSwitchProgressSubscription.unsubscribe()
       if (cleanupSubscription) cleanupSubscription.unsubscribe()
+      if (serviceActionSubscription) serviceActionSubscription.unsubscribe()
     })
     
     return {

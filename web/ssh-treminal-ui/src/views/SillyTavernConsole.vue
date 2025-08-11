@@ -69,56 +69,93 @@
         <div v-else class="console-dashboard">
           <!-- 左侧边栏 (25%) -->
           <div class="sidebar">
-            <!-- 第一部分：Docker信息展示 -->
-            <div class="sidebar-section docker-info">
+            <!-- 第一部分：服务器信息展示 -->
+            <div class="sidebar-section server-info">
               <div class="section-header">
                 <h4 class="section-title">
-                  <span class="section-icon">🐳</span>
-                  Docker 信息
+                  <span class="section-icon">🖥️</span>
+                  服务器信息
                 </h4>
               </div>
               <div class="section-content">
-                <!-- Docker not available case -->
-                <div v-if="containerStatus && containerStatus.error" class="docker-unavailable">
-                  <i class="fas fa-exclamation-triangle"></i>
-                  <p>Docker未安装</p>
-                  <small class="text-muted">请先安装Docker服务</small>
+                <!-- 服务器监控数据 -->
+                <div v-if="systemStats" class="server-stats">
+                  <!-- 基本信息 -->
+                  <div class="stats-section">
+                    <div class="section-subtitle">基本信息</div>
+                    <div class="stat-item">
+                      <span class="stat-label">CPU 型号</span>
+                      <span class="stat-value" :title="systemStats.cpuModel">{{ systemStats.cpuModel || '获取中...' }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">系统运行时长</span>
+                      <span class="stat-value">{{ systemStats.uptime || '获取中...' }}</span>
+                    </div>
+                  </div>
+
+                  <!-- 资源使用情况 -->
+                  <div class="stats-section">
+                    <div class="section-subtitle">资源使用</div>
+                    <div class="stat-item progress-item">
+                      <span class="stat-label">CPU 使用率</span>
+                      <div class="progress-bar">
+                        <div class="progress-bar-inner" :style="{ width: (systemStats.cpuUsage || 0) + '%' }"></div>
+                      </div>
+                      <span class="stat-percent">{{ (systemStats.cpuUsage || 0).toFixed(1) }}%</span>
+                    </div>
+                    <div class="stat-item progress-item">
+                      <span class="stat-label">内存使用率</span>
+                      <div class="progress-bar">
+                        <div class="progress-bar-inner" :style="{ width: (systemStats.memUsage || 0) + '%' }"></div>
+                      </div>
+                      <span class="stat-percent">{{ (systemStats.memUsage || 0).toFixed(1) }}%</span>
+                    </div>
+                    <div class="stat-item progress-item">
+                      <span class="stat-label">硬盘使用率 (/)</span>
+                      <div class="progress-bar">
+                        <div class="progress-bar-inner" :style="{ width: (systemStats.diskUsage || 0) + '%' }"></div>
+                      </div>
+                      <span class="stat-percent">{{ (systemStats.diskUsage || 0).toFixed(1) }}%</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">网络 I/O</span>
+                      <span class="stat-value small-text">
+                        接收: {{ systemStats.netRx || '0 B' }} | 发送: {{ systemStats.netTx || '0 B' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Docker 容器信息 -->
+                  <div v-if="terminalDockerContainers && terminalDockerContainers.length" class="stats-section">
+                    <div class="section-subtitle">Docker 容器</div>
+                    <div class="docker-list">
+                      <div v-for="container in terminalDockerContainers" :key="container.id" class="docker-item">
+                        <div class="docker-item-header">
+                          <span class="docker-name" :title="container.name">{{ container.name }}</span>
+                          <span class="docker-status" :class="container.status.includes('Up') ? 'up' : 'exited'">
+                            {{ container.status.split(' ')[0] }}
+                          </span>
+                        </div>
+                        <div class="docker-item-body">
+                          <span>CPU: {{ container.cpuPerc }}</span>
+                          <span>内存: {{ container.memPerc }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <!-- Docker available and container exists -->
-                <div v-else-if="containerStatus && containerStatus.exists" class="docker-stats">
-                  <div class="stat-item">
-                    <span class="stat-label">运行时间</span>
-                    <span class="stat-value">{{ containerStatus.uptimeSeconds ? formatUptime(containerStatus.uptimeSeconds) : '未运行' }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">占用内存</span>
-                    <span class="stat-value">{{ containerStatus.memoryUsage || '未知' }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">占用CPU</span>
-                    <span class="stat-value">{{ containerStatus.cpuUsage || '未知' }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">当前版本</span>
-                    <span class="stat-value">{{ containerStatus.currentVersion || '未知' }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">最新版本</span>
-                    <span class="stat-value clickable" @click="checkForUpdates">
-                      {{ containerStatus.latestVersion || '检查更新' }}
-                    </span>
-                  </div>
+                
+                <!-- 服务器连接中或无数据状态 -->
+                <div v-else-if="!connectionState.isConnected" class="server-disconnected">
+                  <i class="fas fa-unlink"></i>
+                  <p>服务器未连接</p>
+                  <small class="text-muted">请先连接到服务器</small>
                 </div>
-                <!-- Container doesn't exist but Docker is available -->
-                <div v-else-if="containerStatus && !containerStatus.exists && !containerStatus.error" class="docker-not-deployed">
-                  <i class="fas fa-info-circle"></i>
-                  <p>Docker已安装，SillyTavern未部署</p>
-                  <small class="text-muted">请先部署SillyTavern容器</small>
-                </div>
-                <!-- Loading state -->
-                <div v-else class="docker-loading">
+                
+                <!-- 加载状态 -->
+                <div v-else class="server-loading">
                   <i class="fas fa-spinner fa-spin"></i>
-                  <p>加载Docker信息...</p>
+                  <p>获取服务器信息...</p>
                 </div>
               </div>
             </div>
@@ -233,6 +270,8 @@
                   :available-versions="availableVersions"
                   :is-loading-versions="isLoadingVersions"
                   :version-error="versionError"
+                  :server-stats="systemStats"
+                  :docker-containers="terminalDockerContainers"
                   @validate-system="handleValidateSystem"
                   @deploy="handleDeploy"
                   @deployment-complete="handleDeploymentComplete"
@@ -314,6 +353,7 @@ import VersionManager from '../components/sillytavern/VersionManager.vue'
 import AccessInfo from '../components/sillytavern/AccessInfo.vue'
 import useConnectionManager from '../composables/useConnectionManager'
 import { useSillyTavern } from '../composables/useSillyTavern'
+import { useTerminal } from '../composables/useTerminal'
 
 // 连接管理
 const { connectionState, connectionStatus } = useConnectionManager()
@@ -341,6 +381,14 @@ const {
   getAvailableVersions,
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
+
+// Terminal 管理 - 获取服务器监控数据
+const {
+  systemStats,
+  dockerContainers: terminalDockerContainers,
+  monitorVisible: terminalMonitorVisible,
+  toggleMonitorPanel
+} = useTerminal()
 
 // 状态管理
 const showConnectionModal = ref(false)
@@ -570,6 +618,12 @@ onMounted(async () => {
       console.log('刷新状态...')
       await refreshStatus()
       
+      // 启动服务器监控以获取系统信息
+      if (!terminalMonitorVisible.value) {
+        console.log('启动服务器监控...')
+        toggleMonitorPanel()
+      }
+      
       // 获取可用的Docker版本信息
       console.log('准备获取版本信息...')
       setTimeout(() => {
@@ -697,6 +751,139 @@ onUnmounted(() => {
 .section-content {
   flex: 1;
   padding: 20px;
+}
+
+/* 服务器信息样式 */
+.server-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stats-section {
+  margin-bottom: 12px;
+}
+
+.section-subtitle {
+  font-weight: 600;
+  color: #6b7280;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.progress-item {
+  display: grid;
+  grid-template-columns: 1fr 2fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #f59e0b 70%, #ef4444 90%);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.stat-percent {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  min-width: 35px;
+  text-align: right;
+}
+
+.docker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.docker-item {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.docker-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.docker-name {
+  font-weight: 500;
+  color: #374151;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-status {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.docker-status.up {
+  background: #d4edda;
+  color: #155724;
+}
+
+.docker-status.exited {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.docker-item-body {
+  display: flex;
+  justify-content: space-between;
+  color: #6b7280;
+  font-size: 10px;
+}
+
+.server-disconnected,
+.server-loading {
+  text-align: center;
+  color: #6b7280;
+  padding: 20px 0;
+}
+
+.server-disconnected i,
+.server-loading i {
+  font-size: 1.8rem;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.server-disconnected p,
+.server-loading p {
+  font-weight: 500;
+  margin: 8px 0 4px 0;
+}
+
+.stat-value.small-text {
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 /* Docker信息样式 */
