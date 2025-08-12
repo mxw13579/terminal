@@ -321,7 +321,32 @@ export class StreamingFileService {
                             reject(error);
                         }
                     } else {
-                        const error = new Error(`流式上传失败: ${xhr.statusText}`);
+                        let errorMessage = `流式上传失败: ${xhr.status} ${xhr.statusText}`;
+                        
+                        // 尝试解析错误响应
+                        try {
+                            if (xhr.responseText) {
+                                const errorResponse = JSON.parse(xhr.responseText);
+                                if (errorResponse.error) {
+                                    errorMessage = `流式上传失败: ${errorResponse.error}`;
+                                }
+                            }
+                        } catch (parseError) {
+                            // 如果无法解析响应，显示原始响应文本
+                            if (xhr.responseText && xhr.responseText.length < 200) {
+                                errorMessage += ` - 响应: ${xhr.responseText}`;
+                            }
+                        }
+                        
+                        console.error('流式上传HTTP错误:', {
+                            status: xhr.status,
+                            statusText: xhr.statusText,
+                            responseText: xhr.responseText,
+                            uploadId,
+                            filename: file.name
+                        });
+                        
+                        const error = new Error(errorMessage);
                         if (onError) onError(error);
                         reject(error);
                     }

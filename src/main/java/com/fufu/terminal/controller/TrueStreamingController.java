@@ -67,12 +67,14 @@ public class TrueStreamingController {
                 uploadId, filename, contentLength, request.getRemoteAddr());
 
             return ResponseEntity.ok()
-                .body("{\"uploadId\":\"" + uploadId + "\",\"status\":\"streaming\"}");
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(String.format("{\"uploadId\":\"%s\",\"status\":\"streaming\"}", uploadId));
 
         } catch (Exception e) {
             log.error("流式上传失败: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("{\"error\":\"Stream upload failed: " + e.getMessage() + "\"}");
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(String.format("{\"error\":\"Stream upload failed: %s\"}", e.getMessage().replace("\"", "\\\"")));
         }
     }
 

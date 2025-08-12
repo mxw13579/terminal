@@ -82,7 +82,7 @@ public class TrueStreamingFileService {
     }
 
     /**
-     * 直接流式上传 - 真正的流式传输（同步处理）
+     * 直接流式上传 - 真正的流式传输（异步处理，先缓存InputStream）
      */
     public String directStreamUpload(SshConnection connection, String sessionId, 
                                    String remotePath, String filename, 
@@ -112,12 +112,29 @@ public class TrueStreamingFileService {
 
         activeUploads.put(uploadId, progress);
 
+        // 先将InputStream转换为字节数组以避免InputBuffer问题
         try {
-            // 同步处理流式上传（避免InputBuffer问题）
-            processDirectStreamUpload(connection, progress, remotePath, filename, inputStream);
+            byte[] fileData = inputStream.readAllBytes();
+            log.info("已缓存文件数据: {} bytes", fileData.length);
+            
+            // 异步处理流式上传
+            CompletableFuture.runAsync(() -> {
+                try (ByteArrayInputStream byteStream = new ByteArrayInputStream(fileData)) {
+                    processDirectStreamUpload(connection, progress, remotePath, filename, byteStream);
+                } catch (Exception e) {
+                    log.error("异步上传处理失败: {}", e.getMessage(), e);
+                    progress.setStatus("failed");
+                    progress.setErrorMessage(e.getMessage());
+                } finally {
+                    uploadSemaphore.release();
+                }
+            }, uploadExecutor);
+
             return uploadId;
-        } finally {
+        } catch (Exception e) {
             uploadSemaphore.release();
+            activeUploads.remove(uploadId);
+            throw e;
         }
     }
 
