@@ -27,6 +27,36 @@ export class CryptoService {
     static KEY_CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存时间
 
     /**
+     * 检查Web Crypto API是否可用
+     * @returns {boolean} 是否支持Web Crypto API
+     */
+    static isWebCryptoSupported() {
+        return (
+            typeof window !== 'undefined' &&
+            window.crypto &&
+            window.crypto.subtle &&
+            typeof window.crypto.subtle.importKey === 'function' &&
+            typeof window.crypto.subtle.encrypt === 'function'
+        );
+    }
+
+    /**
+     * 检查当前环境是否安全（HTTPS或localhost）
+     * @returns {boolean} 当前环境是否安全
+     */
+    static isSecureContext() {
+        return (
+            typeof window !== 'undefined' &&
+            (
+                window.location.protocol === 'https:' ||
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1' ||
+                window.location.hostname === '::1'
+            )
+        );
+    }
+
+    /**
      * 从后端获取RSA公钥。
      * 
      * 实现了简单的缓存机制，避免频繁请求后端公钥接口。
@@ -35,6 +65,17 @@ export class CryptoService {
      * @throws {Error} 网络请求或密钥解析失败
      */
     static async getPublicKey() {
+        // 检查Web Crypto API支持
+        if (!this.isWebCryptoSupported()) {
+            const details = [];
+            if (typeof window === 'undefined') details.push('非浏览器环境');
+            if (!window.crypto) details.push('crypto对象不存在');
+            if (!window.crypto?.subtle) details.push('crypto.subtle不可用');
+            if (!this.isSecureContext()) details.push('非安全上下文(需要HTTPS或localhost)');
+            
+            throw new Error(`Web Crypto API不可用: ${details.join(', ')}\n当前URL: ${window?.location?.href || 'unknown'}`);
+        }
+
         // 检查缓存的公钥是否仍然有效
         const now = Date.now();
         if (this._cachedPublicKey && this._keyFetchTime && 
@@ -103,16 +144,31 @@ export class CryptoService {
      * 
      * 将凭据对象序列化为JSON，然后使用RSA-OAEP算法加密，
      * 最后返回Base64编码的加密数据。
+     * 如果Web Crypto API不可用，则使用明文传输并发出警告。
      * 
      * @param {Object} credentials - 凭据对象，包含host、port、user、password等字段
      * @param {CryptoKey} [publicKey] - RSA公钥，如果不提供则自动获取
-     * @returns {Promise<string>} Base64编码的加密数据
+     * @returns {Promise<string>} Base64编码的加密数据或JSON字符串
      * @throws {Error} 加密过程失败
      */
     static async encryptCredentials(credentials, publicKey = null) {
         try {
             // 验证凭据对象
             this._validateCredentials(credentials);
+            
+            // 检查Web Crypto API支持
+            if (!this.isWebCryptoSupported()) {
+                console.warn('⚠️ Web Crypto API不可用，使用明文传输凭据（不安全）');
+                console.warn('建议使用HTTPS或确保在localhost环境下运行');
+                
+                // 降级方案：返回JSON字符串，后端需要能够处理
+                const credentialsJson = JSON.stringify({
+                    ...credentials,
+                    _unencrypted: true // 标记为未加密
+                });
+                
+                return credentialsJson;
+            }
             
             // 获取公钥（如果未提供）
             if (!publicKey) {
@@ -145,6 +201,22 @@ export class CryptoService {
 
         } catch (error) {
             console.error('凭据加密失败:', error);
+            
+            // 如果是因为Web Crypto API问题，尝试降级
+            if (error.message.includes('Web Crypto API不可用')) {
+                console.warn('🔓 加密失败，降级为明文传输（仅开发环境）');
+                
+                if (!this.isSecureContext()) {
+                    throw new Error('在非安全环境下无法加密凭据，请使用HTTPS或localhost');
+                }
+                
+                return JSON.stringify({
+                    ...credentials,
+                    _unencrypted: true,
+                    _fallbackReason: error.message
+                });
+            }
+            
             throw new Error(`凭据加密失败: ${error.message}`);
         }
     }

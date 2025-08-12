@@ -5,9 +5,8 @@ import SockJS from 'sockjs-client';
 import { AuthService } from '../services/auth.js';
 import { StreamingFileService } from '../services/streamingFile.js';
 
-// Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
-export function useTerminal(options = {}) {
-    const { onShowModal = () => {}, getStompClient: getExternalClient } = options;
+// Composable函数接收一个配置对象，用于与外部通信（如显示Modal�?export function useTerminal(options = {}) {
+    const { onShowModal = () => {} } = options;
 
     // --- State ---
     const host = ref('');
@@ -39,75 +38,13 @@ export function useTerminal(options = {}) {
     let terminalOutputBuffer = [];
     let terminalOutputTimer = null;
     let resizeTimeout = null;
-    // 不再需要分片上传相关变量，已改为HTTP流式传输
+    let sendNextChunk = null;
     let uploadStartTime = 0;
     let uploadBytesSent = 0;
-    let currentCredentials = null; // 存储当前连接凭据，用于重连
-    let stompSessionId = null; // 存储STOMP会话ID
-    // 外部 STOMP 客户端复用标记与订阅状态
-    let usingExternalClient = false;
-    let subscriptionsReady = false;
-    let externalAttachTimer = null;
-    const streamingFileService = new StreamingFileService(() => stompSessionId);
-
-    // 若外部提供了 STOMP 客户端获取方法，尝试复用并在连接后订阅
-    const tryAttachExternalClient = () => {
-        if (!getExternalClient) return;
-        const client = getExternalClient();
-        if (!client) return;
-        if (client !== stompClient) {
-            stompClient = client;
-            usingExternalClient = true;
-            subscriptionsReady = false;
-        }
-        if (stompClient && stompClient.connected && !subscriptionsReady) {
-            subscribeToQueues();
-            startTerminalOutputForwarding();
-            
-            // 对于外部客户端，也请求会话信息
-            setTimeout(() => {
-                console.log('外部客户端：发送会话信息请求...');
-                if (stompClient && stompClient.connected) {
-                    stompClient.publish({
-                        destination: '/app/session/info',
-                        body: JSON.stringify({ request: 'sessionInfo' })
-                    });
-                }
-            }, 500);
-            
-            subscriptionsReady = true;
-            if (externalAttachTimer) {
-                clearInterval(externalAttachTimer);
-                externalAttachTimer = null;
-            }
-        }
-    };
-
-    const scheduleExternalAttach = () => {
-        if (!getExternalClient) return;
-        // 立即尝试一次并短暂轮询等待外部连接就绪
-        tryAttachExternalClient();
-        let attempts = 0;
-        externalAttachTimer = setInterval(() => {
-            attempts += 1;
-            tryAttachExternalClient();
-            if (subscriptionsReady || attempts > 60) { // ~30s (500ms * 60)
-                clearInterval(externalAttachTimer);
-                externalAttachTimer = null;
-            }
-        }, 500);
-    };
+    let currentCredentials = null; // 存储当前连接凭据，用于重�?    const streamingFileService = new StreamingFileService();
 
     // --- STOMP Connection Logic ---
     const connect = async (details) => {
-        // 若复用外部连接，则不在此创建新连接
-        if (getExternalClient) {
-            host.value = details.host;
-            port.value = details.port;
-            user.value = details.user;
-            isConnecting.value = true;
-            return;
-        }
         try {
             host.value = details.host;
             port.value = details.port;
@@ -117,27 +54,24 @@ export function useTerminal(options = {}) {
             // 存储凭据用于重连
             currentCredentials = { ...details };
 
-            console.debug('开始安全连接流程...');
+            console.debug('开始安全连接流�?..');
 
             // 获取会话令牌（使用RSA加密的凭据）
             console.debug('获取会话令牌...');
             await AuthService.getSessionToken(details);
             
-            // 获取连接头（包含Authorization令牌）
-            const connectHeaders = AuthService.getConnectionHeaders();
+            // 获取连接头（包含Authorization令牌�?            const connectHeaders = AuthService.getConnectionHeaders();
             if (!connectHeaders) {
-                throw new Error('无法获取有效的认证令牌');
+                throw new Error('无法获取有效的认证令�?);
             }
 
             console.debug('使用安全令牌创建STOMP连接...');
 
-            // 创建STOMP客户端，使用Authorization头替代明文密码
-            stompClient = new Client({
+            // 创建STOMP客户端，使用Authorization头替代明文密�?            stompClient = new Client({
                 webSocketFactory: () => new SockJS('/ws/terminal'),
                 connectHeaders,
                 debug: function (str) {
-                    // 环境守卫：仅在开发环境输出详细日志
-                    if (import.meta.env?.MODE === 'development' || process.env.NODE_ENV === 'development') {
+                    // 环境守卫：仅在开发环境输出详细日�?                    if (import.meta.env?.MODE === 'development' || process.env.NODE_ENV === 'development') {
                         console.log('STOMP: ' + str);
                     }
                 },
@@ -158,30 +92,14 @@ export function useTerminal(options = {}) {
             stompClient.onConnect = (frame) => {
                 console.log('STOMP Connected: ' + frame);
                 console.log('STOMP Frame details:', frame);
-                console.log('WebSocket URL:', stompClient.webSocket.url);
-                
-                // 会话ID将由后端通过消息发送，这里先不设置
-                console.log('等待后端发送STOMP会话ID...');
-                
+                console.log('Session ID:', stompClient.webSocket.url);
                 isConnecting.value = false;
                 isConnected.value = true;
 
                 // 订阅消息队列
                 subscribeToQueues();
                 
-                // 测试：请求会话信息
-                setTimeout(() => {
-                    console.log('发送会话信息请求...');
-                    if (stompClient && stompClient.connected) {
-                        stompClient.publish({
-                            destination: '/app/session/info',
-                            body: JSON.stringify({ request: 'sessionInfo' })
-                        });
-                    }
-                }, 1000); // 延迟1秒确保订阅完成
-                
-                // SSH连接由StompAuthenticationInterceptor在CONNECT时建立
-                // 启动终端输出转发
+                // SSH连接由StompAuthenticationInterceptor在CONNECT时建�?                // 启动终端输出转发
                 startTerminalOutputForwarding();
             };
 
@@ -192,19 +110,17 @@ export function useTerminal(options = {}) {
                 
                 const errorMessage = frame.headers['message'] || '连接认证失败';
                 
-                // 检查是否为认证错误，如果是则尝试重新获取令牌
-                if (errorMessage.includes('认证') || errorMessage.includes('令牌') || 
+                // 检查是否为认证错误，如果是则尝试重新获取令�?                if (errorMessage.includes('认证') || errorMessage.includes('令牌') || 
                     errorMessage.includes('授权') || errorMessage.includes('Authentication')) {
                     
-                    console.warn('检测到认证错误，尝试重新获取令牌...');
+                    console.warn('检测到认证错误，尝试重新获取令�?..');
                     
                     const retryHeaders = await AuthService.handleConnectionRetry(currentCredentials);
                     if (retryHeaders) {
-                        console.info('令牌更新成功，重新尝试连接...');
+                        console.info('令牌更新成功，重新尝试连�?..');
                         // 更新连接头并重连
                         stompClient.connectHeaders = retryHeaders;
-                        return; // 让STOMP客户端处理重连
-                    }
+                        return; // 让STOMP客户端处理重�?                    }
                 }
                 
                 isConnecting.value = false;
@@ -216,12 +132,12 @@ export function useTerminal(options = {}) {
                 console.log('STOMP Disconnected');
                 
                 if (isConnected.value) {
-                    console.info('连接意外断开，尝试恢复...');
+                    console.info('连接意外断开，尝试恢�?..');
                     
                     // 尝试通过令牌刷新恢复连接
                     const retryHeaders = await AuthService.handleConnectionRetry(currentCredentials);
                     if (retryHeaders) {
-                        console.info('准备使用新令牌重连...');
+                        console.info('准备使用新令牌重�?..');
                         stompClient.connectHeaders = retryHeaders;
                         return;
                     } else {
@@ -239,14 +155,13 @@ export function useTerminal(options = {}) {
             console.error('连接失败:', error);
             isConnecting.value = false;
             
-            // 提供用户友好的错误信息
-            let userMessage = error.message;
-            if (error.message.includes('不支持')) {
+            // 提供用户友好的错误信�?            let userMessage = error.message;
+            if (error.message.includes('不支�?)) {
                 userMessage = '浏览器不支持必要的安全功能，请升级到最新版本的Chrome、Firefox或Edge';
             } else if (error.message.includes('网络')) {
                 userMessage = '网络连接失败，请检查网络连接后重试';
             } else if (error.message.includes('凭据')) {
-                userMessage = '登录信息验证失败，请检查主机地址、用户名和密码';
+                userMessage = '登录信息验证失败，请检查主机地址、用户名和密�?;
             }
             
             onShowModal("连接失败: " + userMessage);
@@ -267,22 +182,8 @@ export function useTerminal(options = {}) {
     const subscribeToQueues = () => {
         console.log('Starting to subscribe to queues...');
         
-        // 首先订阅会话信息（最重要）
-        stompClient.subscribe('/user/queue/session', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                console.log('收到会话消息:', data);
-                if (data.type === 'session_established' && data.sessionId) {
-                    stompSessionId = data.sessionId;
-                    console.log('✅ 收到后端发送的STOMP会话ID:', stompSessionId);
-                }
-            } catch (e) {
-                console.error('Error processing session message:', e);
-            }
-        });
-        
         // 订阅终端输出
-        const terminalSub = stompClient.subscribe('/user/queue/terminal', (message) => {
+        const terminalSub = stompClient.subscribe('/user/queue/terminal/output', (message) => {
             console.log('Received terminal output message:', message);
             try {
                 const data = JSON.parse(message.body);
@@ -300,67 +201,54 @@ export function useTerminal(options = {}) {
         console.log('Subscribed to terminal output:', terminalSub);
 
         // 订阅终端错误
-        const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
+        const errorSub = stompClient.subscribe('/user/queue/terminal/error', (message) => {
             try {
                 const data = JSON.parse(message.body);
-                console.log('收到错误消息:', data);
-                
-                // 提取错误信息，支持多种格式
-                let errorMessage = '未知错误';
-                if (data.payload) {
-                    errorMessage = data.payload;
-                } else if (data.message) {
-                    errorMessage = data.message;
-                } else if (data.error) {
-                    errorMessage = data.error;
-                } else if (typeof data === 'string') {
-                    errorMessage = data;
-                } else {
-                    errorMessage = JSON.stringify(data);
-                }
-                
-                onShowModal("终端错误: " + errorMessage);
+                onShowModal("终端错误: " + data.payload);
             } catch (e) {
                 console.error('Error processing terminal error:', e);
-                onShowModal("终端错误: 消息解析失败");
             }
         });
 
-        // 订阅SFTP响应（统一路由）
-        stompClient.subscribe('/user/queue/sftp', (message) => {
+        // 订阅SFTP响应
+        stompClient.subscribe('/user/queue/sftp/list', (message) => {
             try {
                 const data = JSON.parse(message.body);
-                const messageType = data.type;
-                console.log('收到SFTP消息，类型:', messageType, '数据:', data);
-                
-                // 根据消息类型分发到不同的处理器
-                switch (messageType) {
-                    case 'sftp_list_response':
-                        handleSftpListResponse(data);
-                        break;
-                    case 'sftp_download_response':
-                        handleSftpDownloadResponse(data);
-                        break;
-                    // 不再处理WebSocket分片上传消息
-                    case 'sftp_remote_progress':
-                    case 'sftp_upload_final_success':
-                        handleSftpUploadResponse(data);
-                        break;
-                    case 'sftp_error':
-                        handleSftpError(data);
-                        break;
-                    default:
-                        console.warn('未知的SFTP消息类型:', messageType);
-                        break;
-                }
+                handleSftpListResponse(data);
             } catch (e) {
-                console.error('Error processing SFTP message:', e);
-                onShowModal('处理SFTP响应出错: ' + e.message);
+                console.error('Error processing SFTP list response:', e);
+            }
+        });
+
+        stompClient.subscribe('/user/queue/sftp/upload', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpUploadResponse(data);
+            } catch (e) {
+                console.error('Error processing SFTP upload response:', e);
+            }
+        });
+
+        stompClient.subscribe('/user/queue/sftp/download', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpDownloadResponse(data);
+            } catch (e) {
+                console.error('Error processing SFTP download response:', e);
+            }
+        });
+
+        stompClient.subscribe('/user/queue/sftp/error', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleSftpError(data);
+            } catch (e) {
+                console.error('Error processing SFTP error:', e);
             }
         });
 
         // 订阅监控数据
-        stompClient.subscribe('/user/queue/monitor', (message) => {
+        stompClient.subscribe('/user/queue/monitor/data', (message) => {
             try {
                 const data = JSON.parse(message.body);
                 handleMonitorUpdate(data);
@@ -380,23 +268,16 @@ export function useTerminal(options = {}) {
         });
     };
 
-    // 如果由外部连接管理器提供 STOMP 客户端，则开始轮询等待其就绪并订阅
-    if (getExternalClient) {
-        scheduleExternalAttach();
-    }
-
     const disconnect = () => {
-        if (stompClient && !usingExternalClient) {
+        if (stompClient) {
             stompClient.deactivate();
         }
         if (term) {
             term.write('\r\n🔌 连接已由用户关闭。\r\n');
         }
         
-        // 清理认证状态
-        AuthService.clearToken();
+        // 清理认证状�?        AuthService.clearToken();
         currentCredentials = null;
-        stompSessionId = null;
         
         resetState();
     };
@@ -405,8 +286,7 @@ export function useTerminal(options = {}) {
     const bufferTerminalOutput = (data) => {
         terminalOutputBuffer.push(data);
         
-        // 如果没有定时器运行，启动一个
-        if (!terminalOutputTimer) {
+        // 如果没有定时器运行，启动一�?        if (!terminalOutputTimer) {
             terminalOutputTimer = requestAnimationFrame(flushTerminalOutput);
         }
     };
@@ -429,8 +309,7 @@ export function useTerminal(options = {}) {
                 flushData += data;
                 totalSize += data.length;
             } else {
-                // 数据太大，放回缓冲区，下次处理
-                terminalOutputBuffer.unshift(data);
+                // 数据太大，放回缓冲区，下次处�?                terminalOutputBuffer.unshift(data);
                 break;
             }
         }
@@ -443,8 +322,7 @@ export function useTerminal(options = {}) {
             }
         }
 
-        // 如果还有数据，继续下一帧
-        if (terminalOutputBuffer.length > 0) {
+        // 如果还有数据，继续下一�?        if (terminalOutputBuffer.length > 0) {
             terminalOutputTimer = requestAnimationFrame(flushTerminalOutput);
         }
     };
@@ -476,15 +354,17 @@ export function useTerminal(options = {}) {
     };
 
     const handleSftpUploadResponse = (data) => {
-        // 保留远程进度监控
-        if (data.type === 'sftp_remote_progress') {
+        if (data.type === 'sftp_upload_chunk_success') {
+            localUploadProgress.value = Math.round(((data.chunkIndex + 1) / data.totalChunks) * 100);
+            if (sendNextChunk) sendNextChunk();
+        } else if (data.type === 'sftp_remote_progress') {
             remoteUploadProgress.value = data.progress;
             sftpUploadSpeed.value = formatSpeed(data.speed);
             uploadStatusText.value = `正在上传到服务器... ${data.progress}%`;
         } else if (data.type === 'sftp_upload_final_success') {
             remoteUploadProgress.value = 100;
             isSftpActionInProgress.value = false;
-            uploadStatusText.value = '上传完成！';
+            uploadStatusText.value = '上传完成�?;
             sftpUploadSpeed.value = '';
             onShowModal(data.message || "上传成功!");
             fetchSftpList(data.path);
@@ -509,7 +389,7 @@ export function useTerminal(options = {}) {
             onShowModal(`下载完成: ${filename}`);
         } catch (error) {
             console.error('Legacy download failed:', error);
-            onShowModal("创建下载文件失败！");
+            onShowModal("创建下载文件失败�?);
         } finally {
             isSftpActionInProgress.value = false;
         }
@@ -538,8 +418,7 @@ export function useTerminal(options = {}) {
         }
         if (term) term.dispose();
         
-        // 清理缓冲区和定时器
-        terminalOutputBuffer = [];
+        // 清理缓冲区和定时�?        terminalOutputBuffer = [];
         if (terminalOutputTimer) {
             cancelAnimationFrame(terminalOutputTimer);
             terminalOutputTimer = null;
@@ -549,37 +428,31 @@ export function useTerminal(options = {}) {
             resizeTimeout = null;
         }
         
-        // 清理认证状态
-        AuthService.clearToken();
+        // 清理认证状�?        AuthService.clearToken();
         currentCredentials = null;
-        stompSessionId = null;
         
-        // 重置所有状态
-        host.value = '';
+        // 重置所有状�?        host.value = '';
         port.value = '';
         user.value = '';
         isConnected.value = false;
         isConnecting.value = false;
         term = null;
 
-        // 重置SFTP相关状态
-        sftpVisible.value = false;
+        // 重置SFTP相关状�?        sftpVisible.value = false;
         sftpLoading.value = false;
         sftpError.value = '';
         currentSftpPath.value = '';
         sftpFiles.value = [];
         isSftpActionInProgress.value = false;
 
-        // 重置上传相关状态
-        localUploadProgress.value = 0;
+        // 重置上传相关状�?        localUploadProgress.value = 0;
         remoteUploadProgress.value = 0;
         uploadStatusText.value = '';
         uploadSpeed.value = '';
         sftpUploadSpeed.value = '';
-        // 清理遗留变量，现在使用HTTP流式传输
+        sendNextChunk = null;
 
-        // 重置监控相关状态
-        monitorVisible.value = false;
+        // 重置监控相关状�?        monitorVisible.value = false;
         isMonitoring.value = false;
         isLoading.value = false;
         systemStats.value = null;
@@ -595,8 +468,6 @@ export function useTerminal(options = {}) {
                 destination: '/app/terminal/data',
                 body: JSON.stringify({ data: data })
             });
-        } else {
-            console.warn('未连接到STOMP客户端，无法发送终端数据');
         }
     };
     
@@ -608,7 +479,7 @@ export function useTerminal(options = {}) {
         monitorVisible.value = !monitorVisible.value;
     };
 
-    // 监听 monitorVisible 变化来启动/停止监控
+    // 监听 monitorVisible 变化来启�?停止监控
     watch(monitorVisible, (newValue) => {
         if (stompClient && stompClient.connected) {
             if (newValue) {
@@ -654,8 +525,7 @@ export function useTerminal(options = {}) {
         sftpError.value = '';
 
         try {
-            // 创建取消控制器
-            const abortController = new AbortController();
+            // 创建取消控制�?            const abortController = new AbortController();
             
             // 进度回调
             const onProgress = (loaded, total, percentage) => {
@@ -688,18 +558,11 @@ export function useTerminal(options = {}) {
     const uploadSftpFile = async (file) => {
         if (!file) return;
         
-        console.log('准备上传文件:', file.name);
-        console.log('当前stompSessionId:', stompSessionId);
-        console.log('当前连接状态:', {
-            isConnected: isConnected.value,
-            stompClientConnected: stompClient && stompClient.connected
-        });
-        
         isSftpActionInProgress.value = true;
         sftpError.value = '';
         localUploadProgress.value = 0;
         remoteUploadProgress.value = 0;
-        uploadStatusText.value = `准备流式传输: ${file.name}`;
+        uploadStatusText.value = `准备上传: ${file.name}`;
         uploadSpeed.value = '';
         sftpUploadSpeed.value = '';
         
@@ -708,13 +571,13 @@ export function useTerminal(options = {}) {
             const onProgress = (progressData) => {
                 localUploadProgress.value = progressData.percentage;
                 uploadSpeed.value = streamingFileService.formatSpeed(progressData.speed);
-                uploadStatusText.value = `正在流式传输: ${progressData.percentage}%`;
+                uploadStatusText.value = `正在上传: ${progressData.percentage}%`;
             };
 
             // 完成回调
             const onComplete = (result) => {
-                uploadStatusText.value = '流式传输完成！';
-                onShowModal(`文件 "${file.name}" 流式传输成功`);
+                uploadStatusText.value = '上传完成�?;
+                onShowModal(`文件 "${file.name}" 上传成功`);
                 // 刷新文件列表
                 setTimeout(() => fetchSftpList(currentSftpPath.value), 1000);
             };
@@ -726,9 +589,9 @@ export function useTerminal(options = {}) {
                 onShowModal(`上传失败: ${error.message}`);
             };
 
-            // 启动真正的流式上传 (使用新的流式传输架构)
-            await streamingFileService.streamUploadFile(
-                file, 
+            // 启动流式上传
+            await streamingFileService.uploadFiles(
+                [file], 
                 currentSftpPath.value,
                 onProgress,
                 onComplete,
@@ -737,23 +600,8 @@ export function useTerminal(options = {}) {
 
         } catch (error) {
             console.error('启动上传失败:', error);
-            
-            // 运行诊断
-            try {
-                const diagnosis = await streamingFileService.diagnoseConnection();
-                console.log('连接诊断结果:', diagnosis);
-                
-                let errorMessage = `启动上传失败: ${error.message}`;
-                if (diagnosis.recommendations.length > 0) {
-                    errorMessage += '\n\n建议检查:\n' + diagnosis.recommendations.join('\n');
-                }
-                sftpError.value = errorMessage;
-                onShowModal(errorMessage);
-            } catch (diagError) {
-                console.error('诊断失败:', diagError);
-                sftpError.value = `启动上传失败: ${error.message}`;
-                onShowModal(`启动上传失败: ${error.message}`);
-            }
+            sftpError.value = `启动上传失败: ${error.message}`;
+            onShowModal(`启动上传失败: ${error.message}`);
         } finally {
             isSftpActionInProgress.value = false;
         }

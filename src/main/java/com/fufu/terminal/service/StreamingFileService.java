@@ -40,10 +40,10 @@ public class StreamingFileService {
     private final ObjectMapper objectMapper;
     private final StompSessionManager sessionManager;
 
-    @Value("${file.transfer.max-file-size:104857600}") // 100MB
+    @Value("${file.transfer.max-file-size:2147483648}") // 2GB 默认
     private long maxFileSize;
 
-    @Value("${file.transfer.max-total-size:1073741824}") // 1GB
+    @Value("${file.transfer.max-total-size:2147483648}") // 2GB 默认
     private long maxTotalSize;
 
     @Value("${file.transfer.chunk-size:65536}") // 64KB
@@ -73,7 +73,13 @@ public class StreamingFileService {
         this.downloadSemaphore = new Semaphore(maxConcurrentTransfers);
         this.uploadSemaphore = new Semaphore(maxConcurrentTransfers);
         this.uploadExecutor = Executors.newFixedThreadPool(maxConcurrentTransfers);
-        log.info("StreamingFileService 初始化完成，最大并发传输数: {}", maxConcurrentTransfers);
+        
+        log.info("StreamingFileService 初始化完成:");
+        log.info("  - 最大并发传输数: {}", maxConcurrentTransfers);
+        log.info("  - 单文件大小限制: {:.1f} MB", maxFileSize / (1024.0 * 1024.0));
+        log.info("  - 总上传大小限制: {:.1f} MB", maxTotalSize / (1024.0 * 1024.0));
+        log.info("  - 块大小: {} KB", chunkSize / 1024);
+        log.info("  - 限速: {:.1f} MB/s", throttleBytesPerSecond / (1024.0 * 1024.0));
     }
 
     /**
@@ -154,7 +160,12 @@ public class StreamingFileService {
 
         // 检查文件大小限制
         if (contentLength > maxFileSize) {
-            throw new RuntimeException("File too large: " + contentLength + " bytes");
+            String message = String.format("下载文件 '%s' 大小 %.1f MB 超出限制 %.1f MB", 
+                filename, 
+                contentLength / (1024.0 * 1024.0), 
+                maxFileSize / (1024.0 * 1024.0));
+            log.warn("下载被拒绝: {}", message);
+            throw new RuntimeException(message);
         }
 
         Flux<byte[]> dataStream = Flux.create(sink -> {
@@ -375,13 +386,21 @@ public class StreamingFileService {
         long totalSize = files.stream().mapToLong(MultipartFile::getSize).sum();
         if (totalSize > maxTotalSize) {
             uploadSemaphore.release();
-            throw new RuntimeException("Total upload size exceeds limit: " + totalSize + " bytes");
+            String message = String.format("总上传大小 %.1f MB 超出限制 %.1f MB", 
+                totalSize / (1024.0 * 1024.0), maxTotalSize / (1024.0 * 1024.0));
+            log.warn("上传被拒绝: {}", message);
+            throw new RuntimeException(message);
         }
 
         for (MultipartFile file : files) {
             if (file.getSize() > maxFileSize) {
                 uploadSemaphore.release();
-                throw new RuntimeException("File too large: " + file.getOriginalFilename() + " (" + file.getSize() + " bytes)");
+                String message = String.format("文件 '%s' 大小 %.1f MB 超出单文件限制 %.1f MB", 
+                    file.getOriginalFilename(), 
+                    file.getSize() / (1024.0 * 1024.0), 
+                    maxFileSize / (1024.0 * 1024.0));
+                log.warn("上传被拒绝: {}", message);
+                throw new RuntimeException(message);
             }
         }
 

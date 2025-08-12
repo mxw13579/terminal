@@ -2,6 +2,7 @@ package com.fufu.terminal.config;
 
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.security.TokenVault;
+import com.fufu.terminal.event.SessionEstablishedEvent;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
@@ -14,6 +15,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -59,6 +61,11 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
      * 令牌保险库，用于安全的凭据检索
      */
     private final TokenVault tokenVault;
+
+    /**
+     * 应用事件发布器，用于发布会话建立事件
+     */
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * SSH严格主机密钥检查配置
@@ -167,6 +174,17 @@ public class StompAuthenticationInterceptor implements ChannelInterceptor {
             // 使用sessionId作为用户名，确保消息路由正确
             accessor.setUser(() -> sessionId);
             log.debug("为会话{}设置用户身份: {}", sessionId, sessionId);
+
+            // 发布会话建立事件，供HTTP文件传输使用
+            try {
+                SessionEstablishedEvent event = new SessionEstablishedEvent(
+                    this, sessionId, "STOMP会话已建立"
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("已发布会话建立事件，sessionId: {}", sessionId);
+            } catch (Exception e) {
+                log.warn("发布会话建立事件失败: {}", e.getMessage());
+            }
 
             log.info("为STOMP会话{}建立SSH连接成功 ({}@{}:{})，严格主机检查: {}", 
                     sessionId, user, host, port, hostKeyChecking);

@@ -7,6 +7,7 @@ import com.fufu.terminal.service.StreamingFileService;
 import com.fufu.terminal.security.TokenVault;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -19,8 +20,10 @@ import reactor.core.publisher.Mono;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
+import com.fufu.terminal.utils.FluxInputStream;
 
 /**
  * HTTP流式文件传输控制器
@@ -44,22 +47,23 @@ public class StreamingFileController {
      * 流式下载SFTP文件或目录
      * 支持单文件、目录压缩、多文件打包下载
      *
-     * @param token 认证令牌
+     * @param sessionId STOMP会话ID
      * @param paths 文件/目录路径列表，JSON数组格式
      * @param request HTTP请求对象
      * @return 流式响应
      */
     @GetMapping("/download")
-    public ResponseEntity<Flux<byte[]>> downloadFiles(
-            @RequestParam String token,
+    public ResponseEntity<Resource> downloadFiles(
+            @RequestParam String sessionId,
             @RequestParam String paths,
             HttpServletRequest request) {
 
         try {
-            // 验证令牌
-            if (!tokenVault.isTokenValid(token)) {
-                log.warn("下载请求使用无效令牌: {}...", token.substring(0, 8));
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            // 验证会话ID和SSH连接
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("下载请求未找到SSH连接，sessionId: {}", sessionId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
 
             // 解析路径列表
@@ -70,13 +74,6 @@ public class StreamingFileController {
                 return ResponseEntity.badRequest().build();
             }
 
-            // 获取SSH连接
-            SshConnection connection = getConnectionFromToken(token);
-            if (connection == null) {
-                log.warn("下载请求未找到SSH连接，token: {}...", token.substring(0, 8));
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-            }
-
             // 创建流式下载
             StreamingFileService.DownloadResult downloadResult =
                 streamingFileService.createDownloadStream(connection, pathList, request.getRemoteAddr());
@@ -84,19 +81,36 @@ public class StreamingFileController {
             // 设置响应头
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            
+            // 正确处理包含Unicode字符的文件名
+            String filename = downloadResult.getFilename();
+            String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8);
+            
+            // 使用RFC 5987标准的filename*参数支持Unicode文件名
             headers.set(HttpHeaders.CONTENT_DISPOSITION,
-                "attachment; filename=\"" + downloadResult.getFilename() + "\"");
+                "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename);
 
             if (downloadResult.getContentLength() > 0) {
                 headers.setContentLength(downloadResult.getContentLength());
             }
 
-            log.info("开始流式下载，文件: {}, 大小: {} bytes, 客户端: {}",
-                downloadResult.getFilename(), downloadResult.getContentLength(), request.getRemoteAddr());
+            log.info("开始流式下载，文件: {}, 大小: {} bytes, 客户端: {}, Content-Type: {}",
+                downloadResult.getFilename(), downloadResult.getContentLength(), request.getRemoteAddr(),
+                MediaType.APPLICATION_OCTET_STREAM);
+                
+            // 添加一些调试信息
+            log.debug("响应头 Content-Disposition: {}", headers.get(HttpHeaders.CONTENT_DISPOSITION));
+            log.debug("响应头 Content-Type: {}", headers.get(HttpHeaders.CONTENT_TYPE));
+            log.debug("响应头 Content-Length: {}", headers.get(HttpHeaders.CONTENT_LENGTH));
+
+            // 将Flux转换为Resource
+            InputStreamResource resource = new InputStreamResource(
+                new FluxInputStream(downloadResult.getDataStream())
+            );
 
             return ResponseEntity.ok()
                 .headers(headers)
-                .body(downloadResult.getDataStream());
+                .body(resource);
 
         } catch (Exception e) {
             log.error("流式下载失败: {}", e.getMessage(), e);
@@ -108,7 +122,7 @@ public class StreamingFileController {
      * 分块上传文件到SFTP服务器
      * 支持多文件并发上传，自动进度报告
      *
-     * @param token 认证令牌
+     * @param sessionId STOMP会话ID
      * @param remotePath 远程目录路径
      * @param files 上传的文件列表
      * @param request HTTP请求对象
@@ -116,29 +130,22 @@ public class StreamingFileController {
      */
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<ResponseEntity<String>> uploadFiles(
-            @RequestParam String token,
+            @RequestParam String sessionId,
             @RequestParam String remotePath,
             @RequestParam("files") List<MultipartFile> files,
             HttpServletRequest request) {
 
         return Mono.fromCallable(() -> {
             try {
-                // 验证令牌
-                if (!tokenVault.isTokenValid(token)) {
-                    log.warn("上传请求使用无效令牌: {}...", token.substring(0, 8));
-                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
+                // 验证会话ID和SSH连接
+                SshConnection connection = sessionManager.getConnection(sessionId);
+                if (connection == null) {
+                    log.warn("上传请求未找到SSH连接，sessionId: {}", sessionId);
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("SSH connection not found");
                 }
 
                 if (files == null || files.isEmpty()) {
                     return ResponseEntity.badRequest().body("No files provided");
-                }
-
-                // 获取SSH连接和会话ID
-                SshConnection connection = getConnectionFromToken(token);
-                String sessionId = extractSessionIdFromToken(token);
-                if (connection == null) {
-                    log.warn("上传请求未找到SSH连接，token: {}...", token.substring(0, 8));
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("SSH connection not found");
                 }
 
                 // 启动流式上传
@@ -163,19 +170,21 @@ public class StreamingFileController {
     /**
      * 取消正在进行的上传
      *
-     * @param token 认证令牌
+     * @param sessionId STOMP会话ID
      * @param uploadId 上传ID
      * @return 取消结果
      */
     @PostMapping("/upload/{uploadId}/cancel")
     public ResponseEntity<String> cancelUpload(
-            @RequestParam String token,
+            @RequestParam String sessionId,
             @PathVariable String uploadId) {
 
         try {
-            // 验证令牌
-            if (!tokenVault.isTokenValid(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
+            // 验证会话ID和SSH连接
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("取消上传请求未找到SSH连接，sessionId: {}", sessionId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("SSH connection not found");
             }
 
             boolean cancelled = streamingFileService.cancelUpload(uploadId);
@@ -197,19 +206,21 @@ public class StreamingFileController {
     /**
      * 获取上传进度
      *
-     * @param token 认证令牌
+     * @param sessionId STOMP会话ID
      * @param uploadId 上传ID
      * @return 进度信息
      */
     @GetMapping("/upload/{uploadId}/progress")
     public ResponseEntity<String> getUploadProgress(
-            @RequestParam String token,
+            @RequestParam String sessionId,
             @PathVariable String uploadId) {
 
         try {
-            // 验证令牌
-            if (!tokenVault.isTokenValid(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
+            // 验证会话ID和SSH连接
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                log.warn("获取上传进度请求未找到SSH连接，sessionId: {}", sessionId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("SSH connection not found");
             }
 
             String progressJson = streamingFileService.getUploadProgress(uploadId);
@@ -229,52 +240,4 @@ public class StreamingFileController {
         }
     }
 
-    /**
-     * 从令牌获取对应的SSH连接
-     * 由于TokenVault是一次性消费的，我们需要通过其他方式关联token和session
-     *
-     * @param token 认证令牌
-     * @return SSH连接，如果未找到则返回null
-     */
-    private SshConnection getConnectionFromToken(String token) {
-        // 目前的架构中，token在STOMP连接时被消费，无法直接映射到session
-        // 作为临时解决方案，我们遍历所有活动连接寻找匹配的连接
-        // 更好的解决方案是修改TokenVault支持多次验证而非一次性消费
-
-        // 这里需要一个更好的设计，暂时返回第一个可用连接进行测试
-        Map<String, SshConnection> allConnections = sessionManager.getAllConnections();
-        if (!allConnections.isEmpty()) {
-            // 返回第一个活动连接作为临时解决方案
-            return allConnections.values().iterator().next();
-        }
-
-        return null;
-    }
-
-    /**
-     * 从令牌提取会话ID
-     * 临时实现：由于当前架构限制，使用活动连接的第一个sessionId
-     *
-     * @param token 认证令牌
-     * @return 会话ID
-     */
-    private String extractSessionIdFromToken(String token) {
-        Map<String, SshConnection> allConnections = sessionManager.getAllConnections();
-        if (!allConnections.isEmpty()) {
-            // 返回第一个活动会话ID作为临时解决方案
-            return allConnections.keySet().iterator().next();
-        }
-
-        // 如果没有活动连接，生成一个临时ID
-        return "temp_session_" + System.currentTimeMillis();
-    }
-
-    /**
-     * 获取所有活动连接信息（用于调试）
-     *
-     * @return 活动连接映射
-     */
-    private Map<String, SshConnection> getAllConnections() {
-        return sessionManager.getAllConnections();
-    }
 }

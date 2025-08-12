@@ -28,23 +28,23 @@
         <div class="stat-item progress-item">
           <span class="stat-label">CPU 使用率</span>
           <div class="progress-bar">
-            <div class="progress-bar-inner" :style="{ width: stats.cpuUsage + '%' }"></div>
+            <div class="progress-bar-inner" :style="{ width: getCpuPercentage(stats) + '%' }"></div>
           </div>
-          <span class="stat-percent">{{ stats.cpuUsage.toFixed(2) }}%</span>
+          <span class="stat-percent">{{ getCpuPercentage(stats).toFixed(2) }}%</span>
         </div>
         <div class="stat-item progress-item">
           <span class="stat-label">内存使用率</span>
           <div class="progress-bar">
-            <div class="progress-bar-inner" :style="{ width: stats.memUsage + '%' }"></div>
+            <div class="progress-bar-inner" :style="{ width: getMemoryPercentage(stats) + '%' }"></div>
           </div>
-          <span class="stat-percent">{{ stats.memUsage.toFixed(2) }}%</span>
+          <span class="stat-percent">{{ getMemoryPercentage(stats).toFixed(2) }}%</span>
         </div>
         <div class="stat-item progress-item">
           <span class="stat-label">硬盘使用率 (/)</span>
           <div class="progress-bar">
-            <div class="progress-bar-inner" :style="{ width: stats.diskUsage + '%' }"></div>
+            <div class="progress-bar-inner" :style="{ width: getDiskPercentage(stats) + '%' }"></div>
           </div>
-          <span class="stat-percent">{{ stats.diskUsage.toFixed(2) }}%</span>
+          <span class="stat-percent">{{ getDiskPercentage(stats).toFixed(2) }}%</span>
         </div>
         <div class="stat-item">
           <span class="stat-label">网络 I/O</span>
@@ -81,6 +81,57 @@ defineProps({
   stats: { type: Object, default: null },
   dockerContainers: { type: Array, default: () => [] },
 });
+
+// 处理CPU使用率数据（兼容新旧格式）
+const getCpuPercentage = (stats) => {
+  if (!stats || !stats.cpuUsage) return 0;
+  
+  // 新格式：对象格式，包含percentage字段
+  if (typeof stats.cpuUsage === 'object' && stats.cpuUsage.percentage !== undefined) {
+    return stats.cpuUsage.percentage || 0;
+  }
+  
+  // 旧格式：直接是数字
+  if (typeof stats.cpuUsage === 'number') {
+    return stats.cpuUsage;
+  }
+  
+  return 0;
+};
+
+// 处理内存使用率数据（兼容新旧格式）
+const getMemoryPercentage = (stats) => {
+  if (!stats || !stats.memUsage) return 0;
+  
+  // 新格式：对象格式，包含percentage字段
+  if (typeof stats.memUsage === 'object' && stats.memUsage.percentage !== undefined) {
+    return stats.memUsage.percentage || 0;
+  }
+  
+  // 旧格式：直接是数字
+  if (typeof stats.memUsage === 'number') {
+    return stats.memUsage;
+  }
+  
+  return 0;
+};
+
+// 处理硬盘使用率数据（兼容新旧格式）
+const getDiskPercentage = (stats) => {
+  if (!stats || !stats.diskUsage) return 0;
+  
+  // 新格式：对象格式，包含percentage字段
+  if (typeof stats.diskUsage === 'object' && stats.diskUsage.percentage !== undefined) {
+    return stats.diskUsage.percentage || 0;
+  }
+  
+  // 旧格式：直接是数字
+  if (typeof stats.diskUsage === 'number') {
+    return stats.diskUsage;
+  }
+  
+  return 0;
+};
 </script>
 
 <style scoped>

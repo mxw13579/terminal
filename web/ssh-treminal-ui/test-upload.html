@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SFTP上传测试</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 4px; 
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .result { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 4px; 
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d4edda; color: #155724; }
+        .warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SFTP上传功能测试</h1>
+        
+        <div class="test-section">
+            <h3>1. 环境检测</h3>
+            <button onclick="detectEnvironment()">检测当前环境</button>
+            <div id="env-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. 后端连接测试</h3>
+            <button onclick="testBackendConnection()">测试后端连接</button>
+            <div id="backend-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. 代理配置测试</h3>
+            <button onclick="testProxyConfig()">测试代理配置</button>
+            <div id="proxy-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>4. URL构建测试</h3>
+            <button onclick="testUrlGeneration()">测试URL构建</button>
+            <div id="url-result" class="result"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 模拟环境变量
+        window.import = {
+            meta: {
+                env: {
+                    DEV: true,
+                    VITE_BACKEND_URL: undefined
+                }
+            }
+        };
+        
+        // 简化的StreamingFileService类用于测试
+        class TestStreamingFileService {
+            constructor() {
+                this.backendBaseUrl = this.detectBackendUrl();
+            }
+            
+            detectBackendUrl() {
+                // 检查是否有环境变量指定后端地址
+                if (window.import?.meta?.env?.VITE_BACKEND_URL) {
+                    return window.import.meta.env.VITE_BACKEND_URL;
+                }
+                
+                const currentHost = window.location.hostname;
+                const currentPort = window.location.port;
+                const currentProtocol = window.location.protocol;
+                
+                // 检测开发环境的特征
+                const isViteDev = currentPort && (
+                    currentPort.startsWith('517') ||  // Vite默认端口5173及其邻近端口
+                    currentPort.startsWith('300') ||  // 3000-3999端口范围
+                    currentPort.startsWith('400') ||  // 4000-4999端口范围  
+                    currentPort.startsWith('500') ||  // 5000-5999端口范围
+                    parseInt(currentPort) >= 3000
+                );
+                
+                // 在开发环境中，始终使用相对路径让Vite代理处理
+                if (isViteDev || window.import?.meta?.env?.DEV) {
+                    console.log('检测到开发环境，使用Vite代理', {
+                        port: currentPort,
+                        isDev: window.import?.meta?.env?.DEV,
+                        isViteDev
+                    });
+                    // 开发环境：使用相对路径，让Vite代理处理
+                    return ''; // 空字符串表示使用相对路径
+                } else {
+                    console.log('检测到生产环境，直接连接后端');
+                    // 生产环境：直接连接到后端端口
+                    return `${currentProtocol}//${currentHost}:8080`;
+                }
+            }
+            
+            getApiUrl(path) {
+                // 在开发环境中，强制使用相对路径以利用Vite代理
+                if (window.import?.meta?.env?.DEV || !this.backendBaseUrl) {
+                    console.log(`使用相对路径: ${path}`);
+                    return path;
+                }
+                
+                const fullUrl = this.backendBaseUrl + path;
+                console.log(`使用完整URL: ${fullUrl}`);
+                return fullUrl;
+            }
+        }
+        
+        window.testService = new TestStreamingFileService();
+        
+        // 测试函数
+        window.detectEnvironment = function() {
+            const result = document.getElementById('env-result');
+            const info = {
+                currentUrl: window.location.href,
+                hostname: window.location.hostname,
+                port: window.location.port,
+                protocol: window.location.protocol,
+                isDev: window.import?.meta?.env?.DEV,
+                backendBaseUrl: window.testService.backendBaseUrl || '(使用相对路径)',
+                userAgent: navigator.userAgent.substring(0, 100) + '...'
+            };
+            
+            result.textContent = JSON.stringify(info, null, 2);
+            result.className = 'result success';
+        };
+        
+        window.testBackendConnection = async function() {
+            const result = document.getElementById('backend-result');
+            result.textContent = '正在测试后端连接...';
+            result.className = 'result warning';
+            
+            try {
+                const testUrl = window.testService.getApiUrl('/api/files/upload');
+                console.log('测试连接到:', testUrl);
+                
+                const response = await fetch(testUrl, {
+                    method: 'OPTIONS'
+                });
+                
+                const testResult = {
+                    requestUrl: testUrl,
+                    responseUrl: response.url,
+                    status: response.status,
+                    statusText: response.statusText,
+                    ok: response.ok,
+                    headers: {}
+                };
+                
+                // 获取响应头
+                for (let [key, value] of response.headers.entries()) {
+                    testResult.headers[key] = value;
+                }
+                
+                result.textContent = JSON.stringify(testResult, null, 2);
+                
+                if (response.ok || response.status === 404) {
+                    result.className = 'result success';
+                } else {
+                    result.className = 'result error';
+                }
+                
+            } catch (error) {
+                result.textContent = `连接失败: ${error.message}\n\n错误详情:\n${JSON.stringify({
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                }, null, 2)}`;
+                result.className = 'result error';
+            }
+        };
+        
+        window.testProxyConfig = async function() {
+            const result = document.getElementById('proxy-result');
+            result.textContent = '正在测试代理配置...';
+            result.className = 'result warning';
+            
+            const tests = [
+                '/api/files/upload',
+                '/api/test',
+                '/ws/terminal'
+            ];
+            
+            const results = {};
+            
+            for (const path of tests) {
+                try {
+                    const response = await fetch(path, { method: 'OPTIONS' });
+                    results[path] = {
+                        status: response.status,
+                        ok: response.ok,
+                        url: response.url
+                    };
+                } catch (error) {
+                    results[path] = {
+                        error: error.message
+                    };
+                }
+            }
+            
+            result.textContent = JSON.stringify(results, null, 2);
+            result.className = 'result';
+        };
+        
+        window.testUrlGeneration = function() {
+            const result = document.getElementById('url-result');
+            
+            const testPaths = [
+                '/api/files/upload',
+                '/api/files/download',
+                '/api/test',
+                '/ws/terminal'
+            ];
+            
+            const urlResults = {};
+            
+            testPaths.forEach(path => {
+                urlResults[path] = window.testService.getApiUrl(path);
+            });
+            
+            result.textContent = JSON.stringify(urlResults, null, 2);
+            result.className = 'result success';
+        };
+    </script>
+</body>
+</html>

@@ -43,12 +43,11 @@
 
       <div class="sftp-actions">
         <div v-if="isActionInProgress" class="upload-progress-container">
-          <div class="progress-section"><div class="progress-label"><span>本地 → Web Terminal</span><span v-if="uploadSpeed">({{ uploadSpeed }})</span></div><div class="progress-bar"><div class="progress-bar-inner" :style="{width: localUploadProgress + '%'}"></div></div></div>
-          <div class="progress-section" :class="{ 'visible': localUploadProgress === 100 || remoteUploadProgress > 0 }"><div class="progress-label"><span>Web Terminal → 远程服务器</span><span v-if="sftpUploadSpeed">({{ sftpUploadSpeed }})</span></div><div class="progress-bar"><div class="progress-bar-inner" :style="{width: remoteUploadProgress + '%'}"></div></div></div>
+          <div class="progress-section"><div class="progress-label"><span>流式传输进度</span><span v-if="uploadSpeed">({{ uploadSpeed }})</span></div><div class="progress-bar"><div class="progress-bar-inner" :style="{width: localUploadProgress + '%'}"></div></div></div>
           <div class="upload-status-text">{{ uploadStatusText }}</div>
         </div>
         <template v-else>
-          <button type="button" class="btn btn-sm" @click="triggerUpload">上传</button>
+          <button type="button" class="btn btn-sm" @click="triggerUpload">流式上传</button>
           <button type="button" class="btn btn-sm" @click="downloadSelectedFiles" :disabled="selectedFiles.length === 0">下载</button>
         </template>
       </div>

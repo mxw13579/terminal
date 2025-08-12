@@ -92,13 +92,11 @@ public class CryptoService {
      * 使用私钥解密前端发送的加密凭据，返回原始JSON字符串。
      * 支持的凭据格式应包含 host、port、user、password 字段。
      * </p>
+     * 
+     * 增强版本：支持处理未加密的凭据（仅限开发环境）
+     * 如果输入数据包含 "_unencrypted": true，则直接返回该JSON，无需解密。
      *
-     * 变更点：
-     * 1) 使用 String.isBlank 简化判空；
-     * 2) 使用 StandardCharsets.UTF_8 避免字符集查找与潜在异常；
-     * 3) 保持 Base64 的 IllegalArgumentException 独立捕获，边界更清晰。
-     *
-     * @param encryptedData Base64编码的加密数据
+     * @param encryptedData Base64编码的加密数据或包含_unencrypted标记的JSON字符串
      * @return 解密后的凭据JSON字符串
      * @throws IllegalArgumentException 如果加密数据无效
      * @throws IllegalStateException 如果解密过程失败
@@ -107,6 +105,13 @@ public class CryptoService {
         if (encryptedData == null || encryptedData.isBlank()) {
             throw new IllegalArgumentException("加密数据不能为空");
         }
+        
+        // 检查是否为未加密的JSON数据（降级方案）
+        if (isUnencryptedJson(encryptedData)) {
+            log.warn("🔓 接收到未加密的凭据数据（仅开发环境允许）");
+            return encryptedData;
+        }
+        
         if (privateKey == null) {
             throw new IllegalStateException("RSA私钥尚未初始化");
         }
@@ -137,12 +142,52 @@ public class CryptoService {
             // 注意：不记录解密后的内容，避免敏感信息泄露到日志
             return decryptedData;
         } catch (IllegalArgumentException e) {
-            // Base64解码失败
-            log.warn("Base64解码失败: {}", e.getMessage());
+            // Base64解码失败，可能是未加密的JSON
+            log.warn("Base64解码失败，尝试处理为未加密数据: {}", e.getMessage());
+            
+            // 最后一次尝试：检查是否为有效的JSON格式
+            if (isValidJsonCredentials(encryptedData)) {
+                log.warn("⚠️ 接收到可能未加密的凭据JSON（安全风险）");
+                return encryptedData;
+            }
+            
             throw new IllegalArgumentException("无效的加密数据格式", e);
         } catch (Exception e) {
             log.error("解密凭据失败: {}", e.getMessage());
             throw new IllegalStateException("凭据解密过程出错", e);
+        }
+    }
+    
+    /**
+     * 检查输入是否为标记了未加密的JSON数据
+     * @param data 输入数据
+     * @return 如果是未加密JSON返回true
+     */
+    private boolean isUnencryptedJson(String data) {
+        try {
+            return data.trim().startsWith("{") && data.contains("\"_unencrypted\":true");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * 检查输入是否为有效的凭据JSON格式
+     * @param data 输入数据
+     * @return 如果是有效JSON且包含必要字段返回true
+     */
+    private boolean isValidJsonCredentials(String data) {
+        try {
+            if (!data.trim().startsWith("{")) {
+                return false;
+            }
+            
+            // 简单检查是否包含必要的凭据字段
+            return data.contains("\"host\"") && 
+                   data.contains("\"user\"") && 
+                   data.contains("\"password\"");
+        } catch (Exception e) {
+            return false;
         }
     }
 

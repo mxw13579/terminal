@@ -77,7 +77,24 @@ public class SftpService {
         try {
             ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
             path = (path == null || path.isEmpty() || path.equals(".")) ? channelSftp.getHome() : path;
-            String absolutePath = channelSftp.realpath(path);
+            
+            // 修复realpath调用问题 - JSch库在某些服务器上会抛出"Success"异常
+            String absolutePath;
+            try {
+                absolutePath = channelSftp.realpath(path);
+            } catch (SftpException e) {
+                // 如果realpath失败，尝试直接使用path
+                log.warn("realpath失败，使用原始路径: {} (错误: {})", path, e.getMessage());
+                absolutePath = path;
+                
+                // 验证路径是否存在和可访问
+                try {
+                    channelSftp.lstat(absolutePath);
+                } catch (SftpException statEx) {
+                    log.error("路径不存在或不可访问: {}", absolutePath);
+                    throw new IOException("路径不存在或不可访问: " + absolutePath);
+                }
+            }
 
             @SuppressWarnings("unchecked")
             Vector<ChannelSftp.LsEntry> entries = channelSftp.ls(absolutePath);
@@ -161,7 +178,10 @@ public class SftpService {
 
     /**
      * 处理分片上传，接收单个分片并缓存，全部分片到齐后合并上传到服务器。
-     *
+     * 
+     * @deprecated 该方法已废弃，建议使用HTTP流式传输（StreamingFileService）
+     * 原因：高内存消耗，扩展性差，对大文件有OOM风险
+     * 
      * @param session        WebSocket会话
      * @param sshConnection  SSH连接对象
      * @param remotePath     远程目录路径
@@ -171,9 +191,17 @@ public class SftpService {
      * @param contentBase64  分片内容（Base64编码）
      * @throws IOException   发送消息失败时抛出
      */
+    @Deprecated
     public void handleSftpUploadChunk(final WebSocketSession session, final SshConnection sshConnection,
                                       final String remotePath, final String filename,
                                       final int chunkIndex, final int totalChunks, final String contentBase64) throws IOException {
+        
+        // 检查文件大小，对大文件推荐使用HTTP流式传输
+        if (totalChunks > 100) { // 假设每片1MB，大于100MB的文件
+            sendSftpError(session, "文件过大，建议使用HTTP流式上传功能获得更好的性能和稳定性");
+            return;
+        }
+        
         final String uploadKey = session.getId() + ":" + remotePath + "/" + filename;
         List<byte[]> chunks = uploadChunks.computeIfAbsent(uploadKey, k -> Collections.synchronizedList(new ArrayList<>(Collections.nCopies(totalChunks, null))));
         byte[] decodedChunk = Base64.getDecoder().decode(contentBase64);
@@ -309,12 +337,40 @@ public class SftpService {
      * @throws IOException 发送消息失败时抛出
      */
     private void sendDownloadResponse(final WebSocketSession session, final String filename, final byte[] data) throws IOException {
-        Map<String, Object> response = Map.of(
-                "type", "sftp_download_response",
-                "filename", filename,
-                "content", Base64.getEncoder().encodeToString(data)
-        );
-        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+        try {
+            // 处理包含特殊字符的文件名，确保JSON序列化安全
+            String safeFilename = filename;
+            if (filename != null) {
+                // 移除或替换可能导致JSON序列化问题的字符
+                safeFilename = filename.replaceAll("[\\p{Cntrl}\\p{So}]", "_");
+                if (safeFilename.length() > 100) {
+                    // 限制文件名长度
+                    String ext = "";
+                    int dotIndex = safeFilename.lastIndexOf('.');
+                    if (dotIndex > 0) {
+                        ext = safeFilename.substring(dotIndex);
+                        safeFilename = safeFilename.substring(0, Math.min(100 - ext.length(), dotIndex));
+                    } else {
+                        safeFilename = safeFilename.substring(0, 100);
+                    }
+                    safeFilename += ext;
+                }
+            }
+
+            Map<String, Object> response = Map.of(
+                    "type", "sftp_download_response",
+                    "filename", safeFilename,
+                    "content", Base64.getEncoder().encodeToString(data)
+            );
+            
+            String jsonResponse = objectMapper.writeValueAsString(response);
+            session.sendMessage(new TextMessage(jsonResponse));
+            
+        } catch (Exception e) {
+            log.error("发送SFTP下载响应失败，filename: {}, error: {}", filename, e.getMessage(), e);
+            // 发送错误响应
+            sendSftpError(session, "下载响应发送失败: " + e.getMessage());
+        }
     }
 
     /**

@@ -307,6 +307,7 @@
 <script>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useSillyTavern } from '@/composables/useSillyTavern'
+import { useConnectionManager } from '@/composables/useConnectionManager'
 
 export default {
   name: 'RealtimeLogViewer',
@@ -317,7 +318,23 @@ export default {
     }
   },
   setup(props) {
-    const { stompClient, isConnected } = useSillyTavern()
+    const sillyTavern = useSillyTavern()
+    const { connectionState, getStompClient } = useConnectionManager()
+    
+    // 从统一连接管理器获取STOMP连接状态
+    const isConnected = computed(() => connectionState.isConnected)
+    const stompClient = computed(() => {
+      const client = getStompClient()
+      console.log('RealtimeLogViewer STOMP客户端调试:', {
+        client: !!client,
+        clientType: client ? client.constructor.name : 'null',
+        connected: client?.connected,
+        hasSendMethod: client && typeof client.send === 'function',
+        hasPublishMethod: client && typeof client.publish === 'function',
+        clientKeys: client ? Object.keys(client).slice(0, 10) : []
+      })
+      return client
+    })
     
     // 响应式状态
     const logMode = ref('realtime') // 'history' | 'realtime' - 默认开启实时日志
@@ -361,6 +378,20 @@ export default {
     })
     
     // 方法
+    // 实用函数
+    const getSessionId = (client) => {
+      try {
+        // 尝试多种方式获取sessionId
+        return client?.ws?._websocket?.extensions?.sessionId ||
+               client?.webSocket?._websocket?.extensions?.sessionId ||
+               client?._sessionId ||
+               client?.connected && Math.random().toString(36).substr(2, 9)
+      } catch (e) {
+        console.warn('获取sessionId失败:', e)
+        return null
+      }
+    }
+    
     const getStatusText = () => {
       switch (realtimeStatus.value) {
         case 'active': return '实时日志已启动'
@@ -448,6 +479,18 @@ export default {
         return
       }
       
+      const client = stompClient.value
+      if (!client || !client.connected || (typeof client.send !== 'function' && typeof client.publish !== 'function')) {
+        errorMessage.value = 'STOMP客户端未就绪或连接已断开'
+        console.error('STOMP客户端状态:', {
+          client: !!client,
+          connected: client?.connected,
+          hasSendMethod: client && typeof client.send === 'function',
+          hasPublishMethod: client && typeof client.publish === 'function'
+        })
+        return
+      }
+      
       isLoadingHistory.value = true
       errorMessage.value = ''
       successMessage.value = ''
@@ -459,16 +502,38 @@ export default {
       }
       
       try {
-        stompClient.value.send('/app/sillytavern/get-history-logs', {}, JSON.stringify(request))
+        // 优先使用publish方法（现代STOMP客户端）
+        if (typeof client.publish === 'function') {
+          client.publish({
+            destination: '/app/sillytavern/get-history-logs',
+            body: JSON.stringify(request)
+          })
+        } else {
+          // 回退到send方法（传统客户端）
+          client.send('/app/sillytavern/get-history-logs', {}, JSON.stringify(request))
+        }
       } catch (error) {
         errorMessage.value = '发送请求失败: ' + error.message
         isLoadingHistory.value = false
+        console.error('发送历史日志请求失败:', error)
       }
     }
     
     const startRealtimeLogs = () => {
       if (!isConnected.value) {
         errorMessage.value = 'WebSocket连接未建立'
+        return
+      }
+      
+      const client = stompClient.value
+      if (!client || !client.connected || (typeof client.send !== 'function' && typeof client.publish !== 'function')) {
+        errorMessage.value = 'STOMP客户端未就绪或不可用'
+        console.error('STOMP客户端状态:', {
+          client: !!client,
+          connected: client?.connected,
+          hasSendMethod: client && typeof client.send === 'function',
+          hasPublishMethod: client && typeof client.publish === 'function'
+        })
         return
       }
       
@@ -481,7 +546,16 @@ export default {
       }
       
       try {
-        stompClient.value.send('/app/sillytavern/start-realtime-logs', {}, JSON.stringify(request))
+        // 优先使用publish方法（现代STOMP客户端）
+        if (typeof client.publish === 'function') {
+          client.publish({
+            destination: '/app/sillytavern/start-realtime-logs',
+            body: JSON.stringify(request)
+          })
+        } else {
+          // 回退到send方法（传统客户端）
+          client.send('/app/sillytavern/start-realtime-logs', {}, JSON.stringify(request))
+        }
       } catch (error) {
         errorMessage.value = '启动实时日志失败: ' + error.message
       }
@@ -490,10 +564,27 @@ export default {
     const stopRealtimeLogs = () => {
       if (!isConnected.value) return
       
+      const client = stompClient.value
+      if (!client || !client.connected || (typeof client.send !== 'function' && typeof client.publish !== 'function')) {
+        console.warn('STOMP客户端未就绪，无法停止实时日志')
+        isRealtimeActive.value = false
+        return
+      }
+      
       try {
-        stompClient.value.send('/app/sillytavern/stop-realtime-logs', {}, JSON.stringify({}))
+        // 优先使用publish方法（现代STOMP客户端）
+        if (typeof client.publish === 'function') {
+          client.publish({
+            destination: '/app/sillytavern/stop-realtime-logs',
+            body: JSON.stringify({})
+          })
+        } else {
+          // 回退到send方法（传统客户端）
+          client.send('/app/sillytavern/stop-realtime-logs', {}, JSON.stringify({}))
+        }
       } catch (error) {
         console.error('停止实时日志失败:', error)
+        isRealtimeActive.value = false
       }
     }
     
@@ -641,30 +732,46 @@ export default {
     
     // 生命周期
     onMounted(() => {
+      const setupSubscriptions = () => {
+        const client = stompClient.value
+        if (!client || !client.connected) {
+          console.warn('STOMP客户端未连接，无法设置订阅')
+          return
+        }
+        
+        try {
+          // 安全获取sessionId
+          const sessionId = getSessionId(client) || Math.random().toString(36).substr(2, 9)
+          
+          // 订阅各种响应
+          historySubscription = client.subscribe(
+            `/queue/sillytavern/history-logs-user${sessionId}`,
+            handleHistoryLogsResponse
+          )
+          
+          realtimeSubscription = client.subscribe(
+            `/queue/sillytavern/realtime-logs-user${sessionId}`,
+            handleRealtimeLogsResponse
+          )
+          
+          realtimeStartSubscription = client.subscribe(
+            `/queue/sillytavern/realtime-logs-started-user${sessionId}`,
+            handleRealtimeStartResponse
+          )
+          
+          realtimeStopSubscription = client.subscribe(
+            `/queue/sillytavern/realtime-logs-stopped-user${sessionId}`,
+            handleRealtimeStopResponse
+          )
+          
+          console.log('RealtimeLogViewer 订阅已设置完成')
+        } catch (error) {
+          console.error('设置RealtimeLogViewer订阅失败:', error)
+        }
+      }
+      
       if (isConnected.value && stompClient.value) {
-        const sessionId = stompClient.value.ws._websocket?.extensions?.sessionId || 
-                          Math.random().toString(36).substr(2, 9)
-        
-        // 订阅各种响应
-        historySubscription = stompClient.value.subscribe(
-          `/queue/sillytavern/history-logs-user${sessionId}`,
-          handleHistoryLogsResponse
-        )
-        
-        realtimeSubscription = stompClient.value.subscribe(
-          `/queue/sillytavern/realtime-logs-user${sessionId}`,
-          handleRealtimeLogsResponse
-        )
-        
-        realtimeStartSubscription = stompClient.value.subscribe(
-          `/queue/sillytavern/realtime-logs-started-user${sessionId}`,
-          handleRealtimeStartResponse
-        )
-        
-        realtimeStopSubscription = stompClient.value.subscribe(
-          `/queue/sillytavern/realtime-logs-stopped-user${sessionId}`,
-          handleRealtimeStopResponse
-        )
+        setupSubscriptions()
         
         // 自动启动实时日志（类似 logs -f 50 效果）
         setTimeout(() => {
@@ -672,6 +779,24 @@ export default {
             startRealtimeLogs()
           }
         }, 500) // 延迟500ms确保WebSocket连接稳定
+      } else {
+        // 监听连接状态变化
+        const checkConnectionInterval = setInterval(() => {
+          if (isConnected.value && stompClient.value) {
+            clearInterval(checkConnectionInterval)
+            setupSubscriptions()
+            
+            // 自动启动实时日志
+            setTimeout(() => {
+              if (logMode.value === 'realtime' && !isRealtimeActive.value) {
+                startRealtimeLogs()
+              }
+            }, 500)
+          }
+        }, 500)
+        
+        // 10秒后停止检查
+        setTimeout(() => clearInterval(checkConnectionInterval), 10000)
       }
     })
     
