@@ -271,10 +271,11 @@ export function useTerminal(options = {}) {
         stompClient.subscribe('/user/queue/session', (message) => {
             try {
                 const data = JSON.parse(message.body);
-                console.log('收到会话消息:', data);
+                console.log('📨 收到会话消息:', data);
                 if (data.type === 'session_established' && data.sessionId) {
                     stompSessionId = data.sessionId;
                     console.log('✅ 收到后端发送的STOMP会话ID:', stompSessionId);
+                    console.log('🔗 当前streamingFileService的sessionIdProvider将返回:', stompSessionId);
                 }
             } catch (e) {
                 console.error('Error processing session message:', e);
@@ -361,6 +362,26 @@ export function useTerminal(options = {}) {
                 onShowModal('处理SFTP响应出错: ' + e.message);
             }
         });
+
+        // 订阅上传进度数据（实时后端传输进度）
+        console.log('🔔 正在订阅STOMP上传进度消息: /user/queue/upload/progress');
+        const uploadProgressSub = stompClient.subscribe('/user/queue/upload/progress', (message) => {
+            try {
+                const progressData = JSON.parse(message.body);
+                console.log('🎯 收到后端实时上传进度:', progressData);
+                
+                // 通知StreamingFileService更新进度
+                if (window.streamingProgressCallback) {
+                    console.log('📞 调用streamingProgressCallback');
+                    window.streamingProgressCallback(progressData);
+                } else {
+                    console.warn('⚠️  streamingProgressCallback未设置');
+                }
+            } catch (e) {
+                console.error('❌ 处理上传进度消息失败:', e);
+            }
+        });
+        console.log('✅ 上传进度订阅完成:', uploadProgressSub);
 
         // 订阅监控数据
         stompClient.subscribe('/user/queue/monitor', (message) => {

@@ -244,10 +244,23 @@ public class TrueStreamingFileService {
             log.info("流式上传完成 [ID: {}]: 最终传输 {} bytes ({} MB), 耗时: {} ms",
                     progress.getUploadId(), finalBytes, String.format("%.2f", finalBytes / (1024.0 * 1024.0)), duration);
 
+            // 新增详细日志，包含文件路径、大小、耗时、平均速度
+            double mbSize = finalBytes / (1024.0 * 1024.0);
+            double avgSpeed = duration > 0 ? mbSize * 1000.0 / duration : 0;
+            log.info("流式上传完成 [ID: {}]: {}, 大小: {} MB, 耗时: {} ms, 平均速度: {} MB/s",
+                    progress.getUploadId(),
+                    fullRemotePath,
+                    String.format("%.2f", mbSize),
+                    duration,
+                    String.format("%.2f", avgSpeed));
+
             if (progress.getTotalBytes() > 0 && finalBytes != progress.getTotalBytes()) {
                 log.warn("传输大小不匹配 [ID: {}]: 预期 {} bytes, 实际 {} bytes",
                         progress.getUploadId(), progress.getTotalBytes(), finalBytes);
             }
+
+            // 🔥 关键修复：发送完成状态的STOMP消息
+            sendProgressUpdate(progress);
 
             logUploadCompletion(progress, duration);
             // 注释掉STOMP通知，避免与前端新的流式上传机制冲突

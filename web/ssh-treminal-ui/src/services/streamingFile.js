@@ -89,10 +89,10 @@ export class StreamingFileService {
     getSessionId() {
         if (this.sessionIdProvider && typeof this.sessionIdProvider === 'function') {
             const sessionId = this.sessionIdProvider();
-            console.log('StreamingFileService获取会话ID:', sessionId);
+            console.log('📋 StreamingFileService获取会话ID:', sessionId);
             return sessionId;
         }
-        console.warn('StreamingFileService: 没有配置sessionIdProvider');
+        console.warn('⚠️  StreamingFileService: 没有配置sessionIdProvider');
         return null;
     }
 
@@ -309,71 +309,168 @@ export class StreamingFileService {
             return new Promise((resolve, reject) => {
                 let realProgressTimer = null;
                 let realUploadId = null; // 存储后端返回的真实uploadId
+                let usingBackendProgress = false; // 标记是否已切换到后端进度
+                let backendCompleted = false; // 标记后端是否已完成
                 
-                // 开始真实进度查询的函数
-                const startRealProgressTracking = (backendUploadId) => {
-                    realUploadId = backendUploadId;
-                    console.log(`开始使用后端uploadId查询真实进度: ${backendUploadId}`);
+                // 设置全局回调来接收STOMP实时进度
+                console.log('🎯 设置streamingProgressCallback, uploadId:', uploadId);
+                window.streamingProgressCallback = (progressData) => {
+                    console.log('📩 streamingProgressCallback被调用:', progressData);
                     
-                    realProgressTimer = setInterval(async () => {
-                        try {
-                            const sessionId = this.getSessionId();
-                            if (!sessionId || !realUploadId) return;
-                            
-                            const progressUrl = this.getApiUrl(`/api/streaming/upload/${realUploadId}/progress`);
-                            const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
-                            
-                            if (response.ok) {
-                                const progressData = await response.json();
-                                
-                                if (progressData && progressData.percentage !== undefined) {
-                                    console.log(`后端真实进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes) - uploadId: ${realUploadId}`);
-                                    
-                                    onProgress({
-                                        uploadId: realUploadId,
-                                        loaded: progressData.transferredBytes || 0,
-                                        total: progressData.totalBytes || file.size,
-                                        percentage: Math.round(progressData.percentage),
-                                        speed: progressData.speed || 0,
-                                        status: progressData.status === 'completed' ? 'completed' : 'streaming'
-                                    });
-                                    
-                                    // 如果后端显示完成，停止进度查询
-                                    if (progressData.status === 'completed' || progressData.percentage >= 100) {
-                                        clearInterval(realProgressTimer);
-                                        realProgressTimer = null;
-                                    }
-                                } else {
-                                    console.log(`进度查询无数据: ${JSON.stringify(progressData)}`);
-                                }
-                            } else {
-                                console.warn(`进度查询失败: ${response.status} ${response.statusText}`);
-                            }
-                        } catch (error) {
-                            console.warn('查询真实上传进度失败:', error.message);
+                    // 简化逻辑：如果收到了后端进度数据，直接使用，不做严格的ID匹配
+                    // 因为在上传期间，前端uploadId和后端uploadId不同是正常的
+                    if (progressData.filename === file.name) {
+                        console.log('✅ 文件名匹配，使用后端进度数据');
+                        usingBackendProgress = true;
+                        
+                        // 更新realUploadId以便后续使用
+                        if (!realUploadId && progressData.uploadId) {
+                            realUploadId = progressData.uploadId;
+                            console.log('🔗 设置realUploadId:', realUploadId);
                         }
-                    }, 1000); // 每秒查询一次真实进度
+                    } else {
+                        console.log(`⚠️  跳过：文件名不匹配 (期望:${file.name}, 收到:${progressData.filename})`);
+                        return;
+                    }
+                    
+                    console.log(`🎯 使用后端实时进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes) - 速度: ${this.formatSpeed(progressData.speed || 0)}`);
+                    
+                    if (onProgress) {
+                        onProgress({
+                            uploadId: progressData.uploadId || uploadId,
+                            loaded: progressData.transferredBytes || 0,
+                            total: progressData.totalBytes || file.size,
+                            percentage: Math.round(progressData.percentage || 0),
+                            speed: progressData.speed || 0,
+                            status: progressData.status === 'completed' ? 'completed' : 'streaming'
+                        });
+                    }
+                    
+                    // 如果后端显示完成，清理回调并resolve Promise
+                    if (progressData.status === 'completed' || progressData.percentage >= 100) {
+                        console.log('🏁 后端进度完成，清理回调');
+                        window.streamingProgressCallback = null;
+                        backendCompleted = true; // 标记后端已完成
+                        
+                        // 🔥 关键修复：后端完成时直接resolve Promise
+                        console.log('✅ 后端确认上传完成，自动resolve Promise');
+                        if (onComplete) {
+                            onComplete({
+                                uploadId: progressData.uploadId,
+                                status: 'completed',
+                                message: '文件上传完成！'
+                            });
+                        }
+                        // 直接resolve，不等待XMLHttpRequest
+                        resolve(progressData.uploadId);
+                    }
                 };
                 
-                // 使用浏览器原生进度事件作为初始进度显示
+                // 开始真实进度查询的函数 - 作为STOMP的备用方案
+                const startRealProgressTracking = (backendUploadId) => {
+                    realUploadId = backendUploadId;
+                    console.log(`💡 备用方案：开始使用后端uploadId查询真实进度: ${backendUploadId}`);
+                    
+                    // 延迟启动，给STOMP消息一点时间
+                    setTimeout(() => {
+                        if (usingBackendProgress) {
+                            console.log('✅ 已有STOMP实时进度，跳过轮询');
+                            return;
+                        }
+                        
+                        console.log('🔄 STOMP进度未收到，使用HTTP轮询备用');
+                        realProgressTimer = setInterval(async () => {
+                            try {
+                                if (usingBackendProgress) {
+                                    clearInterval(realProgressTimer);
+                                    realProgressTimer = null;
+                                    return;
+                                }
+                                
+                                const sessionId = this.getSessionId();
+                                if (!sessionId || !realUploadId) return;
+                                
+                                const progressUrl = this.getApiUrl(`/api/streaming/upload/${realUploadId}/progress`);
+                                const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
+                                
+                                if (response.ok) {
+                                    const progressData = await response.json();
+                                    
+                                    if (progressData && progressData.percentage !== undefined) {
+                                        console.log(`📊 HTTP轮询进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes)`);
+                                        
+                                        onProgress({
+                                            uploadId: realUploadId,
+                                            loaded: progressData.transferredBytes || 0,
+                                            total: progressData.totalBytes || file.size,
+                                            percentage: Math.round(progressData.percentage),
+                                            speed: progressData.speed || 0,
+                                            status: progressData.status === 'completed' ? 'completed' : 'streaming'
+                                        });
+                                        
+                                        // 如果后端显示完成，停止进度查询
+                                        if (progressData.status === 'completed' || progressData.percentage >= 100) {
+                                            clearInterval(realProgressTimer);
+                                            realProgressTimer = null;
+                                        }
+                                    }
+                                } else {
+                                    console.warn(`进度查询失败: ${response.status} ${response.statusText}`);
+                                }
+                            } catch (error) {
+                                console.warn('查询真实上传进度失败:', error.message);
+                            }
+                        }, 1000); // 每秒查询一次真实进度
+                    }, 2000); // 延迟2秒启动
+                };
+                
+                // 使用浏览器原生进度事件作为初始进度显示（仅在后端数据不可用时）
                 xhr.upload.onprogress = (event) => {
-                    // 只在没有真实进度时显示浏览器进度
-                    if (!realUploadId && event.lengthComputable && onProgress) {
+                    // 如果已经有后端实时进度，就不使用浏览器进度
+                    if (usingBackendProgress) return;
+                    
+                    if (event.lengthComputable && onProgress) {
                         const percentage = Math.round((event.loaded / event.total) * 100);
                         const currentTime = Date.now();
                         const uploadInfo = this.activeUploads.get(uploadId);
                         
-                        // 计算基于总传输时间的平均速度（比瞬时速度更稳定）
+                        // 使用滑动窗口计算平均速度（更平滑）
                         let speed = 0;
                         if (uploadInfo) {
-                            const totalTime = currentTime - uploadInfo.startTime;
-                            if (totalTime > 1000) { // 至少传输1秒后才显示速度
-                                speed = event.loaded * 1000 / totalTime; // bytes/sec 平均速度
+                            if (!uploadInfo.speedHistory) {
+                                uploadInfo.speedHistory = [];
+                            }
+                            
+                            // 计算瞬时速度
+                            const timeDiff = currentTime - uploadInfo.lastProgressTime;
+                            const bytesDiff = event.loaded - uploadInfo.lastProgressLoaded;
+                            
+                            if (timeDiff > 0 && bytesDiff > 0) {
+                                const instantSpeed = (bytesDiff / timeDiff) * 1000;
+                                
+                                // 添加到历史记录
+                                uploadInfo.speedHistory.push(instantSpeed);
+                                if (uploadInfo.speedHistory.length > 5) { // 保持最近5个数据点
+                                    uploadInfo.speedHistory.shift();
+                                }
+                                
+                                // 计算平均速度
+                                speed = uploadInfo.speedHistory.reduce((sum, s) => sum + s, 0) / uploadInfo.speedHistory.length;
+                                
+                                // 更新跟踪信息
+                                uploadInfo.lastProgressTime = currentTime;
+                                uploadInfo.lastProgressLoaded = event.loaded;
+                            } else {
+                                // 回退到总体平均速度
+                                const totalTime = currentTime - uploadInfo.startTime;
+                                if (totalTime > 1000) {
+                                    speed = event.loaded * 1000 / totalTime;
+                                }
                             }
                         }
                         
-                        console.log(`浏览器进度事件: ${percentage}% (${event.loaded}/${event.total} bytes) - 平均速度: ${this.formatSpeed(speed)}`);
-                        console.warn('⚠️  开发环境：浏览器进度可能低于实际传输进度');
+                        console.log(`📱 浏览器进度(临时): ${percentage}% (${event.loaded}/${event.total} bytes) - 速度: ${this.formatSpeed(speed)}`);
+                        console.warn('⚠️  等待后端实时进度接管...');
                         
                         onProgress({
                             uploadId,
@@ -449,33 +546,72 @@ export class StreamingFileService {
                     }
                 };
 
-                // 网络错误处理
+                // 网络错误处理 - 改进错误处理逻辑
                 xhr.onerror = () => {
-                    // 清理真实进度定时器
+                    // 如果后端已完成，不要报错
+                    if (backendCompleted) {
+                        console.log('✅ 后端已完成上传，忽略XMLHttpRequest错误');
+                        return;
+                    }
+                    
+                    // 清理资源
                     if (realProgressTimer) {
                         clearInterval(realProgressTimer);
                         realProgressTimer = null;
                     }
+                    window.streamingProgressCallback = null;
                     
                     this.activeUploads.delete(uploadId);
-                    const error = new Error('流式上传网络错误：连接失败');
-                    console.error('流式上传网络错误:', {
+                    
+                    // 改进错误消息 - 区分不同的错误情况
+                    let errorMessage = '流式上传网络错误：连接失败';
+                    
+                    if (xhr.readyState === 4 && xhr.status === 0) {
+                        // 这种情况可能是连接意外断开，但文件可能已经传输完成
+                        errorMessage = '连接意外断开，但文件可能已经传输完成。请检查后端日志确认上传状态。';
+                        console.warn('XMLHttpRequest异常断开，可能是大文件上传过程中的正常现象');
+                    } else if (xhr.readyState === 0) {
+                        errorMessage = '无法建立连接到服务器，请检查网络状态';
+                    }
+                    
+                    const error = new Error(errorMessage);
+                    console.error('流式上传网络错误详细信息:', {
                         readyState: xhr.readyState,
                         status: xhr.status,
+                        statusText: xhr.statusText,
                         filename: file.name,
-                        uploadId
+                        uploadId,
+                        responseText: xhr.responseText,
+                        currentTime: new Date().toISOString()
                     });
-                    if (onError) onError(error);
-                    reject(error);
+                    
+                    // 对于可能已完成的上传，不要立即报错，而是等待一会儿看后端是否完成
+                    if (xhr.readyState === 4 && xhr.status === 0) {
+                        console.log('等待5秒检查后端是否完成上传...');
+                        setTimeout(() => {
+                            // 再次检查后端是否已完成
+                            if (backendCompleted) {
+                                console.log('✅ 5秒后检查：后端已完成，不报错');
+                                return;
+                            }
+                            // 如果5秒后还没有后端确认，则报错
+                            if (onError) onError(error);
+                            reject(error);
+                        }, 5000);
+                    } else {
+                        if (onError) onError(error);
+                        reject(error);
+                    }
                 };
 
                 // 上传中止处理
                 xhr.onabort = () => {
-                    // 清理真实进度定时器
+                    // 清理资源
                     if (realProgressTimer) {
                         clearInterval(realProgressTimer);
                         realProgressTimer = null;
                     }
+                    window.streamingProgressCallback = null;
                     
                     this.activeUploads.delete(uploadId);
                     const error = new Error('流式上传已取消');
