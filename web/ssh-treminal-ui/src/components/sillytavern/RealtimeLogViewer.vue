@@ -1,6 +1,23 @@
 <template>
   <div class="realtime-log-viewer" :class="{ 'fullscreen': isFullscreen }">
     <div class="card">
+      <div class="card-header">
+        <div class="header-content">
+          <div class="title-section">
+            <!-- 简化标题，只保留全屏按钮 -->
+          </div>
+          <div class="header-actions">
+            <button 
+              @click="toggleFullscreen" 
+              class="btn btn-sm btn-outline-light"
+              :title="isFullscreen ? '退出全屏' : '全屏显示'"
+            >
+              <i :class="isFullscreen ? 'fas fa-compress' : 'fas fa-expand'"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+      
       <div class="card-body">
         <!-- 直接显示日志区域，移除所有控制面板 -->
         <div class="log-display-area">
@@ -18,14 +35,6 @@
           
           <div v-else class="log-container-wrapper">
             <div class="log-container" ref="logContainer">
-              <!-- 全屏按钮放在日志容器右上角 -->
-              <button 
-                @click="toggleFullscreen" 
-                class="fullscreen-btn"
-                :title="isFullscreen ? '退出全屏' : '全屏显示'"
-              >
-                <i :class="isFullscreen ? 'fas fa-compress' : 'fas fa-expand'"></i>
-              </button>
               
               <div 
                 v-for="(log, index) in logs" 
@@ -487,45 +496,84 @@ export default {
   min-height: 0;
 }
 
-/* 全屏模式下的按钮样式 */
-.realtime-log-viewer.fullscreen .fullscreen-btn {
+/* 头部样式 */
+.card-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+  padding: 0.5rem 1rem; /* 减小padding */
+}
+
+.card-header .header-content {
+  display: flex;
+  justify-content: flex-end; /* 右对齐按钮 */
+  align-items: center;
+  width: 100%;
+  min-height: 40px; /* 确保最小高度 */
+}
+
+.card-header .title-section {
+  display: none; /* 隐藏标题区域 */
+}
+
+.card-header .header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.card-header .header-actions .btn {
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+}
+
+.card-header .header-actions .btn:hover {
+  background-color: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* 全屏样式 */
+.realtime-log-viewer.fullscreen {
   position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 10000;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  max-width: none;
+  margin: 0;
+  background: white;
+  padding: 0;
+}
+
+.realtime-log-viewer.fullscreen .card {
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.realtime-log-viewer.fullscreen .card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.realtime-log-viewer.fullscreen .log-display-area {
+  flex: 1;
+  min-height: 0;
+}
+
+.realtime-log-viewer.fullscreen .log-container-wrapper {
+  flex: 1;
+  min-height: 0;
 }
 
 .realtime-log-viewer.fullscreen .log-container {
-  position: relative;
   max-height: none;
   height: 100%;
-  padding-top: 2.5rem; /* 为按钮留出空间 */
-}
-
-/* 全屏按钮样式 */
-.fullscreen-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  z-index: 10;
-  transition: all 0.2s ease;
-}
-
-.fullscreen-btn:hover {
-  background: rgba(0, 0, 0, 0.9);
-  border-color: rgba(255, 255, 255, 0.5);
-  transform: scale(1.05);
-}
-
-.fullscreen-btn:active {
-  transform: scale(0.95);
 }
 
 .card {
@@ -631,7 +679,6 @@ export default {
 }
 
 .log-container {
-  position: relative; /* 添加相对定位以包含绝对定位的按钮 */
   flex: 1;
   background: #1e1e1e;
   border-radius: 6px;
