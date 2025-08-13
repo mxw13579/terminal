@@ -538,8 +538,14 @@ export function useSillyTavern(options = {}) {
         if (data.type === 'realtime-logs' && data.payload) {
             console.log('处理实时日志，payload结构:', data.payload);
             
-            // 实时日志数据处理
-            if (data.payload.logs && Array.isArray(data.payload.logs)) {
+            // 检查是否有lines字段（这是真正的日志内容）
+            if (data.payload.lines && Array.isArray(data.payload.lines)) {
+                console.log('找到lines数组，长度:', data.payload.lines.length);
+                console.log('lines内容:', data.payload.lines);
+                // 将新的日志行追加到现有日志中
+                logs.value = [...logs.value, ...data.payload.lines];
+                console.log('添加后logs数组长度:', logs.value.length);
+            } else if (data.payload.logs && Array.isArray(data.payload.logs)) {
                 // 将新的日志行追加到现有日志中
                 console.log('添加日志数组，长度:', data.payload.logs.length);
                 logs.value = [...logs.value, ...data.payload.logs];

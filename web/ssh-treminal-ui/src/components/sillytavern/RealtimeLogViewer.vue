@@ -15,27 +15,10 @@
           <div class="row align-items-center">
             <div class="col-md-6">
               <div class="control-group">
-                <label class="control-label">日志模式:</label>
-                <div class="btn-group ms-2" role="group">
-                  <button 
-                    type="button" 
-                    class="btn btn-sm"
-                    :class="logMode === 'history' ? 'btn-primary' : 'btn-outline-primary'"
-                    @click="setLogMode('history')"
-                  >
-                    <i class="fas fa-history me-1"></i>
-                    历史日志
-                  </button>
-                  <button 
-                    type="button" 
-                    class="btn btn-sm"
-                    :class="logMode === 'realtime' ? 'btn-success' : 'btn-outline-success'"
-                    @click="setLogMode('realtime')"
-                    :disabled="!isConnected"
-                  >
-                    <i class="fas fa-play me-1"></i>
-                    实时日志
-                  </button>
+                <label class="control-label">实时日志状态:</label>
+                <div class="realtime-status ms-2">
+                  <span class="status-indicator" :class="realtimeStatus"></span>
+                  <span class="status-text">{{ getStatusText() }}</span>
                 </div>
               </div>
             </div>
@@ -58,59 +41,9 @@
             </div>
           </div>
           
-          <!-- 历史日志控制 -->
-          <div v-if="logMode === 'history'" class="row mt-2 align-items-center">
-            <div class="col-md-4">
-              <div class="control-group">
-                <label class="control-label">日志级别:</label>
-                <select 
-                  v-model="logConfig.level" 
-                  class="form-select form-select-sm ms-2"
-                  style="width: auto; display: inline-block;"
-                >
-                  <option value="all">全部</option>
-                  <option value="error">错误</option>
-                  <option value="warn">警告</option>
-                  <option value="info">信息</option>
-                  <option value="debug">调试</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="col-md-4">
-              <button 
-                @click="loadHistoryLogs"
-                :disabled="isLoadingHistory"
-                class="btn btn-outline-primary btn-sm"
-              >
-                <span v-if="isLoadingHistory" class="spinner-border spinner-border-sm me-2" role="status"></span>
-                <i v-else class="fas fa-download me-1"></i>
-                {{ isLoadingHistory ? '加载中...' : '加载历史日志' }}
-              </button>
-            </div>
-            
-            <div class="col-md-4 text-end">
-              <button 
-                @click="clearLogs"
-                class="btn btn-outline-danger btn-sm"
-                :disabled="logs.length === 0"
-              >
-                <i class="fas fa-trash me-1"></i>
-                清空日志
-              </button>
-            </div>
-          </div>
-          
           <!-- 实时日志控制 -->
-          <div v-if="logMode === 'realtime'" class="row mt-2 align-items-center">
-            <div class="col-md-6">
-              <div class="realtime-status">
-                <span class="status-indicator" :class="realtimeStatus"></span>
-                <span class="status-text">{{ getStatusText() }}</span>
-              </div>
-            </div>
-            
-            <div class="col-md-6 text-end">
+          <div class="row mt-2 align-items-center">
+            <div class="col-md-6 text-start">
               <button 
                 v-if="!isRealtimeActive"
                 @click="startRealtimeLogs"
@@ -128,7 +61,9 @@
                 <i class="fas fa-stop me-1"></i>
                 停止实时日志
               </button>
-              
+            </div>
+            
+            <div class="col-md-6 text-end">
               <button 
                 @click="clearLogs"
                 class="btn btn-outline-danger btn-sm"
@@ -186,22 +121,12 @@
 
         <!-- 日志显示区域 -->
         <div class="log-display-area">
-          <div v-if="isLoadingHistory" class="log-loading">
-            <div class="spinner-border text-primary" role="status">
-              <span class="visually-hidden">加载日志中...</span>
-            </div>
-            <p class="mt-2 text-muted">正在加载历史日志...</p>
-          </div>
-          
-          <div v-else-if="logs.length === 0" class="log-empty">
+          <div v-if="logs.length === 0" class="log-empty">
             <div class="empty-icon">
               <i class="fas fa-file-alt"></i>
             </div>
             <h6>暂无日志数据</h6>
-            <p class="text-muted">
-              <span v-if="logMode === 'history'">点击"加载历史日志"获取日志数据</span>
-              <span v-else>开启实时日志查看器以接收日志推送</span>
-            </p>
+            <p class="text-muted">开启实时日志查看器以接收日志推送</p>
           </div>
           
           <div v-else class="log-container-wrapper">
@@ -321,6 +246,10 @@ export default {
     const sillyTavern = useSillyTavern()
     const { connectionState, getStompClient } = useConnectionManager()
     
+    // 从useSillyTavern获取logs数据
+    const logs = sillyTavern.logs
+    console.log('RealtimeLogViewer使用的logs数据源:', logs.value?.length || 0)
+    
     // 从统一连接管理器获取STOMP连接状态
     const isConnected = computed(() => connectionState.isConnected)
     const stompClient = computed(() => {
@@ -336,11 +265,8 @@ export default {
       return client
     })
     
-    // 响应式状态
-    const logMode = ref('realtime') // 'history' | 'realtime' - 默认开启实时日志
-    const logs = ref([])
+    // 响应式状态（移除了独立的logs）
     const totalLines = ref(0)
-    const isLoadingHistory = ref(false)
     const isRealtimeActive = ref(false)
     const autoScroll = ref(true)
     const searchTerm = ref('')
@@ -354,15 +280,8 @@ export default {
     
     // 日志配置
     const logConfig = reactive({
-      maxLines: 50,
-      level: 'all'
+      maxLines: 50
     })
-    
-    // WebSocket订阅
-    let realtimeSubscription = null
-    let historySubscription = null
-    let realtimeStartSubscription = null
-    let realtimeStopSubscription = null
     
     // 计算属性
     const realtimeStatus = computed(() => {
@@ -379,18 +298,6 @@ export default {
     
     // 方法
     // 实用函数
-    const getSessionId = (client) => {
-      try {
-        // 尝试多种方式获取sessionId
-        return client?.ws?._websocket?.extensions?.sessionId ||
-               client?.webSocket?._websocket?.extensions?.sessionId ||
-               client?._sessionId ||
-               client?.connected && Math.random().toString(36).substr(2, 9)
-      } catch (e) {
-        console.warn('获取sessionId失败:', e)
-        return null
-      }
-    }
     
     const getStatusText = () => {
       switch (realtimeStatus.value) {
@@ -451,18 +358,6 @@ export default {
       }
     }
     
-    const setLogMode = (mode) => {
-      if (mode === logMode.value) return
-      
-      // 停止当前模式
-      if (logMode.value === 'realtime' && isRealtimeActive.value) {
-        stopRealtimeLogs()
-      }
-      
-      logMode.value = mode
-      clearLogs()
-    }
-    
     const onConfigChange = () => {
       if (isRealtimeActive.value) {
         // 重启实时日志以应用新配置
@@ -470,52 +365,6 @@ export default {
         setTimeout(() => {
           startRealtimeLogs()
         }, 500)
-      }
-    }
-    
-    const loadHistoryLogs = () => {
-      if (!isConnected.value) {
-        errorMessage.value = 'WebSocket连接未建立'
-        return
-      }
-      
-      const client = stompClient.value
-      if (!client || !client.connected || (typeof client.send !== 'function' && typeof client.publish !== 'function')) {
-        errorMessage.value = 'STOMP客户端未就绪或连接已断开'
-        console.error('STOMP客户端状态:', {
-          client: !!client,
-          connected: client?.connected,
-          hasSendMethod: client && typeof client.send === 'function',
-          hasPublishMethod: client && typeof client.publish === 'function'
-        })
-        return
-      }
-      
-      isLoadingHistory.value = true
-      errorMessage.value = ''
-      successMessage.value = ''
-      
-      const request = {
-        containerName: props.containerName,
-        lines: logConfig.maxLines,
-        level: logConfig.level
-      }
-      
-      try {
-        // 优先使用publish方法（现代STOMP客户端）
-        if (typeof client.publish === 'function') {
-          client.publish({
-            destination: '/app/sillytavern/get-history-logs',
-            body: JSON.stringify(request)
-          })
-        } else {
-          // 回退到send方法（传统客户端）
-          client.send('/app/sillytavern/get-history-logs', {}, JSON.stringify(request))
-        }
-      } catch (error) {
-        errorMessage.value = '发送请求失败: ' + error.message
-        isLoadingHistory.value = false
-        console.error('发送历史日志请求失败:', error)
       }
     }
     
@@ -589,7 +438,9 @@ export default {
     }
     
     const clearLogs = () => {
-      logs.value = []
+      // 不能直接清空useSillyTavern中的logs，因为那是readonly的
+      // 这里暂时不提供清空功能，或者可以通过sillyTavern的方法来清空
+      console.log('清空日志功能暂时不可用（logs由useSillyTavern管理）')
       totalLines.value = 0
       memoryInfo.value = null
       searchTerm.value = ''
@@ -643,161 +494,16 @@ export default {
       searchTerm.value = ''
     }
     
-    // WebSocket消息处理
-    const handleHistoryLogsResponse = (message) => {
-      try {
-        const response = JSON.parse(message.body)
-        isLoadingHistory.value = false
-        
-        if (response.success && response.payload) {
-          const logData = response.payload
-          logs.value = logData.lines || []
-          totalLines.value = logData.totalLines || logs.value.length
-          memoryInfo.value = logData.memoryInfo
-          lastUpdateTime.value = new Date().toLocaleTimeString()
-          
-          if (autoScroll.value) {
-            nextTick(() => scrollToBottom())
-          }
-        } else {
-          errorMessage.value = '获取历史日志失败: ' + (response.error || '未知错误')
-        }
-      } catch (error) {
-        console.error('处理历史日志响应失败:', error)
-        errorMessage.value = '处理历史日志响应失败'
-        isLoadingHistory.value = false
-      }
-    }
-    
-    const handleRealtimeLogsResponse = (message) => {
-      try {
-        const response = JSON.parse(message.body)
-        
-        if (response.type === 'realtime-logs' && response.payload) {
-          const logData = response.payload
-          
-          // 添加新日志行
-          if (logData.lines && logData.lines.length > 0) {
-            logs.value.push(...logData.lines)
-            
-            // 限制内存中的日志数量
-            if (logs.value.length > logConfig.maxLines * 1.2) {
-              logs.value = logs.value.slice(-logConfig.maxLines)
-            }
-            
-            totalLines.value = logData.totalLines || logs.value.length
-            memoryInfo.value = logData.memoryInfo
-            lastUpdateTime.value = new Date().toLocaleTimeString()
-            
-            if (autoScroll.value) {
-              nextTick(() => scrollToBottom())
-            }
-          }
-        } else if (response.type === 'realtime-logs-error') {
-          errorMessage.value = '实时日志错误: ' + response.message
-          isRealtimeActive.value = false
-        }
-      } catch (error) {
-        console.error('处理实时日志响应失败:', error)
-      }
-    }
-    
-    const handleRealtimeStartResponse = (message) => {
-      try {
-        const response = JSON.parse(message.body)
-        
-        if (response.success) {
-          isRealtimeActive.value = true
-          successMessage.value = '实时日志已启动'
-        } else {
-          errorMessage.value = '启动实时日志失败: ' + (response.error || response.message)
-        }
-      } catch (error) {
-        console.error('处理实时日志启动响应失败:', error)
-      }
-    }
-    
-    const handleRealtimeStopResponse = (message) => {
-      try {
-        const response = JSON.parse(message.body)
-        isRealtimeActive.value = false
-        
-        if (response.success) {
-          successMessage.value = '实时日志已停止'
-        }
-      } catch (error) {
-        console.error('处理实时日志停止响应失败:', error)
-      }
-    }
-    
-    // 生命周期
+    // 生命周期 - 简化版本，不再重复订阅
     onMounted(() => {
-      const setupSubscriptions = () => {
-        const client = stompClient.value
-        if (!client || !client.connected) {
-          console.warn('STOMP客户端未连接，无法设置订阅')
-          return
-        }
-        
-        try {
-          // 安全获取sessionId
-          const sessionId = getSessionId(client) || Math.random().toString(36).substr(2, 9)
-          
-          // 订阅各种响应
-          historySubscription = client.subscribe(
-            `/queue/sillytavern/history-logs-user${sessionId}`,
-            handleHistoryLogsResponse
-          )
-          
-          realtimeSubscription = client.subscribe(
-            `/queue/sillytavern/realtime-logs-user${sessionId}`,
-            handleRealtimeLogsResponse
-          )
-          
-          realtimeStartSubscription = client.subscribe(
-            `/queue/sillytavern/realtime-logs-started-user${sessionId}`,
-            handleRealtimeStartResponse
-          )
-          
-          realtimeStopSubscription = client.subscribe(
-            `/queue/sillytavern/realtime-logs-stopped-user${sessionId}`,
-            handleRealtimeStopResponse
-          )
-          
-          console.log('RealtimeLogViewer 订阅已设置完成')
-        } catch (error) {
-          console.error('设置RealtimeLogViewer订阅失败:', error)
-        }
-      }
+      console.log('RealtimeLogViewer mounted, 当前logs长度:', logs.value.length)
       
-      if (isConnected.value && stompClient.value) {
-        setupSubscriptions()
-        
-        // 自动启动实时日志（类似 logs -f 50 效果）
-        setTimeout(() => {
-          if (logMode.value === 'realtime' && !isRealtimeActive.value) {
-            startRealtimeLogs()
-          }
-        }, 500) // 延迟500ms确保WebSocket连接稳定
-      } else {
-        // 监听连接状态变化
-        const checkConnectionInterval = setInterval(() => {
-          if (isConnected.value && stompClient.value) {
-            clearInterval(checkConnectionInterval)
-            setupSubscriptions()
-            
-            // 自动启动实时日志
-            setTimeout(() => {
-              if (logMode.value === 'realtime' && !isRealtimeActive.value) {
-                startRealtimeLogs()
-              }
-            }, 500)
-          }
-        }, 500)
-        
-        // 10秒后停止检查
-        setTimeout(() => clearInterval(checkConnectionInterval), 10000)
-      }
+      // 自动启动实时日志（如果连接已就绪）
+      setTimeout(() => {
+        if (isConnected.value && !isRealtimeActive.value) {
+          startRealtimeLogs()
+        }
+      }, 1000) // 延迟1秒确保WebSocket连接稳定
     })
     
     onUnmounted(() => {
@@ -805,12 +511,6 @@ export default {
       if (isRealtimeActive.value) {
         stopRealtimeLogs()
       }
-      
-      // 取消订阅
-      if (historySubscription) historySubscription.unsubscribe()
-      if (realtimeSubscription) realtimeSubscription.unsubscribe()
-      if (realtimeStartSubscription) realtimeStartSubscription.unsubscribe()
-      if (realtimeStopSubscription) realtimeStopSubscription.unsubscribe()
     })
     
     // 监听自动滚动变化
@@ -822,10 +522,8 @@ export default {
     
     return {
       // 响应式状态
-      logMode,
       logs: filteredLogs,
       totalLines,
-      isLoadingHistory,
       isRealtimeActive,
       autoScroll,
       searchTerm,
@@ -847,9 +545,7 @@ export default {
       getLogLevel,
       getLogContent,
       getLogLineClass,
-      setLogMode,
       onConfigChange,
-      loadHistoryLogs,
       startRealtimeLogs,
       stopRealtimeLogs,
       clearLogs,
