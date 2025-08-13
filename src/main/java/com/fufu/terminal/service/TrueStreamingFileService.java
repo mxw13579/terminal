@@ -165,9 +165,13 @@ public class TrueStreamingFileService {
         String fullRemotePath = Paths.get(remotePath, filename).toString().replace('\\', '/');
         String tempRemotePath = fullRemotePath + ".tmp";
 
+        // 开始传输日志
+        log.info("开始流式上传 [ID: {}]: 文件 {} -> {}, 预期大小: {} bytes ({} MB)",
+                progress.getUploadId(), filename, fullRemotePath,
+                progress.getTotalBytes(), String.format("%.2f", progress.getTotalBytes() / (1024.0 * 1024.0)));
+
         progress.setStatus("uploading");
         progress.setRemotePath(fullRemotePath);
-        log.info("开始流式上传 [ID: {}]: {} -> {}", progress.getUploadId(), filename, fullRemotePath);
 
         ChannelSftp sftpChannel = null;
         try {
@@ -201,6 +205,26 @@ public class TrueStreamingFileService {
 
                     long currentTime = System.currentTimeMillis();
                     if (currentTime - lastReportTime > 1000) {
+                        // 添加详细的传输日志（每秒打印一次）
+                        if (progress.getTotalBytes() > 0) {
+                            double percentage = (double) newTotal / progress.getTotalBytes() * 100;
+                            double mbTransferred = newTotal / (1024.0 * 1024.0);
+                            double mbTotal = progress.getTotalBytes() / (1024.0 * 1024.0);
+                            long duration = currentTime - progress.getStartTime();
+                            double speedMBps = duration > 0 ? mbTransferred * 1000.0 / duration : 0;
+
+                            log.info("传输进度 [ID: {}]: {} MB / {} MB ({}%) - 平均速度: {} MB/s",
+                                    progress.getUploadId(),
+                                    String.format("%.2f", mbTransferred),
+                                    String.format("%.2f", mbTotal),
+                                    String.format("%.2f", percentage),
+                                    String.format("%.2f", speedMBps));
+                        } else {
+                            double mbTransferred = newTotal / (1024.0 * 1024.0);
+                            log.info("传输进度 [ID: {}]: {} MB (总大小未知)",
+                                    progress.getUploadId(), String.format("%.2f", mbTransferred));
+                        }
+
                         sendProgressUpdate(progress);
                         lastReportTime = currentTime;
                     }
@@ -214,6 +238,17 @@ public class TrueStreamingFileService {
 
             progress.setStatus("completed");
             long duration = System.currentTimeMillis() - progress.getStartTime();
+            long finalBytes = progress.getTransferredBytes().get();
+
+            // 完成时的详细日志
+            log.info("流式上传完成 [ID: {}]: 最终传输 {} bytes ({} MB), 耗时: {} ms",
+                    progress.getUploadId(), finalBytes, String.format("%.2f", finalBytes / (1024.0 * 1024.0)), duration);
+
+            if (progress.getTotalBytes() > 0 && finalBytes != progress.getTotalBytes()) {
+                log.warn("传输大小不匹配 [ID: {}]: 预期 {} bytes, 实际 {} bytes",
+                        progress.getUploadId(), progress.getTotalBytes(), finalBytes);
+            }
+
             logUploadCompletion(progress, duration);
             // 注释掉STOMP通知，避免与前端新的流式上传机制冲突
             // sendUploadNotification(progress.getSessionId(), "upload_completed", String.format("文件 '%s' 上传成功", filename), fullRemotePath);
@@ -234,6 +269,7 @@ public class TrueStreamingFileService {
         }
     }
 
+
     /**
      * 获取指定ID的上传任务的当前进度。
      *
@@ -252,19 +288,19 @@ public class TrueStreamingFileService {
             Double percentage = (total > 0) ? (double) transferred / total * 100 : null;
 
             long duration = System.currentTimeMillis() - progress.getStartTime();
-            
+
             // 计算瞬时速度（最近的传输速度，而不是总平均速度）
             long speed = 0;
             long currentTime = System.currentTimeMillis();
-            
+
             synchronized (progress) {
                 long timeSinceLastUpdate = currentTime - progress.getLastProgressTime();
                 long bytesSinceLastUpdate = transferred - progress.getLastProgressBytes();
-                
+
                 if (timeSinceLastUpdate > 0) {
                     // 计算瞬时速度
                     speed = bytesSinceLastUpdate * 1000 / timeSinceLastUpdate;
-                    
+
                     // 更新跟踪信息
                     progress.setLastProgressTime(currentTime);
                     progress.setLastProgressBytes(transferred);
@@ -389,7 +425,7 @@ public class TrueStreamingFileService {
         private long totalBytes = -1;
         private String remotePath;
         private String errorMessage;
-        
+
         // 瞬时速度跟踪字段
         private long lastProgressTime = System.currentTimeMillis();
         private long lastProgressBytes = 0;

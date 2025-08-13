@@ -300,7 +300,10 @@ export class StreamingFileService {
                 startTime: Date.now(),
                 lastProgressTime: Date.now(),
                 lastProgressLoaded: 0,
-                totalSize: file.size
+                totalSize: file.size,
+                // 添加速度平滑处理
+                speedHistory: [], // 保存最近5次的速度记录
+                maxSpeedHistory: 5
             });
 
             return new Promise((resolve, reject) => {
@@ -360,22 +363,17 @@ export class StreamingFileService {
                         const currentTime = Date.now();
                         const uploadInfo = this.activeUploads.get(uploadId);
                         
-                        // 计算浏览器进度的瞬时速度
+                        // 计算基于总传输时间的平均速度（比瞬时速度更稳定）
                         let speed = 0;
                         if (uploadInfo) {
-                            const timeDiff = currentTime - uploadInfo.lastProgressTime;
-                            const bytesDiff = event.loaded - uploadInfo.lastProgressLoaded;
-                            
-                            if (timeDiff > 0) {
-                                speed = (bytesDiff / timeDiff) * 1000; // bytes/sec
+                            const totalTime = currentTime - uploadInfo.startTime;
+                            if (totalTime > 1000) { // 至少传输1秒后才显示速度
+                                speed = event.loaded * 1000 / totalTime; // bytes/sec 平均速度
                             }
-                            
-                            // 更新进度跟踪信息
-                            uploadInfo.lastProgressTime = currentTime;
-                            uploadInfo.lastProgressLoaded = event.loaded;
                         }
                         
-                        console.log(`浏览器进度事件: ${percentage}% (${event.loaded}/${event.total} bytes) - 等待后端uploadId - 速度: ${this.formatSpeed(speed)}`);
+                        console.log(`浏览器进度事件: ${percentage}% (${event.loaded}/${event.total} bytes) - 平均速度: ${this.formatSpeed(speed)}`);
+                        console.warn('⚠️  开发环境：浏览器进度可能低于实际传输进度');
                         
                         onProgress({
                             uploadId,
