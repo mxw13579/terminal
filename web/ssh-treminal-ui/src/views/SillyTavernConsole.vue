@@ -8,20 +8,20 @@
             <div class="status-dot" :class="connectionStatus"></div>
             <span class="status-text">{{ statusText }}</span>
           </div>
-          
+
           <!-- 操作按钮 -->
-          <button 
-            v-if="connectionState.isConnected" 
-            @click="refreshStatus" 
+          <button
+            v-if="connectionState.isConnected"
+            @click="refreshStatus"
             :disabled="isStatusLoading"
             class="btn btn-secondary btn-sm"
           >
             <i :class="isStatusLoading ? 'fas fa-spinner fa-spin' : 'fas fa-sync-alt'"></i>
             刷新状态
           </button>
-          
-          <button 
-            v-if="!connectionState.isConnected" 
+
+          <button
+            v-if="!connectionState.isConnected"
             @click="showConnectionModal = true"
             class="btn btn-primary btn-sm"
           >
@@ -31,13 +31,13 @@
         </div>
       </template>
     </NavigationHeader>
-    
+
     <main class="console-main">
       <div class="console-header">
         <h1 class="console-title">SillyTavern 管理控制台</h1>
         <p class="console-subtitle">一站式 AI 对话平台管理中心</p>
       </div>
-      
+
       <div class="console-content">
         <!-- 未连接状态 -->
         <div v-if="!connectionState.isConnected && !connectionState.connecting" class="connection-prompt">
@@ -53,7 +53,7 @@
             </button>
           </div>
         </div>
-        
+
         <!-- 连接中状态 -->
         <div v-else-if="connectionState.connecting" class="connecting-state">
           <div class="connecting-card">
@@ -64,7 +64,7 @@
             <p>请稍候，正在建立安全连接</p>
           </div>
         </div>
-        
+
         <!-- 已连接状态 - 新的双边框布局 -->
         <div v-else class="console-dashboard">
           <!-- 左侧边栏 (25%) -->
@@ -76,8 +76,8 @@
                   <span class="section-icon">🖥️</span>
                   服务器信息
                 </h4>
-                <button 
-                  v-if="connectionState.isConnected" 
+                <button
+                  v-if="connectionState.isConnected"
                   @click="toggleServerInfoExpanded"
                   class="expand-toggle-btn"
                   :class="{ 'expanded': isServerInfoExpanded }"
@@ -90,7 +90,7 @@
               <div class="section-content">
                 <!-- 服务器监控数据 -->
                 <div v-if="systemStats" class="server-stats">
-                  
+
                   <!-- CPU使用率 -->
                   <div class="stat-item">
                     <!-- 第一行：标签 + 进度条 -->
@@ -186,20 +186,20 @@
                     </div>
                   </div>
                 </div>
-                
+
                 <!-- 服务器连接中或无数据状态 -->
                 <div v-else-if="!connectionState.isConnected" class="server-disconnected">
                   <i class="fas fa-unlink"></i>
                   <p>服务器未连接</p>
                   <small class="text-muted">请先连接到服务器</small>
                 </div>
-                
+
                 <!-- 加载状态 -->
                 <div v-else-if="!isMonitoringActive" class="server-loading">
                   <i class="fas fa-spinner fa-spin"></i>
                   <p>正在连接监控服务...</p>
                 </div>
-                
+
                 <!-- 监控中但未收到数据 -->
                 <div v-else class="server-loading">
                   <i class="fas fa-spinner fa-spin"></i>
@@ -218,8 +218,8 @@
               </div>
               <div class="section-content">
                 <nav class="function-nav">
-                  <button 
-                    v-for="tab in tabs" 
+                  <button
+                    v-for="tab in tabs"
                     :key="tab.id"
                     @click="activeTab = tab.id"
                     :class="['nav-item', { 'nav-item-active': activeTab === tab.id, 'nav-item-disabled': tab.disabled }]"
@@ -294,8 +294,8 @@
             <div class="content-header">
               <h2 class="content-title">{{ getTabTitle(activeTab) }}</h2>
               <div class="content-actions">
-                <button 
-                  @click="refreshStatus" 
+                <button
+                  @click="refreshStatus"
                   :disabled="isStatusLoading"
                   class="btn btn-secondary btn-sm"
                 >
@@ -308,7 +308,7 @@
             <div class="content-body">
               <!-- 部署向导 -->
               <div v-if="activeTab === 'deployment'" class="content-panel">
-                <InteractiveDeploymentWizard 
+                <InteractiveDeploymentWizard
                   :connection="connectionState.connectionInfo"
                   :system-info="systemInfo"
                   :is-system-valid="isSystemValid"
@@ -327,10 +327,10 @@
                   @step-confirmed="handleStepConfirmed"
                 />
               </div>
-              
+
               <!-- 服务控制 -->
               <div v-else-if="activeTab === 'services'" class="content-panel">
-                <ServiceControls 
+                <ServiceControls
                   :connection="connectionState.connectionInfo"
                   :container-status="containerStatus"
                   :is-performing-action="isActionLoading"
@@ -338,40 +338,40 @@
                   @service-action="handleServiceAction"
                 />
               </div>
-              
+
               <!-- 配置管理 -->
               <div v-else-if="activeTab === 'configuration'" class="content-panel">
-                <ConfigurationEditor 
+                <ConfigurationEditor
                   :connection="connectionState.connectionInfo"
                   @configuration-updated="handleConfigurationUpdated"
                 />
               </div>
-              
+
               <!-- 版本管理 -->
               <div v-else-if="activeTab === 'versions'" class="content-panel">
                 <VersionManager />
               </div>
-              
+
               <!-- 日志查看 -->
               <div v-else-if="activeTab === 'logs'" class="content-panel">
-                <LogViewer 
+                <LogViewer
                   :connection="connectionState.connectionInfo"
                   container-name="sillytavern"
                 />
               </div>
-              
+
               <!-- 数据管理 -->
               <div v-else-if="activeTab === 'data'" class="content-panel">
-                <DataManager 
+                <DataManager
                   :connection="connectionState.connectionInfo"
                   @export-completed="handleExportCompleted"
                   @import-completed="handleImportCompleted"
                 />
               </div>
-              
+
               <!-- 访问信息 -->
               <div v-else-if="activeTab === 'access'" class="content-panel">
-                <AccessInfo 
+                <AccessInfo
                   :connection="connectionState.connectionInfo"
                   :container-status="containerStatus"
                 />
@@ -381,7 +381,7 @@
         </div>
       </div>
     </main>
-    
+
     <!-- 连接模态框 -->
     <ConnectionManager v-if="showConnectionModal" @close="showConnectionModal = false" />
   </div>
@@ -407,9 +407,9 @@ import { useTerminal } from '../composables/useTerminal'
 const { connectionState, connectionStatus, getStompClient } = useConnectionManager()
 
 // SillyTavern 管理 - 现在使用统一连接管理器
-const { 
-  containerStatus, 
-  isStatusLoading, 
+const {
+  containerStatus,
+  isStatusLoading,
   isPerformingAction: isActionLoading,
   systemInfo,
   isSystemValid,
@@ -542,7 +542,7 @@ const handleValidateSystem = async () => {
 const handleDeploy = async (deploymentConfig) => {
   try {
     console.log('开始部署，配置:', deploymentConfig)
-    
+
     // 检查是否是交互式部署请求（包含deploymentMode属性）
     if (deploymentConfig.deploymentMode) {
       console.log('启动交互式部署，模式:', deploymentConfig.deploymentMode)
@@ -555,7 +555,7 @@ const handleDeploy = async (deploymentConfig) => {
       activeTab.value = 'services'
       await refreshStatus()
     }
-    
+
     // 移除了立即切换标签页的逻辑，避免过早跳转
   } catch (error) {
     console.error('部署失败:', error)
@@ -579,12 +579,12 @@ const handleServiceAction = async (action, options = {}) => {
   try {
     console.log('执行服务操作:', action, options)
     currentActionType.value = getActionDisplayName(action)
-    
+
     await performServiceAction(action, options)
-    
+
     // 操作完成后刷新状态
     await refreshStatus()
-    
+
     console.log(`服务操作 ${action} 完成`)
   } catch (error) {
     console.error(`服务操作 ${action} 失败:`, error)
@@ -596,17 +596,15 @@ const handleServiceAction = async (action, options = {}) => {
 // 启动服务器监控
 const startServerMonitoring = () => {
   const stompClient = getStompClient()
-  
+
   if (!stompClient || !stompClient.connected) {
     console.warn('⚠️ STOMP客户端未连接，无法启动监控')
     setTimeout(() => startServerMonitoring(), 1000) // 1秒后重试
     return
   }
-  
+
   console.log('🚀 开始启动服务器监控...')
-  console.log('📡 STOMP客户端状态:', stompClient.connected)
-  console.log('🔗 WebSocket URL:', stompClient.webSocket?.url)
-  
+
   // 尝试从URL中提取会话ID
   let sessionId = 'unknown'
   if (stompClient.webSocket?.url) {
@@ -616,22 +614,20 @@ const startServerMonitoring = () => {
     }
   }
   console.log('🆔 检测到的会话ID:', sessionId)
-  
+
   // 首先订阅监控数据和错误消息
   try {
     // 订阅监控数据 - 使用正确的路由
     console.log('📡 订阅监控数据: /user/queue/monitor')
     const monitorSub = stompClient.subscribe('/user/queue/monitor', (message) => {
       try {
-        console.log('📨 收到原始监控消息:', message)
         const data = JSON.parse(message.body)
-        console.log('🔍 解析后的监控数据:', data)
         handleMonitorUpdate(data)
       } catch (e) {
         console.error('❌ 处理监控数据失败:', e)
       }
     })
-    
+
     // 订阅错误消息
     console.log('🚨 订阅错误消息: /user/queue/errors')
     const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
@@ -642,26 +638,26 @@ const startServerMonitoring = () => {
         console.error('❌ 处理监控错误失败:', e)
       }
     })
-    
-    console.log('✅ 监控数据订阅成功:', { 
-      monitorSub: !!monitorSub, 
+
+    console.log('✅ 监控数据订阅成功:', {
+      monitorSub: !!monitorSub,
       errorSub: !!errorSub
     })
-    
+
     // 发送启动监控请求
     const startMessage = {
       frequencySeconds: 5 // 每5秒更新一次
     }
     console.log('📤 发送监控启动请求:', startMessage)
-    
+
     stompClient.publish({
       destination: '/app/monitor/start',
       body: JSON.stringify(startMessage)
     })
-    
+
     isMonitoringActive.value = true
     console.log('🎯 服务器监控启动请求已发送')
-    
+
   } catch (error) {
     console.error('❌ 启动服务器监控失败:', error)
     // 3秒后重试
@@ -673,12 +669,8 @@ const startServerMonitoring = () => {
 const handleMonitorUpdate = (data) => {
   console.log('🔍 handleMonitorUpdate被调用，数据:', data)
   if (data.type === 'monitor_update') {
-    console.log('✅ 监控数据类型正确，载荷:', data.payload)
     systemStats.value = data.payload
     terminalDockerContainers.value = data.payload.dockerContainers || []
-    console.log('📊 系统统计数据已更新:', systemStats.value)
-    console.log('💾 内存数据详情:', systemStats.value?.memUsage)
-    console.log('💿 硬盘数据详情:', systemStats.value?.diskUsage)
   } else {
     console.log('❌ 监控数据类型不匹配:', data.type)
   }
@@ -692,28 +684,24 @@ const getCpuUsage = (stats) => {
 
 // 格式化内存和磁盘使用情况
 const formatMemoryUsage = (stats) => {
-  console.log('formatMemoryUsage 输入:', stats?.memUsage, '类型:', typeof stats?.memUsage)
-  console.log('完整stats对象:', stats)
-  
+
+
   if (!stats || stats.memUsage === undefined) {
     return { used: '0', total: '0', percentage: 0 }
   }
-  
+
   // 如果是数字，说明只有百分比信息（旧格式兼容）
   if (typeof stats.memUsage === 'number') {
-    console.log('使用数字格式，百分比:', stats.memUsage)
     return { used: '未知', total: '未知', percentage: stats.memUsage }
   }
-  
+
   // 如果是对象，说明有详细信息（新格式）
   const memData = stats.memUsage
-  console.log('使用对象格式，详细信息:', memData)
-  
+
   if (!memData || typeof memData !== 'object') {
-    console.log('memData不是有效对象:', memData)
     return { used: '0', total: '0', percentage: 0 }
   }
-  
+
   return {
     used: (memData.used / 1024).toFixed(1), // MB->GB (free -m返回MB)
     total: (memData.total / 1024).toFixed(1), // MB->GB (free -m返回MB)
@@ -722,28 +710,23 @@ const formatMemoryUsage = (stats) => {
 }
 
 const formatDiskUsage = (stats) => {
-  console.log('formatDiskUsage 输入:', stats?.diskUsage, '类型:', typeof stats?.diskUsage)
-  console.log('完整stats对象:', stats)
-  
+
   if (!stats || stats.diskUsage === undefined) {
     return { used: '0', total: '0', percentage: 0 }
   }
-  
+
   // 如果是数字，说明只有百分比信息（旧格式兼容）
   if (typeof stats.diskUsage === 'number') {
-    console.log('使用数字格式，百分比:', stats.diskUsage)
     return { used: '未知', total: '未知', percentage: stats.diskUsage }
   }
-  
+
   // 如果是对象，说明有详细信息（新格式）
   const diskData = stats.diskUsage
-  console.log('使用对象格式，详细信息:', diskData)
-  
+
   if (!diskData || typeof diskData !== 'object') {
-    console.log('diskData不是有效对象:', diskData)
     return { used: '0', total: '0', percentage: 0 }
   }
-  
+
   return {
     used: (diskData.used / 1024 / 1024).toFixed(1), // KB->MB->GB (df -P返回KB)
     total: (diskData.total / 1024 / 1024).toFixed(1), // KB->MB->GB (df -P返回KB)
@@ -753,9 +736,7 @@ const formatDiskUsage = (stats) => {
 
 // 切换服务器信息展开/收缩状态
 const toggleServerInfoExpanded = () => {
-  console.log('toggleServerInfoExpanded 被调用，当前状态:', isServerInfoExpanded.value)
   isServerInfoExpanded.value = !isServerInfoExpanded.value
-  console.log('新状态:', isServerInfoExpanded.value)
 }
 
 // 调试方法：手动触发监控测试
@@ -765,15 +746,15 @@ const debugMonitoring = () => {
   console.log('监控活动状态:', isMonitoringActive.value)
   console.log('系统统计数据:', systemStats.value)
   console.log('Docker容器数据:', terminalDockerContainers.value)
-  
+
   const stompClient = getStompClient()
   console.log('STOMP客户端:', stompClient)
   console.log('STOMP连接状态:', stompClient?.connected)
   console.log('WebSocket URL:', stompClient?.webSocket?.url)
-  
+
   if (stompClient && stompClient.connected) {
     console.log('手动发送监控启动请求...')
-    
+
     // 尝试直接订阅并发送测试
     const testSub = stompClient.subscribe('/user/queue/monitor', (message) => {
       console.log('测试订阅收到消息:', message)
@@ -784,15 +765,15 @@ const debugMonitoring = () => {
         console.error('测试订阅解析失败:', e)
       }
     })
-    
+
     console.log('测试订阅创建:', !!testSub)
-    
+
     // 发送监控启动请求
     stompClient.publish({
       destination: '/app/monitor/start',
       body: JSON.stringify({ frequencySeconds: 3 })
     })
-    
+
     // 也尝试直接发送到用户队列（测试）
     setTimeout(() => {
       console.log('发送测试消息...')
@@ -814,7 +795,7 @@ const debugMonitoring = () => {
 const getActionDisplayName = (action) => {
   const actionNames = {
     'start': '启动容器',
-    'stop': '停止容器', 
+    'stop': '停止容器',
     'restart': '重启容器',
     'upgrade': '升级容器'
   }
@@ -855,7 +836,7 @@ const handleGetVersions = () => {
 const handleStepConfirmed = (confirmationData) => {
   console.log('父组件收到步骤确认事件:', confirmationData)
   const { stepId, confirmed, userInput } = confirmationData
-  
+
   // 调用 SillyTavern 的确认方法
   if (confirmed) {
     console.log('调用确认方法:', stepId, userInput)
@@ -871,34 +852,34 @@ let statusInterval = null
 
 onMounted(async () => {
   console.log('SillyTavernConsole onMounted - 连接状态:', connectionState.isConnected)
-  
+
   if (connectionState.isConnected) {
     // 使用现有连接，初始化SillyTavern订阅
     try {
       // 确保SillyTavern订阅已初始化
       console.log('初始化SillyTavern订阅...')
       initializeSillyTavernSubscriptions()
-      
+
       console.log('刷新状态...')
       await refreshStatus()
-      
+
       // 启动服务器监控以获取系统信息
       console.log('启动服务器监控...')
       setTimeout(() => {
         startServerMonitoring()
       }, 2000) // 延迟2秒确保SSH连接完全建立
-      
+
       // 获取可用的Docker版本信息
       console.log('准备获取版本信息...')
       setTimeout(() => {
         console.log('延迟调用getAvailableVersions')
         getAvailableVersions()
       }, 1000) // 延迟1秒确保WebSocket完全连接
-      
+
     } catch (error) {
       console.error('获取SillyTavern状态失败:', error)
     }
-    
+
     // 每30秒自动刷新状态
     statusInterval = setInterval(() => {
       if (connectionState.isConnected && !isStatusLoading.value) {
@@ -912,13 +893,13 @@ onMounted(async () => {
 
 onUnmounted(() => {
   console.log('SillyTavernConsole 组件即将卸载，清理资源...')
-  
+
   // 清理定时器
   if (statusInterval) {
     clearInterval(statusInterval)
     console.log('已清理状态刷新定时器')
   }
-  
+
   // 停止监控服务
   if (isMonitoringActive.value) {
     console.log('停止监控服务...')
@@ -936,11 +917,11 @@ onUnmounted(() => {
     }
     isMonitoringActive.value = false
   }
-  
+
   // 清理监控数据
   systemStats.value = null
   terminalDockerContainers.value = []
-  
+
   console.log('SillyTavernConsole 资源清理完成')
 })
 </script>
@@ -1599,27 +1580,27 @@ onUnmounted(() => {
   .console-dashboard {
     flex-direction: column;
   }
-  
+
   .sidebar {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid #e2e8f0;
   }
-  
+
   .main-content {
     width: 100%;
   }
-  
+
   .sidebar-section {
     flex: none;
   }
-  
+
   .function-nav {
     flex-direction: row;
     flex-wrap: wrap;
     gap: 8px;
   }
-  
+
   .nav-item {
     flex: 1;
     min-width: 120px;
@@ -1630,17 +1611,17 @@ onUnmounted(() => {
   .console-main {
     padding: 15px;
   }
-  
+
   .console-title {
     font-size: 2rem;
   }
-  
+
   .content-header {
     flex-direction: column;
     gap: 15px;
     align-items: stretch;
   }
-  
+
   .content-body,
   .section-content {
     padding: 20px;

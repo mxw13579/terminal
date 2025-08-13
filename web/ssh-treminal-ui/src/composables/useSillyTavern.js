@@ -329,6 +329,17 @@ export function useSillyTavern(options = {}) {
             }
         });
 
+        // Subscribe to real-time logs (临时兼容旧路径)
+        client.subscribe('/queue/sillytavern/realtime-logs-user' + sessionId, (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('收到实时日志 (旧路径):', data);
+                handleRealtimeLogsResponse(data);
+            } catch (e) {
+                console.error('Error processing realtime logs response (old path):', e);
+            }
+        });
+
         // Subscribe to interactive deployment progress (临时兼容旧路径)
         client.subscribe('/queue/sillytavern/interactive-deployment-progress-user' + sessionId, (message) => {
             try {
@@ -516,6 +527,143 @@ export function useSillyTavern(options = {}) {
             logs.value = data.payload.logs || [];
         } else {
             onShowModal("日志获取失败: " + (data.error || 'Unknown error'));
+        }
+    };
+
+    const handleRealtimeLogsResponse = (data) => {
+        console.log('收到实时日志数据:', data);
+        console.log('当前logs数组长度:', logs.value.length);
+        
+        // 检查数据格式：如果有type字段，说明是实时日志消息
+        if (data.type === 'realtime-logs' && data.payload) {
+            console.log('处理实时日志，payload结构:', data.payload);
+            
+            // 实时日志数据处理
+            if (data.payload.logs && Array.isArray(data.payload.logs)) {
+                // 将新的日志行追加到现有日志中
+                console.log('添加日志数组，长度:', data.payload.logs.length);
+                logs.value = [...logs.value, ...data.payload.logs];
+                console.log('添加后logs数组长度:', logs.value.length);
+            } else if (typeof data.payload === 'string') {
+                // 单行日志处理
+                console.log('添加单行日志:', data.payload);
+                logs.value = [...logs.value, data.payload];
+                console.log('添加后logs数组长度:', logs.value.length);
+            } else if (data.payload.message) {
+                // 消息格式的日志
+                console.log('添加消息格式日志:', data.payload.message);
+                logs.value = [...logs.value, data.payload.message];
+                console.log('添加后logs数组长度:', logs.value.length);
+            } else if (data.payload.content) {
+                // content格式的日志
+                console.log('添加content格式日志:', data.payload.content);
+                logs.value = [...logs.value, data.payload.content];
+                console.log('添加后logs数组长度:', logs.value.length);
+            } else {
+                // 尝试直接使用payload
+                console.log('尝试直接使用payload作为日志');
+                console.log('payload类型:', typeof data.payload);
+                console.log('payload内容:', data.payload);
+                
+                // 如果payload是对象，尝试转换为字符串
+                if (typeof data.payload === 'object') {
+                    const logEntry = JSON.stringify(data.payload, null, 2);
+                    logs.value = [...logs.value, logEntry];
+                } else {
+                    logs.value = [...logs.value, String(data.payload)];
+                }
+                console.log('添加后logs数组长度:', logs.value.length);
+            }
+        } else if (data.success !== undefined) {
+            // 兼容旧的响应格式
+            if (data.success) {
+                if (data.payload && data.payload.logs) {
+                    logs.value = [...logs.value, ...data.payload.logs];
+                } else if (data.payload && typeof data.payload === 'string') {
+                    logs.value = [...logs.value, data.payload];
+                }
+            } else {
+                console.error('实时日志错误:', data.error);
+                onShowModal("实时日志错误: " + (data.error || 'Unknown error'));
+            }
+        } else {
+            // 如果数据格式不明确，尝试直接处理
+            console.warn('未知的实时日志数据格式:', data);
+            if (data.payload) {
+                if (typeof data.payload === 'string') {
+                    logs.value = [...logs.value, data.payload];
+                } else if (data.payload.logs) {
+                    logs.value = [...logs.value, ...data.payload.logs];
+                }
+            }
+        }
+        
+        console.log('处理完成，最终logs数组长度:', logs.value.length);
+        console.log('最新的3条日志:', logs.value.slice(-3));
+    };
+
+    const handleRealtimeLogControlResponse = (data, action) => {
+        console.log(`实时日志${action}响应:`, data);
+        if (data.success) {
+            if (action === 'started') {
+                console.log('实时日志已开启');
+                // 可以在这里更新UI状态，比如显示"实时日志已开启"
+            } else if (action === 'stopped') {
+                console.log('实时日志已停止');
+                // 可以在这里更新UI状态，比如显示"实时日志已停止"
+            }
+        } else {
+            onShowModal(`实时日志${action === 'started' ? '开启' : '停止'}失败: ` + (data.error || 'Unknown error'));
+        }
+    };
+
+    const handleHistoryLogsResponse = (data) => {
+        console.log('收到历史日志数据:', data);
+        isLoadingLogs.value = false;
+        if (data.success) {
+            if (data.payload && data.payload.logs) {
+                logs.value = data.payload.logs;
+            }
+        } else {
+            onShowModal("历史日志获取失败: " + (data.error || 'Unknown error'));
+        }
+    };
+
+    const handleDataExportResponse = (data) => {
+        console.log('收到数据导出响应:', data);
+        if (data.success) {
+            console.log('数据导出成功');
+            onShowModal("数据导出成功", "导出完成");
+        } else {
+            console.error('数据导出失败:', data.error);
+            onShowModal("数据导出失败: " + (data.error || 'Unknown error'));
+        }
+    };
+
+    const handleDataExportProgress = (data) => {
+        console.log('收到数据导出进度:', data);
+        // 可以在这里更新导出进度UI
+        if (data.progress !== undefined) {
+            console.log(`导出进度: ${data.progress}%`);
+        }
+    };
+
+    const handleDataImportResponse = (data) => {
+        console.log('收到数据导入响应:', data);
+        if (data.success) {
+            console.log('数据导入成功');
+            onShowModal("数据导入成功", "导入完成");
+        } else {
+            console.error('数据导入失败:', data.error);
+            onShowModal("数据导入失败: " + (data.error || 'Unknown error'));
+        }
+    };
+
+    const handleDataImportProgress = (data) => {
+        console.log('收到数据导入进度:', data);
+        // 可以在这里更新导入进度UI
+        if (data.progress !== undefined) {
+            console.log(`导入进度: ${data.progress}%`);
         }
     };
 
