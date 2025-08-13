@@ -44,7 +44,10 @@ export const useSftpStore = defineStore('sftp', () => {
   const activeDownloads = ref(new Map<string, FileTransferProgress>())
   
   // Services
-  const streamingFileService = new StreamingFileService()
+  const streamingFileService = new StreamingFileService(() => {
+    // 生成一个简单的会话标识符，后端会处理真实的会话管理
+    return `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  })
   
   // Computed states
   const loadingState = computed((): LoadingState => ({
@@ -307,8 +310,8 @@ export const useSftpStore = defineStore('sftp', () => {
         }, 5000)
       }
 
-      await streamingFileService.uploadFiles(
-        [file], 
+      await streamingFileService.streamUploadFile(
+        file, 
         currentPath.value,
         onProgress,
         onComplete,

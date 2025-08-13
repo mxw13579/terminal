@@ -298,16 +298,84 @@ export class StreamingFileService {
                 xhr,
                 files: [file.name],
                 startTime: Date.now(),
+                lastProgressTime: Date.now(),
+                lastProgressLoaded: 0,
                 totalSize: file.size
             });
 
             return new Promise((resolve, reject) => {
-                // 使用浏览器原生进度事件 - 这是真正的上传进度
+                let realProgressTimer = null;
+                let realUploadId = null; // 存储后端返回的真实uploadId
+                
+                // 开始真实进度查询的函数
+                const startRealProgressTracking = (backendUploadId) => {
+                    realUploadId = backendUploadId;
+                    console.log(`开始使用后端uploadId查询真实进度: ${backendUploadId}`);
+                    
+                    realProgressTimer = setInterval(async () => {
+                        try {
+                            const sessionId = this.getSessionId();
+                            if (!sessionId || !realUploadId) return;
+                            
+                            const progressUrl = this.getApiUrl(`/api/streaming/upload/${realUploadId}/progress`);
+                            const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
+                            
+                            if (response.ok) {
+                                const progressData = await response.json();
+                                
+                                if (progressData && progressData.percentage !== undefined) {
+                                    console.log(`后端真实进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes) - uploadId: ${realUploadId}`);
+                                    
+                                    onProgress({
+                                        uploadId: realUploadId,
+                                        loaded: progressData.transferredBytes || 0,
+                                        total: progressData.totalBytes || file.size,
+                                        percentage: Math.round(progressData.percentage),
+                                        speed: progressData.speed || 0,
+                                        status: progressData.status === 'completed' ? 'completed' : 'streaming'
+                                    });
+                                    
+                                    // 如果后端显示完成，停止进度查询
+                                    if (progressData.status === 'completed' || progressData.percentage >= 100) {
+                                        clearInterval(realProgressTimer);
+                                        realProgressTimer = null;
+                                    }
+                                } else {
+                                    console.log(`进度查询无数据: ${JSON.stringify(progressData)}`);
+                                }
+                            } else {
+                                console.warn(`进度查询失败: ${response.status} ${response.statusText}`);
+                            }
+                        } catch (error) {
+                            console.warn('查询真实上传进度失败:', error.message);
+                        }
+                    }, 1000); // 每秒查询一次真实进度
+                };
+                
+                // 使用浏览器原生进度事件作为初始进度显示
                 xhr.upload.onprogress = (event) => {
-                    if (event.lengthComputable && onProgress) {
+                    // 只在没有真实进度时显示浏览器进度
+                    if (!realUploadId && event.lengthComputable && onProgress) {
                         const percentage = Math.round((event.loaded / event.total) * 100);
-                        const elapsed = Date.now() - this.activeUploads.get(uploadId).startTime;
-                        const speed = elapsed > 0 ? (event.loaded / elapsed) * 1000 : 0; // bytes/sec
+                        const currentTime = Date.now();
+                        const uploadInfo = this.activeUploads.get(uploadId);
+                        
+                        // 计算浏览器进度的瞬时速度
+                        let speed = 0;
+                        if (uploadInfo) {
+                            const timeDiff = currentTime - uploadInfo.lastProgressTime;
+                            const bytesDiff = event.loaded - uploadInfo.lastProgressLoaded;
+                            
+                            if (timeDiff > 0) {
+                                speed = (bytesDiff / timeDiff) * 1000; // bytes/sec
+                            }
+                            
+                            // 更新进度跟踪信息
+                            uploadInfo.lastProgressTime = currentTime;
+                            uploadInfo.lastProgressLoaded = event.loaded;
+                        }
+                        
+                        console.log(`浏览器进度事件: ${percentage}% (${event.loaded}/${event.total} bytes) - 等待后端uploadId - 速度: ${this.formatSpeed(speed)}`);
                         
                         onProgress({
                             uploadId,
@@ -320,22 +388,29 @@ export class StreamingFileService {
                     }
                 };
 
-                // 上传完成处理 - 现在意味着整个文件已100%成功上传
+                // 上传完成处理
                 xhr.onload = () => {
+                    // 不要清理真实进度定时器，因为我们要开始使用它
                     this.activeUploads.delete(uploadId);
                     
                     if (xhr.status >= 200 && xhr.status < 300) {
                         try {
                             const response = JSON.parse(xhr.responseText);
+                            const backendUploadId = response.uploadId || uploadId;
+                            
+                            console.log(`上传HTTP请求完成，获得后端uploadId: ${backendUploadId}`);
+                            
+                            // 立即开始使用后端uploadId查询真实进度
+                            startRealProgressTracking(backendUploadId);
                             
                             if (onComplete) {
                                 onComplete({
-                                    uploadId: response.uploadId || uploadId,
+                                    uploadId: backendUploadId,
                                     status: 'completed',
                                     message: '文件流式传输完成！'
                                 });
                             }
-                            resolve(response.uploadId || uploadId);
+                            resolve(backendUploadId);
                         } catch (e) {
                             const error = new Error('解析响应失败: ' + e.message);
                             if (onError) onError(error);
@@ -378,6 +453,12 @@ export class StreamingFileService {
 
                 // 网络错误处理
                 xhr.onerror = () => {
+                    // 清理真实进度定时器
+                    if (realProgressTimer) {
+                        clearInterval(realProgressTimer);
+                        realProgressTimer = null;
+                    }
+                    
                     this.activeUploads.delete(uploadId);
                     const error = new Error('流式上传网络错误：连接失败');
                     console.error('流式上传网络错误:', {
@@ -392,6 +473,12 @@ export class StreamingFileService {
 
                 // 上传中止处理
                 xhr.onabort = () => {
+                    // 清理真实进度定时器
+                    if (realProgressTimer) {
+                        clearInterval(realProgressTimer);
+                        realProgressTimer = null;
+                    }
+                    
                     this.activeUploads.delete(uploadId);
                     const error = new Error('流式上传已取消');
                     if (onError) onError(error);
@@ -409,6 +496,9 @@ export class StreamingFileService {
                 xhr.open('POST', finalUrl);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
                 xhr.setRequestHeader('Content-Length', file.size.toString());
+                
+                // 设置超时时间为30分钟，匹配Vite代理配置
+                xhr.timeout = 1800000; // 30分钟
                 
                 // 直接发送文件内容作为二进制流
                 xhr.send(file);
@@ -560,11 +650,13 @@ export class StreamingFileService {
             const xhr = new XMLHttpRequest();
             const uploadId = this.generateUploadId();
             
-            // 存储上传信息
+            // 存储上传信息，包括进度跟踪
             this.activeUploads.set(uploadId, {
                 xhr,
                 files: files.map(f => f.name),
                 startTime: Date.now(),
+                lastProgressTime: Date.now(),
+                lastProgressLoaded: 0,
                 totalSize
             });
 
@@ -573,8 +665,23 @@ export class StreamingFileService {
                 xhr.upload.onprogress = (event) => {
                     if (event.lengthComputable && onProgress) {
                         const percentage = Math.round((event.loaded / event.total) * 100);
-                        const elapsed = Date.now() - this.activeUploads.get(uploadId).startTime;
-                        const speed = elapsed > 0 ? (event.loaded / elapsed) * 1000 : 0; // bytes/sec
+                        const currentTime = Date.now();
+                        const uploadInfo = this.activeUploads.get(uploadId);
+                        
+                        // 计算瞬时速度
+                        let speed = 0;
+                        if (uploadInfo) {
+                            const timeDiff = currentTime - uploadInfo.lastProgressTime;
+                            const bytesDiff = event.loaded - uploadInfo.lastProgressLoaded;
+                            
+                            if (timeDiff > 0) {
+                                speed = (bytesDiff / timeDiff) * 1000; // bytes/sec
+                            }
+                            
+                            // 更新进度跟踪信息
+                            uploadInfo.lastProgressTime = currentTime;
+                            uploadInfo.lastProgressLoaded = event.loaded;
+                        }
                         
                         onProgress({
                             uploadId,

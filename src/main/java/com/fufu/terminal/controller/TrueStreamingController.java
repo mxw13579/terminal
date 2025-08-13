@@ -82,8 +82,9 @@ public class TrueStreamingController {
                 log.error("StreamingResponseBody: 启动上传时发生意外错误", e);
                 writeErrorToStream(outputStream, "An unexpected error occurred: " + e.getMessage());
             } finally {
-                // 确保响应流被关闭
-                outputStream.close();
+                // 不要在这里强制关闭流，让Spring框架管理流的生命周期
+                // 强制关闭会导致前端收到ECONNRESET错误
+                // outputStream.close();
             }
         };
 
@@ -109,7 +110,8 @@ public class TrueStreamingController {
 
         StreamingResponseBody body = outputStream -> {
             outputStream.write(errorJson.getBytes(StandardCharsets.UTF_8));
-            outputStream.close();
+            // 不要强制关闭，让Spring管理
+            // outputStream.close();
         };
 
         return ResponseEntity.status(status)

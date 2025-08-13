@@ -145,7 +145,9 @@ public class TrueStreamingFileService {
                 // 捕获未预料的异常
                 uploadFuture.completeExceptionally(e);
             } finally {
-                activeUploads.remove(uploadId);
+                // 延迟删除进度记录，给前端足够时间查询最终状态
+                CompletableFuture.delayedExecutor(30, TimeUnit.SECONDS)
+                    .execute(() -> activeUploads.remove(uploadId));
                 uploadSemaphore.release();
             }
         });
@@ -250,7 +252,27 @@ public class TrueStreamingFileService {
             Double percentage = (total > 0) ? (double) transferred / total * 100 : null;
 
             long duration = System.currentTimeMillis() - progress.getStartTime();
-            long speed = (duration > 500) ? (transferred * 1000 / duration) : 0;
+            
+            // 计算瞬时速度（最近的传输速度，而不是总平均速度）
+            long speed = 0;
+            long currentTime = System.currentTimeMillis();
+            
+            synchronized (progress) {
+                long timeSinceLastUpdate = currentTime - progress.getLastProgressTime();
+                long bytesSinceLastUpdate = transferred - progress.getLastProgressBytes();
+                
+                if (timeSinceLastUpdate > 0) {
+                    // 计算瞬时速度
+                    speed = bytesSinceLastUpdate * 1000 / timeSinceLastUpdate;
+                    
+                    // 更新跟踪信息
+                    progress.setLastProgressTime(currentTime);
+                    progress.setLastProgressBytes(transferred);
+                } else if (duration > 100) {
+                    // 如果没有瞬时数据，回退到总体平均速度
+                    speed = transferred * 1000 / duration;
+                }
+            }
 
             UploadProgressDto progressDto = new UploadProgressDto(
                     uploadId, progress.getFilename(), progress.getStatus(),
@@ -326,9 +348,7 @@ public class TrueStreamingFileService {
     }
 
     private void sendProgressUpdate(StreamingProgress progress) {
-        // 注释掉STOMP进度通知，新的流式上传通过HTTP XMLHttpRequest原生事件提供进度
-        // 避免与前端新的流式上传机制冲突
-        /*
+        // 恢复STOMP进度通知 - 为真实进度跟踪提供支持
         try {
             String progressJson = getUploadProgress(progress.getUploadId());
             if (progressJson != null) {
@@ -337,7 +357,6 @@ public class TrueStreamingFileService {
         } catch (Exception e) {
             log.warn("发送进度更新失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage());
         }
-        */
     }
 
     private void sendUploadNotification(String sessionId, String type, String message, String path) {
@@ -370,6 +389,10 @@ public class TrueStreamingFileService {
         private long totalBytes = -1;
         private String remotePath;
         private String errorMessage;
+        
+        // 瞬时速度跟踪字段
+        private long lastProgressTime = System.currentTimeMillis();
+        private long lastProgressBytes = 0;
 
         public StreamingProgress(String uploadId, String sessionId, String filename, String clientIp) {
             this.uploadId = uploadId;

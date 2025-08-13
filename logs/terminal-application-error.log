@@ -962,3 +962,28 @@ java.io.IOException: Stream closed
 	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
 	at java.base/java.lang.Thread.run(Thread.java:842)
+2025-08-13 17:53:42.680 [mvc-async-1] ERROR [] c.f.t.c.TrueStreamingController - StreamingResponseBody: 上传任务被中断, uploadId: null
+java.lang.InterruptedException: null
+	at java.base/java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:386)
+	at java.base/java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2073)
+	at com.fufu.terminal.controller.TrueStreamingController.lambda$streamUpload$0(TrueStreamingController.java:67)
+	at org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBodyReturnValueHandler$StreamingResponseBodyTask.call(StreamingResponseBodyReturnValueHandler.java:110)
+	at org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBodyReturnValueHandler$StreamingResponseBodyTask.call(StreamingResponseBodyReturnValueHandler.java:97)
+	at org.springframework.web.context.request.async.WebAsyncManager.lambda$startCallableProcessing$4(WebAsyncManager.java:336)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+2025-08-13 17:53:43.151 [streaming-upload-worker] ERROR [] c.f.t.s.TrueStreamingFileService - 流式上传失败 [ID: 6c557af0-7f39-492d-a2dc-f9e85be43381]: Cannot invoke "org.apache.catalina.connector.InputBuffer.isBlocking()" because "this.ib" is null
+java.lang.NullPointerException: Cannot invoke "org.apache.catalina.connector.InputBuffer.isBlocking()" because "this.ib" is null
+	at org.apache.catalina.connector.CoyoteInputStream.checkNonBlockingRead(CoyoteInputStream.java:215)
+	at org.apache.catalina.connector.CoyoteInputStream.read(CoyoteInputStream.java:116)
+	at org.apache.catalina.connector.CoyoteInputStream.read(CoyoteInputStream.java:110)
+	at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:179)
+	at com.fufu.terminal.service.TrueStreamingFileService.lambda$directStreamUpload$1(TrueStreamingFileService.java:134)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
