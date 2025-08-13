@@ -204,37 +204,86 @@ public class RealTimeLogService {
 
                 dockerLogsChannel = (ChannelExec) connection.getJschSession().openChannel("exec");
                 String command = String.format("sudo docker logs -f --tail %d --timestamps %s",
-                        Math.min(100, maxLines), containerName);
+                        Math.min(200, maxLines), containerName);
 
+                log.info("查看日志为:{}",command);
                 dockerLogsChannel.setCommand(command);
                 dockerLogsChannel.setInputStream(null);
-                dockerLogsChannel.setErrStream(System.err);
+                // 不要将stderr重定向到System.err，我们需要同时读取stdout和stderr
+                // dockerLogsChannel.setErrStream(System.err);
 
                 try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(dockerLogsChannel.getInputStream()))) {
+                        new InputStreamReader(dockerLogsChannel.getInputStream()));
+                     BufferedReader errorReader = new BufferedReader(
+                        new InputStreamReader(dockerLogsChannel.getErrStream()))) {
 
                     dockerLogsChannel.connect();
                     log.debug("Docker logs流已连接，会话: {} 容器: {}", sessionId, containerName);
 
                     String line;
                     List<String> batchLines = new ArrayList<>();
-                    long lastSendTime = System.currentTimeMillis();
+                    long[] lastSendTime = {System.currentTimeMillis()}; // 使用数组来在lambda中修改
+                    int[] totalLinesRead = {0}; // 使用数组来在lambda中修改
 
+                    // 创建一个线程来读取错误流
+                    CompletableFuture<Void> errorReaderTask = CompletableFuture.runAsync(() -> {
+                        try {
+                            String errorLine;
+                            while (running && (errorLine = errorReader.readLine()) != null) {
+                                synchronized (batchLines) {
+                                    totalLinesRead[0]++;
+                                    log.info("从错误流读取到日志行 #{}: {}", totalLinesRead[0], errorLine);
+                                    logBuffer.add(errorLine);
+                                    batchLines.add(errorLine);
+
+                                    long currentTime = System.currentTimeMillis();
+                                    if (batchLines.size() >= 10 || (currentTime - lastSendTime[0]) > 500) {
+                                        pushLogsToClient(new ArrayList<>(batchLines), false);
+                                        batchLines.clear();
+                                        lastSendTime[0] = currentTime;
+                                    }
+                                }
+                            }
+                        } catch (IOException e) {
+                            if (running) {
+                                log.warn("读取错误流时发生异常: {}", e.getMessage());
+                            }
+                        }
+                    });
+
+                    // 主线程读取标准输出流
                     while (running && (line = reader.readLine()) != null) {
-                        // 保留所有日志行，包括空行，因为它们可能是JSON格式的一部分
-                        logBuffer.add(line);
-                        batchLines.add(line);
+                        synchronized (batchLines) {
+                            totalLinesRead[0]++;
+                            log.info("从标准流读取到日志行 #{}: {}", totalLinesRead[0], line);
+                            // 保留所有日志行，包括空行，因为它们可能是JSON格式的一部分
+                            logBuffer.add(line);
+                            batchLines.add(line);
 
-                        long currentTime = System.currentTimeMillis();
-                        if (batchLines.size() >= 10 || (currentTime - lastSendTime) > 500) {
-                            pushLogsToClient(new ArrayList<>(batchLines), false);
-                            batchLines.clear();
-                            lastSendTime = currentTime;
+                            long currentTime = System.currentTimeMillis();
+                            if (batchLines.size() >= 10 || (currentTime - lastSendTime[0]) > 500) {
+                                pushLogsToClient(new ArrayList<>(batchLines), false);
+                                batchLines.clear();
+                                lastSendTime[0] = currentTime;
+                            }
                         }
                     }
 
-                    if (!batchLines.isEmpty()) {
-                        pushLogsToClient(batchLines, true);
+                    // 等待错误流读取完成
+                    try {
+                        errorReaderTask.get(1, TimeUnit.SECONDS);
+                    } catch (Exception e) {
+                        log.debug("等待错误流读取完成时发生异常: {}", e.getMessage());
+                    }
+
+                    log.info("Docker logs读取完成，总共读取 {} 行", totalLinesRead[0]);
+                    synchronized (batchLines) {
+                        if (!batchLines.isEmpty()) {
+                            log.info("推送最后批次日志，行数: {}, 内容: {}", batchLines.size(), batchLines);
+                            pushLogsToClient(batchLines, true);
+                        } else {
+                            log.info("没有剩余批次需要推送");
+                        }
                     }
 
                 } catch (IOException e) {
@@ -262,16 +311,29 @@ public class RealTimeLogService {
         }
 
         /**
-         * 推送日志到前端客户端。
+         * 推送日志到前端客户端（带排序功能）。
          *
          * @param newLines   新日志行
          * @param isComplete 是否为最后一批
          */
         private void pushLogsToClient(List<String> newLines, boolean isComplete) {
+            // 对日志按时间戳进行排序
+            List<String> sortedLines = new ArrayList<>(newLines);
+            sortedLines.sort((line1, line2) -> {
+                String timestamp1 = extractTimestamp(line1);
+                String timestamp2 = extractTimestamp(line2);
+                
+                if (timestamp1 != null && timestamp2 != null) {
+                    return timestamp1.compareTo(timestamp2);
+                }
+                // 如果没有时间戳，保持原顺序
+                return 0;
+            });
+            
             RealTimeLogDto logDto = RealTimeLogDto.builder()
                     .sessionId(sessionId)
                     .containerName(containerName)
-                    .lines(newLines)
+                    .lines(sortedLines) // 使用排序后的日志
                     .totalLines(logBuffer.size())
                     .timestamp(LocalDateTime.now())
                     .isRealTime(true)
@@ -284,9 +346,28 @@ public class RealTimeLogService {
                     "success", true,
                     "payload", logDto
             );
-            
+            log.info("推送日志到客户端，行数: {}, 路径: /queue/sillytavern/realtime-logs，内容: {}", sortedLines.size(), sortedLines);
             // 发送到统一的路径 /user/queue/sillytavern/realtime-logs
             messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/realtime-logs", message);
+        }
+
+        /**
+         * 从日志行中提取时间戳。
+         *
+         * @param logLine 日志行
+         * @return 时间戳字符串，如果没有找到则返回null
+         */
+        private String extractTimestamp(String logLine) {
+            if (logLine == null || logLine.trim().isEmpty()) {
+                return null;
+            }
+            
+            // Docker日志时间戳格式: 2025-08-13T14:18:38.501597355Z
+            if (logLine.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+Z.*")) {
+                return logLine.substring(0, logLine.indexOf('Z') + 1);
+            }
+            
+            return null;
         }
 
         /**

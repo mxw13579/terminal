@@ -266,6 +266,8 @@ export function useSillyTavern(options = {}) {
         console.log('🔗 设置实时日志订阅: /user/queue/sillytavern/realtime-logs');
         client.subscribe('/user/queue/sillytavern/realtime-logs', (message) => {
             try {
+                console.log('📨 收到实时日志原始消息:', message);
+                console.log('📨 消息体内容:', message.body);
                 const data = JSON.parse(message.body);
                 console.log('📨 收到实时日志消息 (新路径):', data);
                 handleRealtimeLogsResponse(data);
@@ -563,79 +565,102 @@ export function useSillyTavern(options = {}) {
         if (data.type === 'realtime-logs' && data.payload) {
             console.log('处理实时日志，payload结构:', data.payload);
 
+            let newLines = [];
             // 检查是否有lines字段（这是真正的日志内容）
             if (data.payload.lines && Array.isArray(data.payload.lines)) {
                 console.log('找到lines数组，长度:', data.payload.lines.length);
                 console.log('lines内容:', data.payload.lines);
-                // 将新的日志行追加到现有日志中
-                logs.value = [...logs.value, ...data.payload.lines];
-                console.log('添加后logs数组长度:', logs.value.length);
+                newLines = data.payload.lines;
             } else if (data.payload.logs && Array.isArray(data.payload.logs)) {
-                // 将新的日志行追加到现有日志中
                 console.log('添加日志数组，长度:', data.payload.logs.length);
-                logs.value = [...logs.value, ...data.payload.logs];
-                console.log('添加后logs数组长度:', logs.value.length);
+                newLines = data.payload.logs;
             } else if (typeof data.payload === 'string') {
-                // 单行日志处理
                 console.log('添加单行日志:', data.payload);
-                logs.value = [...logs.value, data.payload];
-                console.log('添加后logs数组长度:', logs.value.length);
+                newLines = [data.payload];
             } else if (data.payload.message) {
-                // 消息格式的日志
                 console.log('添加消息格式日志:', data.payload.message);
-                logs.value = [...logs.value, data.payload.message];
-                console.log('添加后logs数组长度:', logs.value.length);
+                newLines = [data.payload.message];
             } else if (data.payload.content) {
-                // content格式的日志
                 console.log('添加content格式日志:', data.payload.content);
-                logs.value = [...logs.value, data.payload.content];
-                console.log('添加后logs数组长度:', logs.value.length);
+                newLines = [data.payload.content];
             } else {
-                // 尝试直接使用payload
                 console.log('尝试直接使用payload作为日志');
                 console.log('payload类型:', typeof data.payload);
                 console.log('payload内容:', data.payload);
 
-                // 如果payload是对象，尝试转换为字符串
                 if (typeof data.payload === 'object') {
                     const logEntry = JSON.stringify(data.payload, null, 2);
-                    logs.value = [...logs.value, logEntry];
+                    newLines = [logEntry];
                 } else {
-                    logs.value = [...logs.value, String(data.payload)];
+                    newLines = [String(data.payload)];
                 }
-                console.log('添加后logs数组长度:', logs.value.length);
+            }
+
+            // 去重处理：只添加不存在的日志行
+            if (newLines.length > 0) {
+                const currentLogs = new Set(logs.value);
+                const uniqueNewLines = newLines.filter(line => !currentLogs.has(line));
+                
+                if (uniqueNewLines.length > 0) {
+                    logs.value = [...logs.value, ...uniqueNewLines];
+                    console.log('添加去重后的日志，新增行数:', uniqueNewLines.length, '总长度:', logs.value.length);
+                } else {
+                    console.log('所有新日志都是重复的，跳过添加');
+                }
             }
         } else if (data.success !== undefined) {
             // 兼容旧的响应格式
             if (data.success) {
+                let newLines = [];
                 if (data.payload && data.payload.logs) {
-                    logs.value = [...logs.value, ...data.payload.logs];
+                    newLines = data.payload.logs;
                 } else if (data.payload && typeof data.payload === 'string') {
-                    logs.value = [...logs.value, data.payload];
+                    newLines = [data.payload];
+                }
+                
+                // 去重处理
+                if (newLines.length > 0) {
+                    const currentLogs = new Set(logs.value);
+                    const uniqueNewLines = newLines.filter(line => !currentLogs.has(line));
+                    
+                    if (uniqueNewLines.length > 0) {
+                        logs.value = [...logs.value, ...uniqueNewLines];
+                    }
                 }
             } else {
                 console.error('实时日志错误:', data.error);
                 onShowModal("实时日志错误: " + (data.error || 'Unknown error'));
             }
         } else if (data.message) {
-            // 处理直接包含message字段的消息（比如错误消息）
             console.log('处理message字段消息:', data.message);
-            logs.value = [...logs.value, `[${data.type || 'INFO'}] ${new Date().toISOString()} ${data.message}`];
-            console.log('添加message后logs数组长度:', logs.value.length);
+            const newLine = `[${data.type || 'INFO'}] ${new Date().toISOString()} ${data.message}`;
+            if (!logs.value.includes(newLine)) {
+                logs.value = [...logs.value, newLine];
+                console.log('添加message后logs数组长度:', logs.value.length);
+            }
         } else {
-            // 如果数据格式不明确，尝试直接处理
             console.warn('未知的实时日志数据格式:', data);
+            let newLines = [];
             if (data.payload) {
                 if (typeof data.payload === 'string') {
-                    logs.value = [...logs.value, data.payload];
+                    newLines = [data.payload];
                 } else if (data.payload.logs) {
-                    logs.value = [...logs.value, ...data.payload.logs];
+                    newLines = data.payload.logs;
                 }
             } else if (typeof data === 'string') {
-                logs.value = [...logs.value, data];
+                newLines = [data];
             } else {
-                // 将未知格式转为JSON字符串显示
-                logs.value = [...logs.value, `[UNKNOWN] ${JSON.stringify(data)}`];
+                newLines = [`[UNKNOWN] ${JSON.stringify(data)}`];
+            }
+            
+            // 去重处理
+            if (newLines.length > 0) {
+                const currentLogs = new Set(logs.value);
+                const uniqueNewLines = newLines.filter(line => !currentLogs.has(line));
+                
+                if (uniqueNewLines.length > 0) {
+                    logs.value = [...logs.value, ...uniqueNewLines];
+                }
             }
         }
 
@@ -1011,6 +1036,11 @@ export function useSillyTavern(options = {}) {
         }
 
         console.log('🚀 启动实时日志，容器:', containerName, '最大行数:', maxLines);
+        
+        // 启动前清空旧日志数据
+        logs.value = [];
+        console.log('✅ 已清空旧日志数据，当前长度:', logs.value.length);
+        
         isRealtimeLogsActive.value = true;
 
         const request = { containerName, maxLines };

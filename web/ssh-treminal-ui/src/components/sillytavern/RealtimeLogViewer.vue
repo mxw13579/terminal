@@ -1,125 +1,8 @@
 <template>
-  <div class="realtime-log-viewer">
+  <div class="realtime-log-viewer" :class="{ 'fullscreen': isFullscreen }">
     <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">
-          <i class="fas fa-file-alt me-2"></i>
-          实时日志查看
-        </h5>
-        <small class="text-muted">实时查看容器日志，支持历史日志和WebSocket推送</small>
-      </div>
-      
       <div class="card-body">
-        <!-- 日志控制面板 -->
-        <div class="log-controls-panel mb-3">
-          <div class="row align-items-center">
-            <div class="col-md-6">
-              <div class="control-group">
-                <label class="control-label">实时日志状态:</label>
-                <div class="realtime-status ms-2">
-                  <span class="status-indicator" :class="realtimeStatus"></span>
-                  <span class="status-text">{{ getStatusText() }}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div class="col-md-6">
-              <div class="control-group">
-                <label class="control-label">显示行数:</label>
-                <select 
-                  v-model="logConfig.maxLines" 
-                  class="form-select form-select-sm ms-2"
-                  style="width: auto; display: inline-block;"
-                  @change="onConfigChange"
-                >
-                  <option value="50">50行</option>
-                  <option value="100">100行</option>
-                  <option value="300">300行</option>
-                  <option value="500">500行</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          
-          <!-- 实时日志控制 -->
-          <div class="row mt-2 align-items-center">
-            <div class="col-md-6 text-start">
-              <button 
-                v-if="!isRealtimeActive"
-                @click="startRealtimeLogs"
-                :disabled="!isConnected"
-                class="btn btn-success btn-sm me-2"
-              >
-                <i class="fas fa-play me-1"></i>
-                开启实时日志
-              </button>
-              <button 
-                v-else
-                @click="stopRealtimeLogs"
-                class="btn btn-danger btn-sm me-2"
-              >
-                <i class="fas fa-stop me-1"></i>
-                停止实时日志
-              </button>
-            </div>
-            
-            <div class="col-md-6 text-end">
-              <button 
-                @click="clearLogs"
-                class="btn btn-outline-danger btn-sm"
-                :disabled="logs.length === 0"
-              >
-                <i class="fas fa-trash me-1"></i>
-                清空日志
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 日志统计信息 -->
-        <div v-if="logs.length > 0 || memoryInfo" class="log-stats mb-3">
-          <div class="row">
-            <div class="col-md-6">
-              <small class="text-muted">
-                <i class="fas fa-list-ol me-1"></i>
-                共 {{ logs.length }} 行日志
-                <span v-if="totalLines && totalLines !== logs.length">
-                  (缓存中共 {{ totalLines }} 行)
-                </span>
-              </small>
-            </div>
-            <div class="col-md-6 text-end">
-              <small class="text-muted">
-                <i class="fas fa-clock me-1"></i>
-                最后更新: {{ lastUpdateTime }}
-              </small>
-            </div>
-          </div>
-          
-          <!-- 内存使用情况 -->
-          <div v-if="memoryInfo" class="memory-usage mt-2">
-            <div class="row align-items-center">
-              <div class="col-md-8">
-                <div class="progress" style="height: 6px;">
-                  <div 
-                    class="progress-bar"
-                    :class="getMemoryProgressClass()"
-                    :style="{ width: memoryInfo.memoryUsagePercent + '%' }"
-                    role="progressbar"
-                  ></div>
-                </div>
-              </div>
-              <div class="col-md-4 text-end">
-                <small class="text-muted">
-                  内存使用: {{ Math.round(memoryInfo.memoryUsagePercent) }}%
-                  ({{ memoryInfo.cachedLines }}/{{ memoryInfo.maxLines }})
-                </small>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 日志显示区域 -->
+        <!-- 直接显示日志区域，移除所有控制面板 -->
         <div class="log-display-area">
           <div v-if="logs.length === 0" class="log-empty">
             <div class="empty-icon">
@@ -135,6 +18,15 @@
           
           <div v-else class="log-container-wrapper">
             <div class="log-container" ref="logContainer">
+              <!-- 全屏按钮放在日志容器右上角 -->
+              <button 
+                @click="toggleFullscreen" 
+                class="fullscreen-btn"
+                :title="isFullscreen ? '退出全屏' : '全屏显示'"
+              >
+                <i :class="isFullscreen ? 'fas fa-compress' : 'fas fa-expand'"></i>
+              </button>
+              
               <div 
                 v-for="(log, index) in logs" 
                 :key="index"
@@ -262,6 +154,7 @@ export default {
     const errorMessage = ref('')
     const successMessage = ref('')
     const memoryInfo = ref(null)
+    const isFullscreen = ref(false) // 全屏状态
     
     // 日志容器引用
     const logContainer = ref(null)
@@ -404,6 +297,8 @@ export default {
       errorMessage.value = ''
       successMessage.value = ''
       
+      // 全局清空已在useSillyTavern中处理，这里无需重复清空
+      
       // 使用全局的启动方法
       const success = sillyTavern.startRealtimeLogs(props.containerName, logConfig.maxLines)
       if (!success) {
@@ -417,8 +312,11 @@ export default {
     }
     
     const clearLogs = () => {
-      // 清空功能保留（可选）
-      console.log('清空日志功能暂时不可用（logs由useSillyTavern管理）')
+      // 通过useSillyTavern清空日志
+      if (sillyTavern && sillyTavern.logs) {
+        sillyTavern.logs.value = []
+        console.log('日志已清空')
+      }
       totalLines.value = 0
       memoryInfo.value = null
     }
@@ -434,6 +332,23 @@ export default {
       await nextTick()
       if (logContainer.value) {
         logContainer.value.scrollTop = logContainer.value.scrollHeight
+      }
+    }
+    
+    const toggleFullscreen = () => {
+      isFullscreen.value = !isFullscreen.value
+      // 全屏切换后自动滚动到底部
+      nextTick(() => {
+        if (autoScroll.value) {
+          scrollToBottom()
+        }
+      })
+    }
+    
+    // 监听ESC键退出全屏
+    const handleKeydown = (event) => {
+      if (event.key === 'Escape' && isFullscreen.value) {
+        isFullscreen.value = false
       }
     }
     
@@ -470,6 +385,9 @@ export default {
         sillyTavernKeys: sillyTavern ? Object.keys(sillyTavern) : []
       })
       
+      // 添加键盘事件监听
+      window.addEventListener('keydown', handleKeydown)
+      
       // 自动启动实时日志（如果连接已就绪）
       setTimeout(() => {
         if (isConnected.value && !isRealtimeActive.value) {
@@ -480,6 +398,9 @@ export default {
     })
     
     onUnmounted(() => {
+      // 移除键盘事件监听
+      window.removeEventListener('keydown', handleKeydown)
+      
       // 停止实时日志
       if (isRealtimeActive.value) {
         stopRealtimeLogs()
@@ -499,6 +420,7 @@ export default {
       memoryInfo,
       logContainer,
       logConfig,
+      isFullscreen, // 全屏状态
       
       // 计算属性
       isConnected,
@@ -512,7 +434,8 @@ export default {
       stopRealtimeLogs,
       clearLogs,
       scrollToTop,
-      scrollToBottom
+      scrollToBottom,
+      toggleFullscreen // 全屏切换方法
     }
   }
 }
@@ -522,17 +445,92 @@ export default {
 .realtime-log-viewer {
   max-width: 1200px;
   margin: 0 auto;
+  transition: all 0.3s ease;
+}
+
+/* 全屏样式 */
+.realtime-log-viewer.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  max-width: none;
+  margin: 0;
+  background: white;
+  padding: 0;
+}
+
+.realtime-log-viewer.fullscreen .card {
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.realtime-log-viewer.fullscreen .card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.realtime-log-viewer.fullscreen .log-display-area {
+  flex: 1;
+  min-height: 0;
+}
+
+.realtime-log-viewer.fullscreen .log-container-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 全屏模式下的按钮样式 */
+.realtime-log-viewer.fullscreen .fullscreen-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+}
+
+.realtime-log-viewer.fullscreen .log-container {
+  position: relative;
+  max-height: none;
+  height: 100%;
+  padding-top: 2.5rem; /* 为按钮留出空间 */
+}
+
+/* 全屏按钮样式 */
+.fullscreen-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.05);
+}
+
+.fullscreen-btn:active {
+  transform: scale(0.95);
 }
 
 .card {
   border: none;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.card-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-bottom: none;
 }
 
 .card-title {
@@ -633,6 +631,7 @@ export default {
 }
 
 .log-container {
+  position: relative; /* 添加相对定位以包含绝对定位的按钮 */
   flex: 1;
   background: #1e1e1e;
   border-radius: 6px;
