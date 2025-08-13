@@ -272,23 +272,24 @@ export function useSillyTavernExtended(options = {}) {
         }
     };
 
-    const handleRealtimeLogsResponse = (data) => {
-        if (data.type === 'realtime-logs' && data.payload) {
-            const logData = data.payload;
-            if (logData.lines && logData.lines.length > 0) {
-                realtimeLogData.value.push(...logData.lines);
-                
-                // Limit memory usage
-                if (realtimeLogData.value.length > 5000) {
-                    realtimeLogData.value = realtimeLogData.value.slice(-3000);
-                }
-            }
-            logMemoryInfo.value = logData.memoryInfo;
-        } else if (data.type === 'realtime-logs-error') {
-            onShowModal("实时日志错误: " + data.message, "实时日志错误");
-            isRealtimeActive.value = false;
-        }
-    };
+    // 注释掉重复的实时日志处理 - 现在由 useSillyTavern 单例统一处理
+    // const handleRealtimeLogsResponse = (data) => {
+    //     if (data.type === 'realtime-logs' && data.payload) {
+    //         const logData = data.payload;
+    //         if (logData.lines && logData.lines.length > 0) {
+    //             realtimeLogData.value.push(...logData.lines);
+    //             
+    //             // Limit memory usage
+    //             if (realtimeLogData.value.length > 5000) {
+    //                 realtimeLogData.value = realtimeLogData.value.slice(-3000);
+    //             }
+    //         }
+    //         logMemoryInfo.value = logData.memoryInfo;
+    //     } else if (data.type === 'realtime-logs-error') {
+    //         onShowModal("实时日志错误: " + data.message, "实时日志错误");
+    //         isRealtimeActive.value = false;
+    //     }
+    // };
 
     const handleRealtimeLogControlResponse = (data, action) => {
         if (action === 'started') {
@@ -407,7 +408,7 @@ export function useSillyTavernExtended(options = {}) {
         handleVersionUpgradeProgress,
         handleVersionUpgradeResponse,
         handleImageCleanupResponse,
-        handleRealtimeLogsResponse,
+        // handleRealtimeLogsResponse, // 已注释 - 由 useSillyTavern 单例处理
         handleRealtimeLogControlResponse,
         handleHistoryLogsResponse,
         handleDataExportProgress,

@@ -1,12 +1,24 @@
 import { ref, readonly } from 'vue';
 import useConnectionManager from './useConnectionManager.js';
 
+// 单例状态 - 确保所有组件共享同一个状态
+let singletonState = null;
+
 /**
  * Composable for SillyTavern management operations.
  * Uses the unified connection manager instead of creating its own connection.
+ * 实现单例模式确保所有组件共享同一个状态。
  */
 export function useSillyTavern(options = {}) {
     const { onShowModal = () => {} } = options;
+
+    // 如果单例状态已存在，直接返回
+    if (singletonState) {
+        console.log('useSillyTavern: 使用现有单例状态，logs长度:', singletonState.logs.value.length);
+        return singletonState.api;
+    }
+
+    console.log('useSillyTavern: 创建新的单例状态');
 
     // Get the unified connection manager
     const { getStompClient } = useConnectionManager();
@@ -24,7 +36,7 @@ export function useSillyTavern(options = {}) {
     // Deployment
     const isDeploying = ref(false);
     const deploymentProgress = ref(null);
-    
+
     // Interactive deployment state
     const interactiveDeployment = ref({
         active: false,
@@ -41,9 +53,10 @@ export function useSillyTavern(options = {}) {
     const isPerformingAction = ref(false);
     const currentAction = ref('');
 
-    // Logs
+    // Logs - 单例状态，所有组件共享
     const logs = ref([]);
     const isLoadingLogs = ref(false);
+    const isRealtimeLogsActive = ref(false); // 全局管理实时日志状态
 
     // Versions
     const availableVersions = ref([]);
@@ -59,10 +72,10 @@ export function useSillyTavern(options = {}) {
         }
 
         // 获取 sessionId
-        const sessionId = client.ws?._websocket?.extensions?.sessionId || 
+        const sessionId = client.ws?._websocket?.extensions?.sessionId ||
                          (client.ws?.readyState && Math.random().toString(36).substr(2, 9)) ||
                          'default';
-        
+
         console.log('Subscribing to SillyTavern queues with sessionId:', sessionId);
 
         // Subscribe to system validation responses
@@ -82,7 +95,7 @@ export function useSillyTavern(options = {}) {
             try {
                 const data = JSON.parse(message.body);
                 console.log('解析后的数据:', data);
-                
+
                 // 根据消息类型分发到对应的处理函数
                 if (data.type) {
                     switch (data.type) {
@@ -141,7 +154,6 @@ export function useSillyTavern(options = {}) {
         // Keep legacy subscriptions for backward compatibility
         // Subscribe to container status responses
         client.subscribe('/user/queue/sillytavern/status', (message) => {
-            console.log('收到状态子队列消息:', message);
             try {
                 const data = JSON.parse(message.body);
                 handleStatusResponse(data);
@@ -200,7 +212,7 @@ export function useSillyTavern(options = {}) {
             }
         });
 
-        // Subscribe to configuration update responses  
+        // Subscribe to configuration update responses
         client.subscribe('/user/queue/sillytavern/config-updated', (message) => {
             try {
                 const data = JSON.parse(message.body);
@@ -250,10 +262,12 @@ export function useSillyTavern(options = {}) {
             }
         });
 
-        // Subscribe to real-time logs
+        // Subscribe to real-time logs - 使用新路径
+        console.log('🔗 设置实时日志订阅: /user/queue/sillytavern/realtime-logs');
         client.subscribe('/user/queue/sillytavern/realtime-logs', (message) => {
             try {
                 const data = JSON.parse(message.body);
+                console.log('📨 收到实时日志消息 (新路径):', data);
                 handleRealtimeLogsResponse(data);
             } catch (e) {
                 console.error('Error processing realtime logs response:', e);
@@ -329,16 +343,16 @@ export function useSillyTavern(options = {}) {
             }
         });
 
-        // Subscribe to real-time logs (临时兼容旧路径)
-        client.subscribe('/queue/sillytavern/realtime-logs-user' + sessionId, (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                console.log('收到实时日志 (旧路径):', data);
-                handleRealtimeLogsResponse(data);
-            } catch (e) {
-                console.error('Error processing realtime logs response (old path):', e);
-            }
-        });
+        // 注释掉重复的实时日志订阅 - 已使用新路径 /user/queue/sillytavern/realtime-logs
+        // client.subscribe('/queue/sillytavern/realtime-logs-user' + sessionId, (message) => {
+        //     try {
+        //         const data = JSON.parse(message.body);
+        //         console.log('收到实时日志 (旧路径):', data);
+        //         handleRealtimeLogsResponse(data);
+        //     } catch (e) {
+        //         console.error('Error processing realtime logs response (old path):', e);
+        //     }
+        // });
 
         // Subscribe to interactive deployment progress (临时兼容旧路径)
         client.subscribe('/queue/sillytavern/interactive-deployment-progress-user' + sessionId, (message) => {
@@ -351,7 +365,7 @@ export function useSillyTavern(options = {}) {
             }
         });
 
-        // Subscribe to interactive deployment status (临时兼容旧路径)  
+        // Subscribe to interactive deployment status (临时兼容旧路径)
         client.subscribe('/queue/sillytavern/interactive-deployment-status-user' + sessionId, (message) => {
             try {
                 const data = JSON.parse(message.body);
@@ -487,7 +501,7 @@ export function useSillyTavern(options = {}) {
     const handleDeploymentProgress = (data) => {
         if (data.payload) {
             deploymentProgress.value = data.payload;
-            
+
             if (data.payload.completed) {
                 isDeploying.value = false;
                 if (data.payload.success) {
@@ -504,7 +518,7 @@ export function useSillyTavern(options = {}) {
     const handleActionResult = (data) => {
         isPerformingAction.value = false;
         currentAction.value = '';
-        
+
         if (data.success) {
             onShowModal(data.message, "操作成功");
             // Refresh container status after action
@@ -531,13 +545,24 @@ export function useSillyTavern(options = {}) {
     };
 
     const handleRealtimeLogsResponse = (data) => {
+        console.log('🚨 handleRealtimeLogsResponse 被调用 - 检查重复！');
         console.log('收到实时日志数据:', data);
         console.log('当前logs数组长度:', logs.value.length);
-        
+
+        // 检查是否为错误消息
+        if (data.type === 'realtime-logs-error') {
+            console.error('实时日志错误:', data.message);
+            onShowModal("实时日志错误: " + data.message);
+            // 将错误消息也作为日志显示
+            logs.value = [...logs.value, `[ERROR] ${new Date().toISOString()} ${data.message}`];
+            console.log('添加错误消息后logs数组长度:', logs.value.length);
+            return;
+        }
+
         // 检查数据格式：如果有type字段，说明是实时日志消息
         if (data.type === 'realtime-logs' && data.payload) {
             console.log('处理实时日志，payload结构:', data.payload);
-            
+
             // 检查是否有lines字段（这是真正的日志内容）
             if (data.payload.lines && Array.isArray(data.payload.lines)) {
                 console.log('找到lines数组，长度:', data.payload.lines.length);
@@ -570,7 +595,7 @@ export function useSillyTavern(options = {}) {
                 console.log('尝试直接使用payload作为日志');
                 console.log('payload类型:', typeof data.payload);
                 console.log('payload内容:', data.payload);
-                
+
                 // 如果payload是对象，尝试转换为字符串
                 if (typeof data.payload === 'object') {
                     const logEntry = JSON.stringify(data.payload, null, 2);
@@ -592,6 +617,11 @@ export function useSillyTavern(options = {}) {
                 console.error('实时日志错误:', data.error);
                 onShowModal("实时日志错误: " + (data.error || 'Unknown error'));
             }
+        } else if (data.message) {
+            // 处理直接包含message字段的消息（比如错误消息）
+            console.log('处理message字段消息:', data.message);
+            logs.value = [...logs.value, `[${data.type || 'INFO'}] ${new Date().toISOString()} ${data.message}`];
+            console.log('添加message后logs数组长度:', logs.value.length);
         } else {
             // 如果数据格式不明确，尝试直接处理
             console.warn('未知的实时日志数据格式:', data);
@@ -601,9 +631,14 @@ export function useSillyTavern(options = {}) {
                 } else if (data.payload.logs) {
                     logs.value = [...logs.value, ...data.payload.logs];
                 }
+            } else if (typeof data === 'string') {
+                logs.value = [...logs.value, data];
+            } else {
+                // 将未知格式转为JSON字符串显示
+                logs.value = [...logs.value, `[UNKNOWN] ${JSON.stringify(data)}`];
             }
         }
-        
+
         console.log('处理完成，最终logs数组长度:', logs.value.length);
         console.log('最新的3条日志:', logs.value.slice(-3));
     };
@@ -676,7 +711,7 @@ export function useSillyTavern(options = {}) {
     // --- Interactive Deployment Handlers ---
     const handleInteractiveDeploymentProgress = (data) => {
         console.log('处理交互式部署进度，数据格式:', data);
-        
+
         // 后端发送的数据格式：{sessionId, currentStep: {stepId, stepName, ...}, totalSteps, completedSteps, overallProgress, waitingForConfirmation, pendingConfirmation}
         if (data.sessionId) {
             // 更新交互式部署状态
@@ -684,24 +719,24 @@ export function useSillyTavern(options = {}) {
             interactiveDeployment.value.totalSteps = data.totalSteps || 0;
             interactiveDeployment.value.completedSteps = data.completedSteps || 0;
             interactiveDeployment.value.overallProgress = data.overallProgress || 0;
-            
+
             // 更新当前步骤
             if (data.currentStep) {
                 interactiveDeployment.value.currentStep = data.currentStep.stepId;
                 console.log('设置当前步骤:', data.currentStep.stepId);
-                
+
                 // 检查并更新步骤详细信息（包括日志）
                 if (interactiveDeployment.value.steps) {
                     const stepIndex = interactiveDeployment.value.steps.findIndex(s => s.id === data.currentStep.stepId);
                     if (stepIndex !== -1) {
                         const currentStepData = data.currentStep;
                         const step = interactiveDeployment.value.steps[stepIndex];
-                        
+
                         // 更新步骤状态和进度
                         step.status = currentStepData.status || 'running';
                         step.progress = currentStepData.progress || 0;
                         step.message = currentStepData.message || currentStepData.stepName;
-                        
+
                         // 处理步骤日志 - 这是关键部分！
                         if (currentStepData.logs && currentStepData.logs.length > 0) {
                             console.log('更新步骤日志:', data.currentStep.stepId, currentStepData.logs);
@@ -724,12 +759,12 @@ export function useSillyTavern(options = {}) {
                                 }
                             });
                         }
-                        
+
                         console.log('步骤详细信息已更新:', step);
                     }
                 }
             }
-            
+
             // 更新 deploymentProgress 以触发组件的 watcher
             deploymentProgress.value = {
                 completed: false,
@@ -743,18 +778,18 @@ export function useSillyTavern(options = {}) {
                 // 包含完整的当前步骤信息，包括日志
                 currentStep: data.currentStep || null
             };
-            
+
             console.log('更新 deploymentProgress:', deploymentProgress.value);
         }
-        
+
         // 兼容旧格式（如果有 payload 字段）
         else if (data.payload) {
             const { step, message, progress, requiresConfirmation, stepData } = data.payload;
-            
+
             // 更新交互式部署状态
             interactiveDeployment.value.active = true;
             interactiveDeployment.value.currentStep = step;
-            
+
             // 如果有步骤数据，更新对应步骤
             if (interactiveDeployment.value.steps && step) {
                 const stepIndex = interactiveDeployment.value.steps.findIndex(s => s.id === step);
@@ -763,7 +798,7 @@ export function useSillyTavern(options = {}) {
                     currentStep.status = requiresConfirmation ? 'waiting' : 'running';
                     currentStep.progress = progress || 0;
                     currentStep.requiresConfirmation = requiresConfirmation;
-                    
+
                     // 添加日志消息
                     if (message) {
                         if (!currentStep.logs) currentStep.logs = [];
@@ -773,7 +808,7 @@ export function useSillyTavern(options = {}) {
                             type: 'info'
                         });
                     }
-                    
+
                     // 更新步骤数据
                     if (stepData) {
                         currentStep.stepData = stepData;
@@ -788,7 +823,7 @@ export function useSillyTavern(options = {}) {
             interactiveDeployment.value.completed = true;
             interactiveDeployment.value.success = true;
             interactiveDeployment.value.accessInfo = data.accessInfo;
-            
+
             // 更新 deploymentProgress 以触发组件的watcher
             deploymentProgress.value = {
                 completed: true,
@@ -796,22 +831,22 @@ export function useSillyTavern(options = {}) {
                 message: data.message || "交互式部署完成！",
                 accessInfo: data.accessInfo
             };
-            
+
             onShowModal(data.message || "交互式部署完成！", "部署成功");
-            
+
             // 刷新容器状态
             getContainerStatus();
         } else {
             interactiveDeployment.value.completed = true;
             interactiveDeployment.value.success = false;
-            
+
             // 更新 deploymentProgress 以触发组件的watcher
             deploymentProgress.value = {
                 completed: true,
                 success: false,
                 message: "交互式部署失败: " + (data.error || data.message)
             };
-            
+
             onShowModal("交互式部署失败: " + (data.error || data.message), "部署失败");
         }
     };
@@ -819,7 +854,7 @@ export function useSillyTavern(options = {}) {
     // 处理交互式部署状态更新
     const handleInteractiveDeploymentStatus = (data) => {
         console.log('收到交互式部署状态:', data);
-        
+
         if (data.steps) {
             interactiveDeployment.value.steps = data.steps.map(step => ({
                 id: step.stepId,
@@ -831,10 +866,10 @@ export function useSillyTavern(options = {}) {
                 logs: step.logs || []
             }));
         }
-        
+
         interactiveDeployment.value.active = true;
         interactiveDeployment.value.currentStepIndex = data.currentStepIndex || 0;
-        
+
         // 更新 deploymentProgress 以触发组件的 watcher
         deploymentProgress.value = {
             completed: false,
@@ -847,7 +882,7 @@ export function useSillyTavern(options = {}) {
     // 处理交互式部署确认请求
     const handleInteractiveDeploymentConfirmation = (data) => {
         console.log('收到确认请求:', data);
-        
+
         if (data.stepId) {
             // 更新对应步骤为等待确认状态
             const step = interactiveDeployment.value.steps.find(s => s.id === data.stepId);
@@ -857,7 +892,7 @@ export function useSillyTavern(options = {}) {
                 step.confirmationMessage = data.message;
                 step.userInput = data.userInput || [];
             }
-            
+
             // 更新当前等待确认的步骤
             interactiveDeployment.value.pendingConfirmation = {
                 stepId: data.stepId,
@@ -865,7 +900,7 @@ export function useSillyTavern(options = {}) {
                 message: data.message,
                 userInput: data.userInput || []
             };
-            
+
             // 更新 deploymentProgress 以触发组件的 watcher
             deploymentProgress.value = {
                 completed: false,
@@ -883,11 +918,11 @@ export function useSillyTavern(options = {}) {
 
     const handleDeploymentConfirmResponse = (data) => {
         console.log('收到部署确认响应:', data);
-        
+
         if (data.success) {
             // 确认成功，等待下一步进度更新
             console.log('部署步骤确认成功:', data.stepId);
-            
+
             // 更新对应步骤状态为运行中，移除等待确认状态
             if (interactiveDeployment.value.steps) {
                 const step = interactiveDeployment.value.steps.find(s => s.id === data.stepId);
@@ -898,7 +933,7 @@ export function useSillyTavern(options = {}) {
                     console.log('更新步骤状态为运行中:', step.id);
                 }
             }
-            
+
             // 也更新 deploymentProgress
             if (deploymentProgress.value) {
                 deploymentProgress.value.waitingForConfirmation = false;
@@ -931,7 +966,7 @@ export function useSillyTavern(options = {}) {
             interactiveDeployment.value.active = false;
             interactiveDeployment.value.completed = true;
             interactiveDeployment.value.success = false;
-            
+
             onShowModal("部署已取消", "部署取消");
         } else {
             onShowModal("取消部署失败: " + (data.error || data.message), "取消失败");
@@ -944,11 +979,11 @@ export function useSillyTavern(options = {}) {
             clearTimeout(getAvailableVersions.timeoutId);
             getAvailableVersions.timeoutId = null;
         }
-        
+
         isLoadingVersions.value = false;
-        
+
         console.log('收到版本信息响应:', data);
-        
+
         if (data.success) {
             availableVersions.value = data.versions || [];
             versionError.value = null;
@@ -961,6 +996,77 @@ export function useSillyTavern(options = {}) {
     };
 
     // --- Public API Methods ---
+    
+    // 启动实时日志
+    const startRealtimeLogs = (containerName = 'sillytavern', maxLines = 1000) => {
+        const client = getStompClient();
+        if (!client || !client.connected) {
+            console.warn('WebSocket未连接，无法启动实时日志');
+            return false;
+        }
+
+        if (isRealtimeLogsActive.value) {
+            console.log('实时日志已经在运行中，跳过启动');
+            return true;
+        }
+
+        console.log('🚀 启动实时日志，容器:', containerName, '最大行数:', maxLines);
+        isRealtimeLogsActive.value = true;
+
+        const request = { containerName, maxLines };
+        
+        try {
+            if (typeof client.publish === 'function') {
+                client.publish({
+                    destination: '/app/sillytavern/start-realtime-logs',
+                    body: JSON.stringify(request)
+                });
+            } else {
+                client.send('/app/sillytavern/start-realtime-logs', {}, JSON.stringify(request));
+            }
+            console.log('✅ 实时日志启动请求已发送');
+            return true;
+        } catch (error) {
+            console.error('启动实时日志失败:', error);
+            isRealtimeLogsActive.value = false;
+            return false;
+        }
+    };
+
+    // 停止实时日志
+    const stopRealtimeLogs = () => {
+        const client = getStompClient();
+        if (!client || !client.connected) {
+            console.warn('WebSocket未连接，但标记实时日志为停止');
+            isRealtimeLogsActive.value = false;
+            return false;
+        }
+
+        if (!isRealtimeLogsActive.value) {
+            console.log('实时日志未在运行，跳过停止');
+            return true;
+        }
+
+        console.log('🛑 停止实时日志');
+        isRealtimeLogsActive.value = false;
+
+        try {
+            if (typeof client.publish === 'function') {
+                client.publish({
+                    destination: '/app/sillytavern/stop-realtime-logs',
+                    body: JSON.stringify({})
+                });
+            } else {
+                client.send('/app/sillytavern/stop-realtime-logs', {}, JSON.stringify({}));
+            }
+            console.log('✅ 实时日志停止请求已发送');
+            return true;
+        } catch (error) {
+            console.error('停止实时日志失败:', error);
+            return false;
+        }
+    };
+
     const validateSystem = () => {
         const client = getStompClient();
         if (!client || !client.connected) {
@@ -1083,7 +1189,7 @@ export function useSillyTavern(options = {}) {
                     progress: 0
                 },
                 {
-                    id: 'system-detection', 
+                    id: 'system-detection',
                     title: '系统检测',
                     status: 'pending',
                     requiresConfirmation: false,
@@ -1155,7 +1261,7 @@ export function useSillyTavern(options = {}) {
 
     const confirmDeploymentStep = (stepId, confirmed, userInput = {}) => {
         console.log('confirmDeploymentStep 被调用:', { stepId, confirmed, userInput })
-        
+
         const client = getStompClient();
         if (!client || !client.connected) {
             console.error('WebSocket 未连接，无法发送确认消息')
@@ -1176,7 +1282,7 @@ export function useSillyTavern(options = {}) {
             destination: '/app/sillytavern/deployment-confirm',
             body: JSON.stringify(confirmRequest)
         });
-        
+
         console.log('WebSocket确认消息已发送')
     };
 
@@ -1230,13 +1336,13 @@ export function useSillyTavern(options = {}) {
 
     const getAvailableVersions = () => {
         console.log('getAvailableVersions 被调用')
-        
+
         const client = getStompClient();
         console.log('STOMP客户端状态:', {
             client: !!client,
             connected: client ? client.connected : 'N/A'
         })
-        
+
         if (!client || !client.connected) {
             console.warn('WebSocket 未连接，无法获取版本信息');
             versionError.value = 'WebSocket 未连接';
@@ -1282,7 +1388,7 @@ export function useSillyTavern(options = {}) {
     };
 
     // --- Exposed API ---
-    return {
+    const api = {
         // State (readonly)
         containerStatus: readonly(containerStatus),
         isStatusLoading: readonly(isStatusLoading),
@@ -1296,6 +1402,7 @@ export function useSillyTavern(options = {}) {
         currentAction: readonly(currentAction),
         logs: readonly(logs),
         isLoadingLogs: readonly(isLoadingLogs),
+        isRealtimeLogsActive: readonly(isRealtimeLogsActive), // 新增实时日志状态
         availableVersions: readonly(availableVersions),
         isLoadingVersions: readonly(isLoadingVersions),
         versionError: readonly(versionError),
@@ -1321,7 +1428,17 @@ export function useSillyTavern(options = {}) {
             ensureInitialized();
             return getContainerLogs(config);
         },
-        
+
+        // 新增实时日志管理方法
+        startRealtimeLogs: (containerName, maxLines) => {
+            ensureInitialized();
+            return startRealtimeLogs(containerName, maxLines);
+        },
+        stopRealtimeLogs: () => {
+            ensureInitialized();
+            return stopRealtimeLogs();
+        },
+
         // Interactive deployment methods
         startInteractiveDeployment: (config) => {
             ensureInitialized();
@@ -1346,8 +1463,18 @@ export function useSillyTavern(options = {}) {
             ensureInitialized();
             return getAvailableVersions();
         },
-        
+
         // Initialization helper
         initializeSillyTavernSubscriptions
     };
+
+    // 存储单例状态
+    singletonState = {
+        logs, // 原始响应式引用
+        api   // 公开API
+    };
+
+    console.log('useSillyTavern: 单例状态已创建，logs引用:', !!logs, 'logs长度:', logs.value.length);
+    
+    return api;
 }

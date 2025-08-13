@@ -667,7 +667,6 @@ const startServerMonitoring = () => {
 
 // 处理监控数据更新
 const handleMonitorUpdate = (data) => {
-  console.log('🔍 handleMonitorUpdate被调用，数据:', data)
   if (data.type === 'monitor_update') {
     systemStats.value = data.payload
     terminalDockerContainers.value = data.payload.dockerContainers || []

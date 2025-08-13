@@ -6,37 +6,64 @@ import com.fufu.terminal.model.SshConnection;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.SftpException;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 提供真正的流式文件传输服务。
+ * <p>
  * 该服务支持将输入流直接传输到SFTP服务器，无需在本地创建临时文件或将整个文件缓存在内存中。
- * 它还包括并发控制、上传进度跟踪、流量限制和取消上传等功能。
+ * 它通过一个专用的、由Spring管理的线程池来处理上传任务，并利用信号量进行并发控制。
+ * 功能包括：
+ * <ul>
+ *     <li>流式上传，内存占用低。</li>
+ *     <li>通过 {@link Semaphore} 控制并发上传数量。</li>
+ *     <li>通过 {@link StompSessionManager} 实时向客户端发送进度更新。</li>
+ *     <li>支持上传任务的取消。</li>
+ *     <li>可配置的流量限制（节流）。</li>
+ *     <li>上传失败后自动清理远程服务器上的临时文件。</li>
+ * </ul>
+ * 采用现代Java API（如 {@link CompletableFuture}, {@link InputStream#transferTo(OutputStream)}）和
+ * 装饰器模式（{@link ProgressTrackingInputStream}）来优化代码结构和可读性。
  *
  * @author AI Assistant
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TrueStreamingFileService {
 
     private final ObjectMapper objectMapper;
     private final StompSessionManager sessionManager;
+    private final TaskExecutor uploadTaskExecutor;
+
+    // 构造函数 - 使用 @Qualifier 指定使用 mvcTaskExecutor
+    public TrueStreamingFileService(
+            ObjectMapper objectMapper,
+            StompSessionManager sessionManager,
+            @Qualifier("mvcTaskExecutor") TaskExecutor uploadTaskExecutor) {
+        this.objectMapper = objectMapper;
+        this.sessionManager = sessionManager;
+        this.uploadTaskExecutor = uploadTaskExecutor;
+    }
 
     @Value("${file.transfer.max-file-size:2147483648}") // 2GB
     private long maxFileSize;
@@ -50,22 +77,23 @@ public class TrueStreamingFileService {
     @Value("${file.transfer.throttle-bytes-per-second:10485760}") // 10MB/s
     private long throttleBytesPerSecond;
 
-    // 跟踪活跃的上传任务
+    /**
+     * 跟踪所有活跃的上传任务。键是 uploadId，值是进度对象。
+     */
     private final Map<String, StreamingProgress> activeUploads = new ConcurrentHashMap<>();
 
-    // 用于并发控制的信号量
+    /**
+     * 用于并发控制的信号量，限制同时进行的上传任务数量。
+     */
     private Semaphore uploadSemaphore;
-    // 用于执行上传任务的线程池
-    private ExecutorService uploadExecutor;
 
+    /**
+     * 初始化服务资源，如信号量，并记录配置信息。
+     * 此方法在Bean属性设置完成后由Spring自动调用。
+     */
     @PostConstruct
-    private void initializeResources() {
+    private void initialize() {
         this.uploadSemaphore = new Semaphore(maxConcurrentTransfers);
-        this.uploadExecutor = Executors.newFixedThreadPool(maxConcurrentTransfers, r -> {
-            Thread t = new Thread(r, "streaming-upload-worker");
-            t.setDaemon(true);
-            return t;
-        });
 
         log.info("TrueStreamingFileService 初始化完成:");
         log.info("  - 最大并发传输数: {}", maxConcurrentTransfers);
@@ -74,52 +102,37 @@ public class TrueStreamingFileService {
         log.info("  - 限速: {} MB/s", String.format("%.1f", throttleBytesPerSecond / (1024.0 * 1024.0)));
     }
 
-    @PreDestroy
-    private void cleanup() {
-        if (uploadExecutor != null) {
-            uploadExecutor.shutdown();
-            try {
-                if (!uploadExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-                    uploadExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                uploadExecutor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
     /**
-     * 发起一个直接流式上传任务，并返回一个在任务完成后解析的Future。
+     * 异步发起一个直接流式上传任务。
      * <p>
-     * 此方法将实际的文件传输任务提交到后台线程池执行，但返回一个CompletableFuture，
-     * 调用者（如Controller）必须等待此Future完成，以确保HTTP请求-响应周期的完整性。
+     * 此方法会立即返回一个 {@link CompletableFuture}，实际的文件传输在后台线程池中执行。
+     * 调用者（例如Controller）应等待此Future完成，以确保整个操作（如HTTP请求）的完整性。
      *
      * @param connection    SSH连接对象
-     * @param sessionId     与客户端关联的会话ID，用于发送进度通知
+     * @param sessionId     用于发送STOMP进度通知的客户端会话ID
      * @param remotePath    文件在远程服务器上的目标目录
      * @param filename      要保存的文件名
      * @param inputStream   包含文件数据源的输入流
      * @param contentLength 文件的总大小（如果未知，则为-1）
      * @param clientIp      发起上传的客户端IP地址
-     * @return 一个CompletableFuture，它将在上传成功时完成并返回uploadId，在失败时完成并抛出异常。
-     * @throws IllegalStateException 如果服务器繁忙（达到最大并发数）
-     * @throws IllegalArgumentException 如果文件大小超出限制
+     * @return 一个 {@link CompletableFuture}，上传成功时返回uploadId，失败时抛出异常
+     * @throws IllegalStateException    如果服务器繁忙，无法接受新的上传任务
+     * @throws IllegalArgumentException 如果文件大小超出配置的限制
      */
     public CompletableFuture<String> directStreamUpload(SshConnection connection, String sessionId,
                                                         String remotePath, String filename,
                                                         InputStream inputStream, long contentLength,
                                                         String clientIp) {
         if (!uploadSemaphore.tryAcquire()) {
-            throw new IllegalStateException("服务器繁忙，并发上传任务已达上限，请稍后重试");
+            return CompletableFuture.failedFuture(new IllegalStateException("服务器繁忙，并发上传任务已达上限，请稍后重试"));
         }
 
         if (contentLength > 0 && contentLength > maxFileSize) {
             uploadSemaphore.release();
-            throw new IllegalArgumentException(String.format(
+            return CompletableFuture.failedFuture(new IllegalArgumentException(String.format(
                     "文件 '%s' 大小 %.1f MB 超出限制 %.1f MB",
                     filename, contentLength / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
-            ));
+            )));
         }
 
         String uploadId = UUID.randomUUID().toString();
@@ -127,167 +140,75 @@ public class TrueStreamingFileService {
         progress.setTotalBytes(contentLength);
         activeUploads.put(uploadId, progress);
 
-        CompletableFuture<String> uploadFuture = new CompletableFuture<>();
-
-        uploadExecutor.submit(() -> {
-            try {
-                processDirectStreamUpload(connection, progress, remotePath, filename, inputStream);
-                // 只有在没有异常的情况下，才算成功
-                if ("completed".equals(progress.getStatus())) {
-                    uploadFuture.complete(uploadId);
-                } else {
-                    // 对于已处理的取消或失败情况，也视为异常完成
-                    uploadFuture.completeExceptionally(new RuntimeException(
-                            progress.getErrorMessage() != null ? progress.getErrorMessage() : "Upload did not complete successfully. Status: " + progress.getStatus()
-                    ));
-                }
-            } catch (Exception e) {
-                // 捕获未预料的异常
-                uploadFuture.completeExceptionally(e);
-            } finally {
-                // 延迟删除进度记录，给前端足够时间查询最终状态
-                CompletableFuture.delayedExecutor(30, TimeUnit.SECONDS)
-                    .execute(() -> activeUploads.remove(uploadId));
-                uploadSemaphore.release();
-            }
-        });
-
         log.info("已接受新的上传任务 [ID: {}], 文件: {}, 目标路径: {}", uploadId, filename, remotePath);
-        return uploadFuture;
+
+        return CompletableFuture.supplyAsync(() -> {
+                    processDirectStreamUpload(connection, progress, remotePath, filename, inputStream);
+                    return uploadId;
+                }, uploadTaskExecutor)
+                .whenComplete((id, ex) -> {
+                    CompletableFuture.delayedExecutor(30, TimeUnit.SECONDS)
+                            .execute(() -> activeUploads.remove(uploadId));
+                    uploadSemaphore.release();
+                });
     }
 
     /**
-     * 处理直接流式上传的核心逻辑。
-     * 此方法在后台线程中执行。
+     * 处理直接流式上传的核心逻辑。此方法在后台线程中执行。
+     *
+     * @param connection  SSH连接对象
+     * @param progress    上传进度跟踪对象
+     * @param remotePath  远程目录
+     * @param filename    文件名
+     * @param inputStream 数据输入流
      */
     private void processDirectStreamUpload(SshConnection connection, StreamingProgress progress,
                                            String remotePath, String filename, InputStream inputStream) {
         String fullRemotePath = Paths.get(remotePath, filename).toString().replace('\\', '/');
         String tempRemotePath = fullRemotePath + ".tmp";
 
-        // 开始传输日志
-        log.info("开始流式上传 [ID: {}]: 文件 {} -> {}, 预期大小: {} bytes ({} MB)",
-                progress.getUploadId(), filename, fullRemotePath,
-                progress.getTotalBytes(), String.format("%.2f", progress.getTotalBytes() / (1024.0 * 1024.0)));
-
         progress.setStatus("uploading");
         progress.setRemotePath(fullRemotePath);
+        log.info("开始流式上传 [ID: {}]: 文件 {} -> {}, 预期大小: {} bytes",
+                progress.getUploadId(), filename, fullRemotePath,
+                progress.getTotalBytes() > 0 ? progress.getTotalBytes() : "未知");
 
         ChannelSftp sftpChannel = null;
         try {
             sftpChannel = connection.getOrCreateSftpChannel();
+            try (OutputStream sftpOutputStream = sftpChannel.put(tempRemotePath);
+                 InputStream trackingInputStream = new ProgressTrackingInputStream(inputStream, progress)) {
 
-            try (OutputStream sftpOutputStream = sftpChannel.put(tempRemotePath)) {
-                byte[] buffer = new byte[chunkSize];
-                long lastReportTime = System.currentTimeMillis();
-                int bytesRead;
-
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    if (progress.isCancelled()) {
-                        progress.setStatus("cancelled");
-                        progress.setErrorMessage(String.format("文件 '%s' 的上传已被取消", filename));
-                        log.info("上传被用户取消 [ID: {}]", progress.getUploadId());
-                        cleanupTemporaryFile(sftpChannel, tempRemotePath);
-                        // 注释掉STOMP通知，避免与前端新的流式上传机制冲突
-                        // sendUploadNotification(progress.getSessionId(), "upload_cancelled", progress.getErrorMessage(), fullRemotePath);
-                        return;
-                    }
-
-                    sftpOutputStream.write(buffer, 0, bytesRead);
-                    long newTotal = progress.getTransferredBytes().addAndGet(bytesRead);
-
-                    if (maxFileSize > 0 && newTotal > maxFileSize) {
-                        throw new IOException(String.format(
-                                "文件大小超出限制，已传输 %.1f MB，限制 %.1f MB",
-                                newTotal / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
-                        ));
-                    }
-
-                    long currentTime = System.currentTimeMillis();
-                    if (currentTime - lastReportTime > 1000) {
-                        // 添加详细的传输日志（每秒打印一次）
-                        if (progress.getTotalBytes() > 0) {
-                            double percentage = (double) newTotal / progress.getTotalBytes() * 100;
-                            double mbTransferred = newTotal / (1024.0 * 1024.0);
-                            double mbTotal = progress.getTotalBytes() / (1024.0 * 1024.0);
-                            long duration = currentTime - progress.getStartTime();
-                            double speedMBps = duration > 0 ? mbTransferred * 1000.0 / duration : 0;
-
-                            log.info("传输进度 [ID: {}]: {} MB / {} MB ({}%) - 平均速度: {} MB/s",
-                                    progress.getUploadId(),
-                                    String.format("%.2f", mbTransferred),
-                                    String.format("%.2f", mbTotal),
-                                    String.format("%.2f", percentage),
-                                    String.format("%.2f", speedMBps));
-                        } else {
-                            double mbTransferred = newTotal / (1024.0 * 1024.0);
-                            log.info("传输进度 [ID: {}]: {} MB (总大小未知)",
-                                    progress.getUploadId(), String.format("%.2f", mbTransferred));
-                        }
-
-                        sendProgressUpdate(progress);
-                        lastReportTime = currentTime;
-                    }
-
-                    throttle(progress);
-                }
-                sftpOutputStream.flush();
+                trackingInputStream.transferTo(sftpOutputStream);
             }
 
             sftpChannel.rename(tempRemotePath, fullRemotePath);
 
             progress.setStatus("completed");
-            long duration = System.currentTimeMillis() - progress.getStartTime();
-            long finalBytes = progress.getTransferredBytes().get();
-
-            // 完成时的详细日志
-            log.info("流式上传完成 [ID: {}]: 最终传输 {} bytes ({} MB), 耗时: {} ms",
-                    progress.getUploadId(), finalBytes, String.format("%.2f", finalBytes / (1024.0 * 1024.0)), duration);
-
-            // 新增详细日志，包含文件路径、大小、耗时、平均速度
-            double mbSize = finalBytes / (1024.0 * 1024.0);
-            double avgSpeed = duration > 0 ? mbSize * 1000.0 / duration : 0;
-            log.info("流式上传完成 [ID: {}]: {}, 大小: {} MB, 耗时: {} ms, 平均速度: {} MB/s",
-                    progress.getUploadId(),
-                    fullRemotePath,
-                    String.format("%.2f", mbSize),
-                    duration,
-                    String.format("%.2f", avgSpeed));
-
-            if (progress.getTotalBytes() > 0 && finalBytes != progress.getTotalBytes()) {
-                log.warn("传输大小不匹配 [ID: {}]: 预期 {} bytes, 实际 {} bytes",
-                        progress.getUploadId(), progress.getTotalBytes(), finalBytes);
-            }
-
-            // 🔥 关键修复：发送完成状态的STOMP消息
             sendProgressUpdate(progress);
-
-            logUploadCompletion(progress, duration);
-            // 注释掉STOMP通知，避免与前端新的流式上传机制冲突
-            // sendUploadNotification(progress.getSessionId(), "upload_completed", String.format("文件 '%s' 上传成功", filename), fullRemotePath);
+            logUploadCompletion(progress);
 
         } catch (Exception e) {
-            progress.setStatus("failed");
+            progress.setStatus(progress.isCancelled() ? "cancelled" : "failed");
             progress.setErrorMessage(e.getMessage());
             log.error("流式上传失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage(), e);
+
+            sendProgressUpdate(progress);
 
             if (sftpChannel != null && sftpChannel.isConnected()) {
                 cleanupTemporaryFile(sftpChannel, tempRemotePath);
             } else {
                 cleanupTemporaryFile(connection, tempRemotePath);
             }
-
-            // 注释掉STOMP通知，避免与前端新的流式上传机制冲突
-            // sendUploadNotification(progress.getSessionId(), "upload_failed", "上传失败: " + e.getMessage(), progress.getRemotePath());
+            throw new RuntimeException("Upload failed for " + progress.getFilename(), e);
         }
     }
 
-
     /**
-     * 获取指定ID的上传任务的当前进度。
+     * 获取指定ID上传任务的当前进度。
      *
      * @param uploadId 上传任务的唯一ID
-     * @return 包含进度信息的JSON字符串，如果任务不存在则返回null
+     * @return 包含进度信息的JSON字符串；如果任务不存在，则返回null
      */
     public String getUploadProgress(String uploadId) {
         try {
@@ -299,26 +220,19 @@ public class TrueStreamingFileService {
             long transferred = progress.getTransferredBytes().get();
             long total = progress.getTotalBytes();
             Double percentage = (total > 0) ? (double) transferred / total * 100 : null;
-
             long duration = System.currentTimeMillis() - progress.getStartTime();
 
-            // 计算瞬时速度（最近的传输速度，而不是总平均速度）
             long speed = 0;
-            long currentTime = System.currentTimeMillis();
-
             synchronized (progress) {
+                long currentTime = System.currentTimeMillis();
                 long timeSinceLastUpdate = currentTime - progress.getLastProgressTime();
                 long bytesSinceLastUpdate = transferred - progress.getLastProgressBytes();
 
-                if (timeSinceLastUpdate > 0) {
-                    // 计算瞬时速度
+                if (timeSinceLastUpdate > 200) {
                     speed = bytesSinceLastUpdate * 1000 / timeSinceLastUpdate;
-
-                    // 更新跟踪信息
                     progress.setLastProgressTime(currentTime);
                     progress.setLastProgressBytes(transferred);
-                } else if (duration > 100) {
-                    // 如果没有瞬时数据，回退到总体平均速度
+                } else if (duration > 500) {
                     speed = transferred * 1000 / duration;
                 }
             }
@@ -341,7 +255,7 @@ public class TrueStreamingFileService {
      * 请求取消一个正在进行的上传任务。
      *
      * @param uploadId 要取消的上传任务的ID
-     * @return 如果任务存在并被成功标记为取消，则返回true；否则返回false。
+     * @return 如果任务存在且尚未被取消，则返回true；否则返回false
      */
     public boolean cancelUpload(String uploadId) {
         StreamingProgress progress = activeUploads.get(uploadId);
@@ -353,10 +267,17 @@ public class TrueStreamingFileService {
         return false;
     }
 
+    /**
+     * 根据配置的速率限制对上传进行节流。
+     *
+     * @param progress 上传进度对象
+     * @throws InterruptedException 如果线程被中断
+     */
     private void throttle(StreamingProgress progress) throws InterruptedException {
         if (throttleBytesPerSecond <= 0) return;
         long elapsedTime = System.currentTimeMillis() - progress.getStartTime();
         if (elapsedTime == 0) return;
+
         long expectedBytes = (elapsedTime * throttleBytesPerSecond) / 1000;
         long actualBytes = progress.getTransferredBytes().get();
         if (actualBytes > expectedBytes) {
@@ -367,6 +288,12 @@ public class TrueStreamingFileService {
         }
     }
 
+    /**
+     * 清理远程服务器上的临时文件（通过新建SFTP通道）。
+     *
+     * @param connection     SSH连接对象
+     * @param tempRemotePath 临时文件路径
+     */
     private void cleanupTemporaryFile(SshConnection connection, String tempRemotePath) {
         try {
             ChannelSftp sftpChannel = connection.getOrCreateSftpChannel();
@@ -376,6 +303,12 @@ public class TrueStreamingFileService {
         }
     }
 
+    /**
+     * 清理远程服务器上的临时文件（通过已连接的SFTP通道）。
+     *
+     * @param sftpChannel    SFTP通道
+     * @param tempRemotePath 临时文件路径
+     */
     private void cleanupTemporaryFile(ChannelSftp sftpChannel, String tempRemotePath) {
         try {
             sftpChannel.rm(tempRemotePath);
@@ -387,17 +320,31 @@ public class TrueStreamingFileService {
         }
     }
 
-    private void logUploadCompletion(StreamingProgress progress, long duration) {
+    /**
+     * 记录上传完成的详细日志。
+     *
+     * @param progress 上传进度对象
+     */
+    private void logUploadCompletion(StreamingProgress progress) {
+        long duration = System.currentTimeMillis() - progress.getStartTime();
         long totalBytes = progress.getTransferredBytes().get();
-        double speedBytesPerSec = duration > 0 ? (totalBytes * 1000.0 / duration) : 0;
         double totalMB = totalBytes / (1024.0 * 1024.0);
-        double speedMBPerSec = speedBytesPerSec / (1024.0 * 1024.0);
+        double speedMBps = duration > 0 ? (totalMB * 1000.0 / duration) : 0;
         log.info("流式上传完成 [ID: {}]: {}, 大小: {:.2f} MB, 耗时: {}ms, 平均速度: {:.2f} MB/s",
-                progress.getUploadId(), progress.getRemotePath(), totalMB, duration, speedMBPerSec);
+                progress.getUploadId(), progress.getRemotePath(), totalMB, duration, speedMBps);
+
+        if (progress.getTotalBytes() > 0 && totalBytes != progress.getTotalBytes()) {
+            log.warn("传输大小不匹配 [ID: {}]: 预期 {} bytes, 实际 {} bytes",
+                    progress.getUploadId(), progress.getTotalBytes(), totalBytes);
+        }
     }
 
+    /**
+     * 发送进度更新到前端。
+     *
+     * @param progress 上传进度对象
+     */
     private void sendProgressUpdate(StreamingProgress progress) {
-        // 恢复STOMP进度通知 - 为真实进度跟踪提供支持
         try {
             String progressJson = getUploadProgress(progress.getUploadId());
             if (progressJson != null) {
@@ -408,23 +355,82 @@ public class TrueStreamingFileService {
         }
     }
 
-    private void sendUploadNotification(String sessionId, String type, String message, String path) {
-        try {
-            Map<String, Object> notification = Map.of(
-                    "type", type, "message", message, "path", path, "timestamp", System.currentTimeMillis()
-            );
-            sessionManager.sendToSession(sessionId, "/queue/upload/notification", objectMapper.writeValueAsString(notification));
-        } catch (Exception e) {
-            log.warn("发送上传通知失败 [SessionID: {}]: {}", sessionId, e.getMessage());
-        }
-    }
-
+    /**
+     * 格式化速度显示字符串。
+     *
+     * @param bytesPerSecond 速度（字节/秒）
+     * @return 格式化后的速度字符串
+     */
     private String formatSpeed(long bytesPerSecond) {
         if (bytesPerSecond < 1024) return bytesPerSecond + " B/s";
         if (bytesPerSecond < 1024 * 1024) return String.format("%.1f KB/s", bytesPerSecond / 1024.0);
         return String.format("%.1f MB/s", bytesPerSecond / (1024.0 * 1024.0));
     }
 
+    /**
+     * 采用装饰器模式，包装原始输入流以添加进度跟踪、取消检查和流量控制功能。
+     */
+    private class ProgressTrackingInputStream extends FilterInputStream {
+        private final StreamingProgress progress;
+        private long lastReportTime = System.currentTimeMillis();
+
+        /**
+         * 构造方法。
+         *
+         * @param in       原始输入流
+         * @param progress 上传进度对象
+         */
+        protected ProgressTrackingInputStream(InputStream in, StreamingProgress progress) {
+            super(in);
+            this.progress = progress;
+        }
+
+        /**
+         * 读取数据并进行进度跟踪、取消检查和节流。
+         *
+         * @param b   缓冲区
+         * @param off 偏移量
+         * @param len 读取长度
+         * @return 实际读取的字节数
+         * @throws IOException IO异常或被取消
+         */
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (progress.isCancelled()) {
+                throw new IOException(String.format("文件 '%s' 的上传已被用户取消", progress.getFilename()));
+            }
+
+            int bytesRead = super.read(b, off, len);
+            if (bytesRead > 0) {
+                long newTotal = progress.getTransferredBytes().addAndGet(bytesRead);
+
+                if (maxFileSize > 0 && newTotal > maxFileSize) {
+                    throw new IOException(String.format(
+                            "文件大小超出限制，已传输 %.1f MB，限制 %.1f MB",
+                            newTotal / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
+                    ));
+                }
+
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - lastReportTime > 1000) {
+                    sendProgressUpdate(progress);
+                    lastReportTime = currentTime;
+                }
+
+                try {
+                    throttle(progress);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Upload was interrupted during throttling", e);
+                }
+            }
+            return bytesRead;
+        }
+    }
+
+    /**
+     * 用于跟踪单个流式上传任务的状态和进度。
+     */
     @Data
     public static class StreamingProgress {
         private final String uploadId;
@@ -434,31 +440,79 @@ public class TrueStreamingFileService {
         private final String clientIp;
         private final AtomicLong transferredBytes = new AtomicLong(0);
         private final AtomicBoolean cancelled = new AtomicBoolean(false);
+
         private String status = "pending";
         private long totalBytes = -1;
         private String remotePath;
         private String errorMessage;
 
-        // 瞬时速度跟踪字段
-        private long lastProgressTime = System.currentTimeMillis();
+        // 用于计算瞬时速度
+        private long lastProgressTime;
         private long lastProgressBytes = 0;
 
+        /**
+         * 构造方法。
+         *
+         * @param uploadId  上传ID
+         * @param sessionId 会话ID
+         * @param filename  文件名
+         * @param clientIp  客户端IP
+         */
         public StreamingProgress(String uploadId, String sessionId, String filename, String clientIp) {
             this.uploadId = uploadId;
             this.sessionId = sessionId;
             this.filename = filename;
             this.clientIp = clientIp;
             this.startTime = System.currentTimeMillis();
+            this.lastProgressTime = this.startTime;
         }
 
-        public boolean isCancelled() { return cancelled.get(); }
-        public void setCancelled(boolean cancelled) { this.cancelled.set(cancelled); }
+        /**
+         * 判断是否已被取消。
+         *
+         * @return true表示已取消
+         */
+        public boolean isCancelled() {
+            return cancelled.get();
+        }
+
+        /**
+         * 设置取消状态。
+         *
+         * @param cancelled 是否取消
+         */
+        public void setCancelled(boolean cancelled) {
+            this.cancelled.set(cancelled);
+        }
     }
 
+    /**
+     * 用于向客户端发送进度更新的数据传输对象 (DTO)。
+     * 使用 record 以获得简洁和不变性。
+     *
+     * @param uploadId       上传ID
+     * @param filename       文件名
+     * @param status         状态
+     * @param transferredBytes 已传输字节数
+     * @param totalBytes     总字节数
+     * @param remotePath     远程路径
+     * @param percentage     完成百分比
+     * @param speed          当前速度
+     * @param speedFormatted 格式化速度
+     * @param error          错误信息
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record UploadProgressDto(
-            String uploadId, String filename, String status,
-            long transferredBytes, long totalBytes, String remotePath,
-            Double percentage, Long speed, String speedFormatted, String error
-    ) {}
+            String uploadId,
+            String filename,
+            String status,
+            long transferredBytes,
+            long totalBytes,
+            String remotePath,
+            Double percentage,
+            Long speed,
+            String speedFormatted,
+            String error
+    ) {
+    }
 }

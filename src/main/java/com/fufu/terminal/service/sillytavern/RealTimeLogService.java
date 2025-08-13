@@ -221,8 +221,7 @@ public class RealTimeLogService {
                     long lastSendTime = System.currentTimeMillis();
 
                     while (running && (line = reader.readLine()) != null) {
-                        if (line.trim().isEmpty()) continue;
-
+                        // 保留所有日志行，包括空行，因为它们可能是JSON格式的一部分
                         logBuffer.add(line);
                         batchLines.add(line);
 
@@ -279,10 +278,15 @@ public class RealTimeLogService {
                     .isComplete(isComplete)
                     .build();
 
-            messagingTemplate.convertAndSend(
-                    "/queue/sillytavern/realtime-logs-user" + sessionId,
-                    Map.of("type", "realtime-logs", "payload", logDto)
+            // 使用与STOMP控制器一致的消息格式和路径
+            Map<String, Object> message = Map.of(
+                    "type", "realtime-logs",
+                    "success", true,
+                    "payload", logDto
             );
+            
+            // 发送到统一的路径 /user/queue/sillytavern/realtime-logs
+            messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/realtime-logs", message);
         }
 
         /**
@@ -293,14 +297,13 @@ public class RealTimeLogService {
         private void pushErrorToClient(String errorMessage) {
             Map<String, Object> errorMsg = Map.of(
                     "type", "realtime-logs-error",
+                    "success", false,
                     "message", errorMessage,
                     "sessionId", sessionId
             );
 
-            messagingTemplate.convertAndSend(
-                    "/queue/sillytavern/realtime-logs-user" + sessionId,
-                    errorMsg
-            );
+            // 发送到统一的路径 /user/queue/sillytavern/realtime-logs
+            messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/realtime-logs", errorMsg);
         }
 
         /**

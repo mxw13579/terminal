@@ -127,6 +127,10 @@
             </div>
             <h6>暂无日志数据</h6>
             <p class="text-muted">开启实时日志查看器以接收日志推送</p>
+            <!-- 调试信息 -->
+            <div style="margin-top: 10px; font-size: 12px; color: #999;">
+              调试: filteredLogs.length={{ logs.length }}, rawLogs.length={{ rawLogs.value?.length || 0 }}
+            </div>
           </div>
           
           <div v-else class="log-container-wrapper">
@@ -135,11 +139,8 @@
                 v-for="(log, index) in logs" 
                 :key="index"
                 class="log-line"
-                :class="getLogLineClass(log)"
               >
-                <span class="log-timestamp">{{ getLogTimestamp(log) }}</span>
-                <span class="log-level">{{ getLogLevel(log) }}</span>
-                <span class="log-content">{{ getLogContent(log) }}</span>
+                {{ log }}
               </div>
             </div>
             
@@ -169,47 +170,7 @@
           </div>
         </div>
 
-        <!-- 日志操作按钮 -->
-        <div v-if="logs.length > 0" class="log-actions mt-3">
-          <div class="row">
-            <div class="col-md-6">
-              <button @click="downloadLogs" class="btn btn-outline-primary btn-sm">
-                <i class="fas fa-download me-1"></i>
-                下载日志
-              </button>
-              
-              <button @click="copyLogs" class="btn btn-outline-secondary btn-sm ms-2">
-                <i class="fas fa-copy me-1"></i>
-                复制到剪贴板
-              </button>
-            </div>
-            
-            <div class="col-md-6 text-end">
-              <div class="log-search">
-                <div class="input-group">
-                  <span class="input-group-text">
-                    <i class="fas fa-search"></i>
-                  </span>
-                  <input
-                    type="text"
-                    class="form-control form-control-sm"
-                    placeholder="搜索日志..."
-                    v-model="searchTerm"
-                    @input="onSearchChange"
-                  />
-                  <button 
-                    v-if="searchTerm" 
-                    class="btn btn-outline-secondary btn-sm" 
-                    type="button"
-                    @click="clearSearch"
-                  >
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- 日志操作按钮 - 已移除下载、复制和搜索功能 -->
 
         <!-- 错误消息 -->
         <div v-if="errorMessage" class="alert alert-danger mt-3" role="alert">
@@ -246,9 +207,38 @@ export default {
     const sillyTavern = useSillyTavern()
     const { connectionState, getStompClient } = useConnectionManager()
     
-    // 从useSillyTavern获取logs数据
-    const logs = sillyTavern.logs
-    console.log('RealtimeLogViewer使用的logs数据源:', logs.value?.length || 0)
+    // 直接从单例状态获取logs和实时日志状态
+    const sillyTavernLogs = sillyTavern.logs
+    const isRealtimeActive = sillyTavern.isRealtimeLogsActive // 使用全局状态
+    
+    console.log('RealtimeLogViewer获取sillyTavern.logs引用:', {
+      isRef: !!sillyTavernLogs,
+      isReadonly: sillyTavernLogs?._v_isReadonly,
+      initialLength: sillyTavernLogs.value?.length || 0,
+      logsType: typeof sillyTavernLogs,
+      logsValue: sillyTavernLogs.value,
+      sillyTavernRef: !!sillyTavern,
+      sillyTavernType: typeof sillyTavern,
+      sillyTavernKeys: Object.keys(sillyTavern).slice(0, 10)
+    })
+    
+    // 添加调试监听 - 监听readonly引用
+    watch(sillyTavernLogs, (newLogs) => {
+      console.log('🔍 RealtimeLogViewer检测到sillyTavern.logs变化:', {
+        newLength: newLogs?.length || 0,
+        newLogs: newLogs?.slice(-3) || [],
+        timestamp: new Date().toLocaleTimeString(),
+        isArray: Array.isArray(newLogs)
+      })
+    }, { deep: true, immediate: true })
+    
+    // 同时监听整个sillyTavern对象的变化
+    watch(() => sillyTavern.logs.value, (newLogs) => {
+      console.log('🎯 直接监听sillyTavern.logs.value变化:', {
+        newLength: newLogs?.length || 0,
+        sample: newLogs?.slice(-2) || []
+      })
+    }, { immediate: true })
     
     // 从统一连接管理器获取STOMP连接状态
     const isConnected = computed(() => connectionState.isConnected)
@@ -265,11 +255,9 @@ export default {
       return client
     })
     
-    // 响应式状态（移除了独立的logs）
+    // 响应式状态（移除了 isRealtimeActive - 现在使用全局状态）
     const totalLines = ref(0)
-    const isRealtimeActive = ref(false)
     const autoScroll = ref(true)
-    const searchTerm = ref('')
     const lastUpdateTime = ref('')
     const errorMessage = ref('')
     const successMessage = ref('')
@@ -290,10 +278,49 @@ export default {
       return 'inactive'
     })
     
-    const filteredLogs = computed(() => {
-      if (!searchTerm.value) return logs.value
-      const term = searchTerm.value.toLowerCase()
-      return logs.value.filter(log => log.toLowerCase().includes(term))
+    // 对日志按时间戳排序，但保持原始格式
+    const displayLogs = computed(() => {
+      console.log('计算displayLogs，当前sillyTavernLogs长度:', sillyTavernLogs.value?.length || 0)
+      if (!sillyTavernLogs.value || sillyTavernLogs.value.length === 0) {
+        console.log('sillyTavernLogs为空，返回空数组')
+        return []
+      }
+      
+      // 清理ANSI转义字符和其他转义序列，但保持原始格式
+      const cleanedLogs = sillyTavernLogs.value.map(log => {
+        if (typeof log !== 'string') return log
+        
+        return log
+          // 移除ANSI转义序列 (如 \x1B[1m\x1B[32m)
+          .replace(/\x1B\[[0-9;]*[mGK]/g, '')
+          // 移除其他控制字符
+          .replace(/\x1B\]2;[^\x1B]*\x1B\\/g, '')
+          // 只移除行尾的空白，保持行首缩进和空行
+          .replace(/\s+$/, '')
+      })
+      
+      // 按时间戳排序日志（如果有时间戳的话）
+      const sortedLogs = cleanedLogs.slice().sort((a, b) => {
+        // 提取时间戳正则：2025-08-13T14:18:38.501597355Z
+        const timestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)/
+        const timestampA = a.match(timestampRegex)?.[1]
+        const timestampB = b.match(timestampRegex)?.[1]
+        
+        // 如果两个都有时间戳，按时间排序
+        if (timestampA && timestampB) {
+          return new Date(timestampA).getTime() - new Date(timestampB).getTime()
+        }
+        
+        // 如果只有一个有时间戳，有时间戳的排在前面
+        if (timestampA && !timestampB) return -1
+        if (!timestampA && timestampB) return 1
+        
+        // 如果都没有时间戳，保持原顺序
+        return 0
+      })
+      
+      console.log('返回排序后的日志:', sortedLogs.length)
+      return sortedLogs
     })
     
     // 方法
@@ -374,76 +401,26 @@ export default {
         return
       }
       
-      const client = stompClient.value
-      if (!client || !client.connected || (typeof client.send !== 'function' && typeof client.publish !== 'function')) {
-        errorMessage.value = 'STOMP客户端未就绪或不可用'
-        console.error('STOMP客户端状态:', {
-          client: !!client,
-          connected: client?.connected,
-          hasSendMethod: client && typeof client.send === 'function',
-          hasPublishMethod: client && typeof client.publish === 'function'
-        })
-        return
-      }
-      
       errorMessage.value = ''
       successMessage.value = ''
       
-      const request = {
-        containerName: props.containerName,
-        maxLines: logConfig.maxLines
-      }
-      
-      try {
-        // 优先使用publish方法（现代STOMP客户端）
-        if (typeof client.publish === 'function') {
-          client.publish({
-            destination: '/app/sillytavern/start-realtime-logs',
-            body: JSON.stringify(request)
-          })
-        } else {
-          // 回退到send方法（传统客户端）
-          client.send('/app/sillytavern/start-realtime-logs', {}, JSON.stringify(request))
-        }
-      } catch (error) {
-        errorMessage.value = '启动实时日志失败: ' + error.message
+      // 使用全局的启动方法
+      const success = sillyTavern.startRealtimeLogs(props.containerName, logConfig.maxLines)
+      if (!success) {
+        errorMessage.value = '启动实时日志失败'
       }
     }
     
     const stopRealtimeLogs = () => {
-      if (!isConnected.value) return
-      
-      const client = stompClient.value
-      if (!client || !client.connected || (typeof client.send !== 'function' && typeof client.publish !== 'function')) {
-        console.warn('STOMP客户端未就绪，无法停止实时日志')
-        isRealtimeActive.value = false
-        return
-      }
-      
-      try {
-        // 优先使用publish方法（现代STOMP客户端）
-        if (typeof client.publish === 'function') {
-          client.publish({
-            destination: '/app/sillytavern/stop-realtime-logs',
-            body: JSON.stringify({})
-          })
-        } else {
-          // 回退到send方法（传统客户端）
-          client.send('/app/sillytavern/stop-realtime-logs', {}, JSON.stringify({}))
-        }
-      } catch (error) {
-        console.error('停止实时日志失败:', error)
-        isRealtimeActive.value = false
-      }
+      // 使用全局的停止方法
+      sillyTavern.stopRealtimeLogs()
     }
     
     const clearLogs = () => {
-      // 不能直接清空useSillyTavern中的logs，因为那是readonly的
-      // 这里暂时不提供清空功能，或者可以通过sillyTavern的方法来清空
+      // 清空功能保留（可选）
       console.log('清空日志功能暂时不可用（logs由useSillyTavern管理）')
       totalLines.value = 0
       memoryInfo.value = null
-      searchTerm.value = ''
     }
     
     const scrollToTop = async () => {
@@ -460,47 +437,43 @@ export default {
       }
     }
     
-    const downloadLogs = () => {
-      const logText = filteredLogs.value.join('\\n')
-      const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${props.containerName}-logs-${new Date().toISOString().split('T')[0]}.txt`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      
-      URL.revokeObjectURL(url)
-      successMessage.value = '日志文件已下载'
-    }
-    
-    const copyLogs = async () => {
-      try {
-        const logText = filteredLogs.value.join('\\n')
-        await navigator.clipboard.writeText(logText)
-        successMessage.value = '日志已复制到剪贴板'
-      } catch (error) {
-        errorMessage.value = '复制失败: ' + error.message
+    // 监听自动滚动变化 - 使用sillyTavernLogs
+    watch(sillyTavernLogs, (newLogs) => {
+      console.log('🎯 watch触发，自动滚动条件:', {
+        autoScroll: autoScroll.value,
+        logsLength: newLogs?.length || 0,
+        shouldScroll: autoScroll.value && newLogs && newLogs.length > 0
+      })
+      if (autoScroll.value && newLogs && newLogs.length > 0) {
+        nextTick(() => scrollToBottom())
       }
-    }
+    }, { deep: true })
     
-    const onSearchChange = () => {
-      // 搜索逻辑在计算属性中处理
-    }
-    
-    const clearSearch = () => {
-      searchTerm.value = ''
-    }
+    // 监听displayLogs变化以调试
+    watch(displayLogs, (newDisplayLogs) => {
+      console.log('🔍 displayLogs变化:', {
+        length: newDisplayLogs?.length || 0,
+        isArray: Array.isArray(newDisplayLogs),
+        sample: newDisplayLogs?.slice(-2) || []
+      })
+    })
     
     // 生命周期 - 简化版本，不再重复订阅
     onMounted(() => {
-      console.log('RealtimeLogViewer mounted, 当前logs长度:', logs.value.length)
+      console.log('RealtimeLogViewer mounted, 当前sillyTavernLogs长度:', sillyTavernLogs.value?.length || 0)
+      console.log('🔍 挂载时调试信息:', {
+        sillyTavernLogsRef: !!sillyTavernLogs,
+        sillyTavernLogsType: typeof sillyTavernLogs,
+        sillyTavernLogsValue: sillyTavernLogs.value,
+        sillyTavernLogsIsArray: Array.isArray(sillyTavernLogs.value),
+        sillyTavernObject: !!sillyTavern,
+        sillyTavernKeys: sillyTavern ? Object.keys(sillyTavern) : []
+      })
       
       // 自动启动实时日志（如果连接已就绪）
       setTimeout(() => {
         if (isConnected.value && !isRealtimeActive.value) {
+          console.log('🚀 自动启动实时日志')
           startRealtimeLogs()
         }
       }, 1000) // 延迟1秒确保WebSocket连接稳定
@@ -513,20 +486,13 @@ export default {
       }
     })
     
-    // 监听自动滚动变化
-    watch(logs, () => {
-      if (autoScroll.value && logs.value.length > 0) {
-        nextTick(() => scrollToBottom())
-      }
-    }, { deep: true })
-    
     return {
       // 响应式状态
-      logs: filteredLogs,
+      logs: displayLogs,
+      rawLogs: sillyTavernLogs, // 使用正确的原始logs引用
       totalLines,
       isRealtimeActive,
       autoScroll,
-      searchTerm,
       lastUpdateTime,
       errorMessage,
       successMessage,
@@ -541,20 +507,12 @@ export default {
       // 方法
       getStatusText,
       getMemoryProgressClass,
-      getLogTimestamp,
-      getLogLevel,
-      getLogContent,
-      getLogLineClass,
       onConfigChange,
       startRealtimeLogs,
       stopRealtimeLogs,
       clearLogs,
       scrollToTop,
-      scrollToBottom,
-      downloadLogs,
-      copyLogs,
-      onSearchChange,
-      clearSearch
+      scrollToBottom
     }
   }
 }
@@ -688,82 +646,36 @@ export default {
 }
 
 .log-line {
-  display: flex;
+  display: block;
   margin-bottom: 1px;
   padding: 2px 0;
   border-radius: 2px;
   word-break: break-word;
+  text-align: left;
+  white-space: pre-wrap;
+  color: #e0e0e0;
 }
 
 .log-timestamp {
   color: #888;
-  width: 160px;
-  flex-shrink: 0;
-  margin-right: 8px;
   font-size: 0.8rem;
+  margin-right: 8px;
 }
 
 .log-level {
-  width: 60px;
-  flex-shrink: 0;
-  margin-right: 8px;
   font-weight: bold;
   font-size: 0.8rem;
+  margin-right: 8px;
 }
 
 .log-content {
   color: #e0e0e0;
-  flex: 1;
   word-break: break-word;
+  white-space: pre-wrap;
+  text-align: left;
 }
 
-.log-error {
-  background: rgba(220, 53, 69, 0.1);
-}
-
-.log-error .log-level {
-  color: #ff6b6b;
-}
-
-.log-error .log-content {
-  color: #ffcccb;
-}
-
-.log-warning {
-  background: rgba(255, 193, 7, 0.1);
-}
-
-.log-warning .log-level {
-  color: #ffc107;
-}
-
-.log-warning .log-content {
-  color: #fff3cd;
-}
-
-.log-info {
-  background: rgba(13, 202, 240, 0.1);
-}
-
-.log-info .log-level {
-  color: #0dcaf0;
-}
-
-.log-info .log-content {
-  color: #cff4fc;
-}
-
-.log-debug {
-  background: rgba(108, 117, 125, 0.1);
-}
-
-.log-debug .log-level {
-  color: #6c757d;
-}
-
-.log-debug .log-content {
-  color: #d3d3d4;
-}
+/* 移除不再使用的日志级别样式，因为已简化显示 */
 
 .scroll-controls {
   display: flex;
