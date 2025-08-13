@@ -25,25 +25,43 @@ export default defineConfig({
     strictPort: false, // 允许端口自动调整
     host: '0.0.0.0', // 允许外部访问
     proxy: {
-      // 代理API请求到后端 - 最重要的配置
+      // 代理API请求到后端 - 这是包含最终修复的配置
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8080', // 您的Spring Boot应用地址
         changeOrigin: true,
         secure: false,
-        timeout: 30000,
+
+        // 关键修复 #1: 我们告诉代理我们将自己处理请求体，以绕过其内部缓冲缺陷。
+        selfHandleRequest: true,
+        timeout: 1800000,
+
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
             console.error('❌ API代理错误:', err.message);
           });
-          proxy.on('proxyReq', (proxyReq, req, _res) => {
-            console.log('🔄 API代理请求:', req.method, req.url, '-> http://localhost:8080' + req.url);
+
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('🔄 API代理请求 (手动模式):', req.method, req.url);
+
+            // 关键修复 #2: 我们将浏览器发来的原始请求流(req)
+            // 通过管道直接连接到即将发往后端的代理请求流(proxyReq)。
+            // 这就像把两根水管直接拧在一起，数据直接流过，避免了代理的任何干预。
+            req.pipe(proxyReq);
+
+            // 增加一个错误处理，以防管道过程中出现问题
+            req.on('error', (err) => {
+              console.error('❌ 浏览器请求流错误:', err);
+              // 如果浏览器端的流出错（例如用户关闭了浏览器），则销毁到后端的连接
+              proxyReq.destroy();
+            });
           });
+
           proxy.on('proxyRes', (proxyRes, req, _res) => {
             console.log('✅ API代理响应:', req.method, req.url, '- Status:', proxyRes.statusCode);
           });
         }
       },
-      // 代理WebSocket连接到后端
+      // 代理WebSocket连接到后端，这部分无需修改
       '/ws': {
         target: 'http://localhost:8080',
         ws: true,

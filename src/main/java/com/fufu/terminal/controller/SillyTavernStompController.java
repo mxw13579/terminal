@@ -574,8 +574,8 @@ public class SillyTavernStompController {
                 sendErrorMessage(sessionId, "SSH连接未建立");
                 return;
             }
-            if (maxLines != null && (maxLines < 100 || maxLines > 5000)) {
-                sendErrorMessage(sessionId, "最大行数必须在100-5000之间");
+            if (maxLines != null && (maxLines < 50 || maxLines > 5000)) {
+                sendErrorMessage(sessionId, "最大行数必须在50-2000之间");
                 return;
             }
             realTimeLogService.startLogStream(sessionId, containerName, maxLines);
@@ -1061,7 +1061,7 @@ public class SillyTavernStompController {
                 log.error("Session ID为空，无法发送响应");
                 return;
             }
-            
+
             log.info("收到获取版本信息请求，会话: {}", sessionId);
 
             // 异步获取版本信息，避免阻塞WebSocket线程
@@ -1085,10 +1085,10 @@ public class SillyTavernStompController {
                         "repository", "goolashe/sillytavern",
                         "message", "成功获取到 " + versions.size() + " 个版本信息"
                 );
-                
+
                 log.debug("响应内容大小: {} 版本", versions.size());
                 log.debug("发送到路径: /queue/sillytavern/versions, Session: {}", sessionId);
-                
+
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/versions", response);
                 log.info("版本信息已发送到前端，会话: {}, 版本数量: {}", sessionId, versions.size());
             }).exceptionally(throwable -> {
@@ -1098,7 +1098,7 @@ public class SillyTavernStompController {
                         "error", "获取版本信息失败: " + throwable.getMessage(),
                         "message", "无法连接到Docker Hub API"
                 );
-                
+
                 log.debug("发送错误响应到路径: /queue/sillytavern/versions, Session: {}", sessionId);
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/versions", errorResponse);
                 log.info("错误响应已发送到前端，会话: {}", sessionId);

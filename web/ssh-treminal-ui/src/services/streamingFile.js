@@ -60,14 +60,25 @@ export class StreamingFileService {
      * @returns {string}
      */
     getApiUrl(path) {
-        // 在开发环境中，强制使用相对路径以利用Vite代理
-        if (import.meta.env.DEV || !this.backendBaseUrl) {
-            console.log(`使用相对路径: ${path}`);
+        // 强制在开发环境中使用相对路径以利用Vite代理
+        // 不管检测结果如何，只要端口是5173相关就使用相对路径
+        const currentPort = window.location.port;
+        const isDevelopment = import.meta.env.DEV || 
+                            currentPort === '5173' || 
+                            currentPort.startsWith('517') ||
+                            !this.backendBaseUrl;
+        
+        if (isDevelopment) {
+            console.log(`开发环境 - 使用相对路径: ${path}`, {
+                port: currentPort,
+                isDev: import.meta.env.DEV,
+                backendBaseUrl: this.backendBaseUrl
+            });
             return path;
         }
         
         const fullUrl = this.backendBaseUrl + path;
-        console.log(`使用完整URL: ${fullUrl}`);
+        console.log(`生产环境 - 使用完整URL: ${fullUrl}`);
         return fullUrl;
     }
 
@@ -237,7 +248,7 @@ export class StreamingFileService {
     }
 
     /**
-     * 真正的流式上传文件 - 直接从浏览器流传输到SFTP
+     * 真正的流式上传文件 - 适配新的阻塞式后端API
      * @param {File} file - 单个文件
      * @param {string} remotePath - 远程路径
      * @param {Function} onProgress - 进度回调
@@ -260,18 +271,27 @@ export class StreamingFileService {
                 throw new Error('未找到有效的会话ID，请确保SSH连接已建立');
             }
 
-            // 构建流式上传URL
-            const uploadUrl = this.getApiUrl('/api/streaming/upload');
+            // 构建流式上传URL - 强制使用相对路径确保通过Vite代理
+            const uploadPath = '/api/streaming/upload';
             const params = new URLSearchParams({
                 sessionId,
                 remotePath,
                 filename: file.name
             });
-            const finalUrl = `${uploadUrl}?${params.toString()}`;
+            const finalUrl = `${uploadPath}?${params.toString()}`;
 
             // 创建XMLHttpRequest用于进度追踪
             const xhr = new XMLHttpRequest();
             const uploadId = this.generateUploadId();
+            
+            console.log('流式上传配置:', {
+                uploadPath,
+                finalUrl,
+                uploadId,
+                fileSize: file.size,
+                currentHost: window.location.host,
+                sessionId: sessionId.substring(0, 8) + '...'
+            });
             
             // 存储上传信息
             this.activeUploads.set(uploadId, {
@@ -282,7 +302,7 @@ export class StreamingFileService {
             });
 
             return new Promise((resolve, reject) => {
-                // 进度处理
+                // 使用浏览器原生进度事件 - 这是真正的上传进度
                 xhr.upload.onprogress = (event) => {
                     if (event.lengthComputable && onProgress) {
                         const percentage = Math.round((event.loaded / event.total) * 100);
@@ -300,23 +320,24 @@ export class StreamingFileService {
                     }
                 };
 
-                // 完成处理
+                // 上传完成处理 - 现在意味着整个文件已100%成功上传
                 xhr.onload = () => {
                     this.activeUploads.delete(uploadId);
                     
                     if (xhr.status >= 200 && xhr.status < 300) {
                         try {
                             const response = JSON.parse(xhr.responseText);
+                            
                             if (onComplete) {
                                 onComplete({
                                     uploadId: response.uploadId || uploadId,
-                                    status: 'streaming',
-                                    message: '真正流式上传启动成功'
+                                    status: 'completed',
+                                    message: '文件流式传输完成！'
                                 });
                             }
                             resolve(response.uploadId || uploadId);
                         } catch (e) {
-                            const error = new Error('解析响应失败');
+                            const error = new Error('解析响应失败: ' + e.message);
                             if (onError) onError(error);
                             reject(error);
                         }
@@ -338,12 +359,15 @@ export class StreamingFileService {
                             }
                         }
                         
-                        console.error('流式上传HTTP错误:', {
+                        console.error('流式上传HTTP错误详情:', {
                             status: xhr.status,
                             statusText: xhr.statusText,
                             responseText: xhr.responseText,
+                            responseHeaders: xhr.getAllResponseHeaders(),
                             uploadId,
-                            filename: file.name
+                            filename: file.name,
+                            finalUrl,
+                            contentLength: file.size
                         });
                         
                         const error = new Error(errorMessage);
@@ -352,15 +376,21 @@ export class StreamingFileService {
                     }
                 };
 
-                // 错误处理
+                // 网络错误处理
                 xhr.onerror = () => {
                     this.activeUploads.delete(uploadId);
-                    const error = new Error('流式上传网络错误');
+                    const error = new Error('流式上传网络错误：连接失败');
+                    console.error('流式上传网络错误:', {
+                        readyState: xhr.readyState,
+                        status: xhr.status,
+                        filename: file.name,
+                        uploadId
+                    });
                     if (onError) onError(error);
                     reject(error);
                 };
 
-                // 取消处理
+                // 上传中止处理
                 xhr.onabort = () => {
                     this.activeUploads.delete(uploadId);
                     const error = new Error('流式上传已取消');
@@ -369,6 +399,13 @@ export class StreamingFileService {
                 };
 
                 // 发送流式请求
+                console.log('开始流式传输:', {
+                    url: finalUrl,
+                    filename: file.name,
+                    size: file.size,
+                    type: 'application/octet-stream'
+                });
+                
                 xhr.open('POST', finalUrl);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
                 xhr.setRequestHeader('Content-Length', file.size.toString());

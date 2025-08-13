@@ -341,10 +341,13 @@ export function useTerminal(options = {}) {
                     case 'sftp_download_response':
                         handleSftpDownloadResponse(data);
                         break;
-                    // 不再处理WebSocket分片上传消息
+                    // 彻底禁用旧的WebSocket上传消息处理，避免与新流式上传冲突
                     case 'sftp_remote_progress':
                     case 'sftp_upload_final_success':
-                        handleSftpUploadResponse(data);
+                    case 'upload_completed':
+                    case 'upload_cancelled':
+                    case 'upload_failed':
+                        console.log('忽略旧的上传相关STOMP消息:', messageType, '- 现已使用HTTP流式传输');
                         break;
                     case 'sftp_error':
                         handleSftpError(data);
@@ -476,7 +479,11 @@ export function useTerminal(options = {}) {
     };
 
     const handleSftpUploadResponse = (data) => {
-        // 保留远程进度监控
+        // 使用新的流式上传架构，不再处理旧的STOMP上传消息
+        console.log('收到旧的STOMP上传消息，已忽略:', data.type);
+        
+        // 注释掉旧的逻辑以避免与新的流式上传冲突
+        /*
         if (data.type === 'sftp_remote_progress') {
             remoteUploadProgress.value = data.progress;
             sftpUploadSpeed.value = formatSpeed(data.speed);
@@ -489,6 +496,7 @@ export function useTerminal(options = {}) {
             onShowModal(data.message || "上传成功!");
             fetchSftpList(data.path);
         }
+        */
     };
 
     const handleSftpDownloadResponse = (data) => {
@@ -699,9 +707,12 @@ export function useTerminal(options = {}) {
         sftpError.value = '';
         localUploadProgress.value = 0;
         remoteUploadProgress.value = 0;
-        uploadStatusText.value = `准备流式传输: ${file.name}`;
+        uploadStatusText.value = `开始流式传输: ${file.name}`;
         uploadSpeed.value = '';
         sftpUploadSpeed.value = '';
+        
+        // 标记是否已处理完成
+        let uploadHandled = false;
         
         try {
             // 进度回调
@@ -711,12 +722,22 @@ export function useTerminal(options = {}) {
                 uploadStatusText.value = `正在流式传输: ${progressData.percentage}%`;
             };
 
-            // 完成回调
+            // 完成回调 - 现在意味着整个文件已100%成功上传
             const onComplete = (result) => {
                 uploadStatusText.value = '流式传输完成！';
+                localUploadProgress.value = 100; // 确保进度条显示100%
                 onShowModal(`文件 "${file.name}" 流式传输成功`);
-                // 刷新文件列表
-                setTimeout(() => fetchSftpList(currentSftpPath.value), 1000);
+                
+                // 立即刷新文件列表，因为文件已经完全上传完成
+                fetchSftpList(currentSftpPath.value);
+                
+                // 短暂延迟后隐藏进度条
+                setTimeout(() => {
+                    isSftpActionInProgress.value = false;
+                }, 1500);
+                
+                // 标记已成功处理，避免finally块重复设置
+                uploadHandled = true;
             };
 
             // 错误回调
@@ -755,7 +776,10 @@ export function useTerminal(options = {}) {
                 onShowModal(`启动上传失败: ${error.message}`);
             }
         } finally {
-            isSftpActionInProgress.value = false;
+            // 只有在未成功处理的情况下才立即隐藏进度条
+            if (!uploadHandled) {
+                isSftpActionInProgress.value = false;
+            }
         }
     };
 

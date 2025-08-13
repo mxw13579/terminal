@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 
 import java.util.concurrent.ExecutorService;
@@ -21,7 +23,7 @@ import java.util.concurrent.ScheduledExecutorService;
  * @author your_name
  */
 @Configuration
-public class ExecutorConfig {
+public class ExecutorConfig implements WebMvcConfigurer {
 
     @Value("${threadpool.corePoolSize:10}")
     private int corePoolSize;
@@ -39,6 +41,7 @@ public class ExecutorConfig {
     private int scheduledPoolSize;
 
     private ScheduledExecutorService scheduledExecutorService;
+    private ThreadPoolTaskExecutor mvcTaskExecutor;
 
     /**
      * 创建任务执行器线程池。
@@ -60,6 +63,31 @@ public class ExecutorConfig {
         executor.setAwaitTerminationSeconds(awaitTerminationSeconds); // 关闭等待时长
         executor.initialize();
         return executor.getThreadPoolExecutor();
+    }
+    
+    /**
+     * 创建MVC异步任务执行器
+     */
+    @Bean(name = "mvcTaskExecutor")
+    public ThreadPoolTaskExecutor mvcTaskExecutor() {
+        this.mvcTaskExecutor = new ThreadPoolTaskExecutor();
+        mvcTaskExecutor.setCorePoolSize(corePoolSize);
+        mvcTaskExecutor.setMaxPoolSize(maxPoolSize);
+        mvcTaskExecutor.setQueueCapacity(queueCapacity);
+        mvcTaskExecutor.setThreadNamePrefix("mvc-async-");
+        mvcTaskExecutor.setWaitForTasksToCompleteOnShutdown(true);
+        mvcTaskExecutor.setAwaitTerminationSeconds(awaitTerminationSeconds);
+        mvcTaskExecutor.initialize();
+        return mvcTaskExecutor;
+    }
+
+    /**
+     * 配置MVC异步支持
+     */
+    @Override
+    public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
+        configurer.setTaskExecutor(mvcTaskExecutor());
+        configurer.setDefaultTimeout(600000); // 10分钟超时，用于大文件传输
     }
 
     /**
@@ -83,6 +111,9 @@ public class ExecutorConfig {
     public void shutdownScheduler() {
         if (scheduledExecutorService != null && !scheduledExecutorService.isShutdown()) {
             scheduledExecutorService.shutdown();
+        }
+        if (mvcTaskExecutor != null) {
+            mvcTaskExecutor.shutdown();
         }
     }
 }

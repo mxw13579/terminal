@@ -836,3 +836,129 @@ java.lang.NullPointerException: Cannot invoke "org.apache.catalina.connector.Inp
 		at java.base/java.io.BufferedInputStream.close(BufferedInputStream.java:481)
 		at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:143)
 		... 5 common frames omitted
+2025-08-13 03:08:07.972 [clientInboundChannel-5] ERROR [] c.fufu.terminal.service.SftpService - 路径不存在或不可访问: /root
+2025-08-13 03:08:07.973 [clientInboundChannel-5] ERROR [] c.f.t.controller.SftpStompController - 处理 SFTP 目录列表异常，session e4mkb2b0: 路径不存在或不可访问: /root
+java.io.IOException: 路径不存在或不可访问: /root
+	at com.fufu.terminal.service.SftpService.handleSftpList(SftpService.java:95)
+	at com.fufu.terminal.controller.SftpStompController.handleSftpList(SftpStompController.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
+	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
+	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
+	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
+	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+2025-08-13 03:08:08.827 [streaming-upload] ERROR [] c.f.t.s.TrueStreamingFileService - 真正流式上传失败: 4: 
+java.io.IOException: 4: 
+	at com.jcraft.jsch.ChannelSftp$1.write(ChannelSftp.java:833)
+	at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:185)
+	at com.fufu.terminal.service.TrueStreamingFileService.lambda$directStreamUpload$1(TrueStreamingFileService.java:123)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+	Suppressed: java.io.IOException: 4: 
+		at com.jcraft.jsch.ChannelSftp$1.flush(ChannelSftp.java:858)
+		at com.jcraft.jsch.ChannelSftp$1.close(ChannelSftp.java:867)
+		at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:157)
+		... 5 common frames omitted
+2025-08-13 03:10:56.417 [clientInboundChannel-60] ERROR [] c.fufu.terminal.service.SftpService - 路径不存在或不可访问: /root
+2025-08-13 03:10:56.417 [clientInboundChannel-60] ERROR [] c.f.t.controller.SftpStompController - 处理 SFTP 目录列表异常，session e4mkb2b0: 路径不存在或不可访问: /root
+java.io.IOException: 路径不存在或不可访问: /root
+	at com.fufu.terminal.service.SftpService.handleSftpList(SftpService.java:95)
+	at com.fufu.terminal.controller.SftpStompController.handleSftpList(SftpStompController.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
+	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
+	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
+	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
+	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+2025-08-13 03:12:20.172 [clientInboundChannel-72] ERROR [] c.fufu.terminal.service.SftpService - 路径不存在或不可访问: /root
+2025-08-13 03:12:20.172 [clientInboundChannel-72] ERROR [] c.f.t.controller.SftpStompController - 处理 SFTP 目录列表异常，session brubop05: 路径不存在或不可访问: /root
+java.io.IOException: 路径不存在或不可访问: /root
+	at com.fufu.terminal.service.SftpService.handleSftpList(SftpService.java:95)
+	at com.fufu.terminal.controller.SftpStompController.handleSftpList(SftpStompController.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:169)
+	at org.springframework.messaging.handler.invocation.InvocableHandlerMethod.invoke(InvocableHandlerMethod.java:119)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMatch(AbstractMethodMessageHandler.java:568)
+	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:511)
+	at org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler.handleMatch(SimpAnnotationMethodMessageHandler.java:93)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessageInternal(AbstractMethodMessageHandler.java:523)
+	at org.springframework.messaging.handler.invocation.AbstractMethodMessageHandler.handleMessage(AbstractMethodMessageHandler.java:458)
+	at org.springframework.messaging.support.ExecutorSubscribableChannel$SendTask.run(ExecutorSubscribableChannel.java:144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+2025-08-13 03:12:21.489 [streaming-upload] ERROR [] c.f.t.s.TrueStreamingFileService - 真正流式上传失败: 4: 
+java.io.IOException: 4: 
+	at com.jcraft.jsch.ChannelSftp$1.write(ChannelSftp.java:833)
+	at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:185)
+	at com.fufu.terminal.service.TrueStreamingFileService.lambda$directStreamUpload$1(TrueStreamingFileService.java:123)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+	Suppressed: java.io.IOException: 4: 
+		at com.jcraft.jsch.ChannelSftp$1.flush(ChannelSftp.java:858)
+		at com.jcraft.jsch.ChannelSftp$1.close(ChannelSftp.java:867)
+		at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:157)
+		... 5 common frames omitted
+2025-08-13 03:41:43.900 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:41:44.850 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:42:55.618 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:42:56.615 [ForkJoinPool.commonPool-worker-4] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:44:06.675 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:44:08.348 [ForkJoinPool.commonPool-worker-6] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:45:19.089 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:45:20.330 [ForkJoinPool.commonPool-worker-8] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:45:51.801 [ForkJoinPool.commonPool-worker-8] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:45:52.806 [ForkJoinPool.commonPool-worker-10] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:46:22.168 [ForkJoinPool.commonPool-worker-10] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:46:23.171 [ForkJoinPool.commonPool-worker-12] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:47:44.160 [ForkJoinPool.commonPool-worker-1] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 03:47:45.116 [ForkJoinPool.commonPool-worker-2] ERROR [] c.f.t.s.s.DockerHubApiService - 获取 Docker Hub 版本信息时发生网络错误或中断，将使用默认数据。
+2025-08-13 15:54:08.482 [MvcAsync1] ERROR [] c.f.t.c.TrueStreamingController - StreamingResponseBody: 上传任务被中断, uploadId: null
+java.lang.InterruptedException: null
+	at java.base/java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:386)
+	at java.base/java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2073)
+	at com.fufu.terminal.controller.TrueStreamingController.lambda$streamUpload$0(TrueStreamingController.java:67)
+	at org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBodyReturnValueHandler$StreamingResponseBodyTask.call(StreamingResponseBodyReturnValueHandler.java:110)
+	at org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBodyReturnValueHandler$StreamingResponseBodyTask.call(StreamingResponseBodyReturnValueHandler.java:97)
+	at org.springframework.web.context.request.async.WebAsyncManager.lambda$startCallableProcessing$4(WebAsyncManager.java:336)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+2025-08-13 15:54:09.049 [streaming-upload-worker] ERROR [] c.f.t.s.TrueStreamingFileService - 流式上传失败 [ID: d19e9baf-7e95-45fc-b87b-f6aba04ca4b0]: Stream closed
+java.io.IOException: Stream closed
+	at org.apache.catalina.connector.InputBuffer.throwIfClosed(InputBuffer.java:526)
+	at org.apache.catalina.connector.InputBuffer.read(InputBuffer.java:337)
+	at org.apache.catalina.connector.CoyoteInputStream.read(CoyoteInputStream.java:132)
+	at org.apache.catalina.connector.CoyoteInputStream.read(CoyoteInputStream.java:110)
+	at com.fufu.terminal.service.TrueStreamingFileService.processDirectStreamUpload(TrueStreamingFileService.java:179)
+	at com.fufu.terminal.service.TrueStreamingFileService.lambda$directStreamUpload$1(TrueStreamingFileService.java:134)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
