@@ -85,16 +85,6 @@
             </div>
           </div>
 
-          <!-- 临时调试面板 - 检查进度状态 -->
-          <div style="background: #ff5722; color: white; padding: 15px; margin: 10px 0; border-radius: 5px; font-weight: bold;">
-            <div>🔧 进度调试状态:</div>
-            <div>importing: {{ importing }}</div>
-            <div>uploadProgress: {{ uploadProgress }}</div>
-            <div>importProgress: {{ importProgress }}</div>
-            <div>importStatus: {{ importStatus }}</div>
-            <div>uploading条件: {{ uploadProgress > 0 && uploadProgress < 100 && importing }}</div>
-            <div>importing条件: {{ importProgress > 0 && importing }}</div>
-          </div>
 
           <!-- 文件选择区域 -->
           <div class="file-upload-section">
@@ -196,8 +186,8 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useSillyTavern } from '@/composables/useSillyTavern'
 import useConnectionManager from '@/composables/useConnectionManager'
+import { StreamingFileService } from '@/services/streamingFile.js'
 
 export default {
   name: 'DataManager',
@@ -206,6 +196,11 @@ export default {
     
     const isConnected = computed(() => connectionManager.connectionState?.isConnected ?? false)
     const stompClient = computed(() => connectionManager.getStompClient())
+    
+    // Initialize StreamingFileService with session provider
+    const streamingFileService = new StreamingFileService(() => {
+      return connectionManager.connectionState?.currentSessionId || null
+    })
     
     const exporting = ref(false)
     const importing = ref(false)
@@ -378,87 +373,49 @@ export default {
     }
     
     const uploadFile = (file) => {
-      return new Promise((resolve, reject) => {
-        console.log('开始上传文件:', file.name, `(${formatFileSize(file.size)})`)
-        
-        // 安全获取会话ID
-        const client = stompClient.value;
-        let sessionId = '';
+      return new Promise(async (resolve, reject) => {
+        console.log('开始使用StreamingFileService上传文件:', file.name, `(${formatFileSize(file.size)})`)
         
         try {
-          if (client?.ws?._websocket?.extensions?.sessionId) {
-            sessionId = client.ws._websocket.extensions.sessionId;
-          }
-        } catch (e) {
-          console.warn('无法获取WebSocket sessionId:', e.message);
-        }
-        
-        if (!sessionId) {
-          sessionId = Math.random().toString(36).substr(2, 9);
-          console.log('使用随机sessionId:', sessionId);
-        }
-        
-        // 使用现有的流式上传端点
-        const remotePath = `/tmp/${file.name}`;
-        const uploadUrl = `/api/streaming/upload?sessionId=${encodeURIComponent(sessionId)}&remotePath=${encodeURIComponent(remotePath)}&filename=${encodeURIComponent(file.name)}`;
-        
-        console.log('上传URL:', uploadUrl);
-        
-        const xhr = new XMLHttpRequest();
-        
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = (event.loaded / event.total) * 100;
-            uploadProgress.value = progress;
-            importStatus.value = `📤 正在上传文件... ${Math.round(progress)}%`;
-            console.log(`⬆️ 上传进度: ${Math.round(progress)}%`);
-          }
-        });
-        
-        xhr.addEventListener('load', () => {
-          console.log('上传请求完成，状态码:', xhr.status);
-          console.log('响应内容:', xhr.responseText);
+          const remotePath = `/tmp/${file.name}`
           
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              uploadProgress.value = 100;
-              importStatus.value = '文件上传完成，开始导入...';
-              console.log('文件上传成功');
-              // 返回文件名，供导入流程使用
-              resolve(file.name);
-            } catch (e) {
-              console.error('解析响应失败:', e);
-              reject(new Error('响应格式无效: ' + e.message));
+          const uploadId = await streamingFileService.streamUploadFile(
+            file,
+            remotePath,
+            // onProgress callback
+            (progressData) => {
+              uploadProgress.value = progressData.percentage || 0
+              importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}%`
+              
+              if (progressData.speed > 0) {
+                const speedText = streamingFileService.formatSpeed(progressData.speed)
+                importStatus.value += ` (${speedText})`
+              }
+              
+              console.log(`⬆️ 上传进度: ${Math.round(progressData.percentage || 0)}%`)
+            },
+            // onComplete callback  
+            (completionData) => {
+              console.log('文件上传完成:', completionData)
+              uploadProgress.value = 100
+              importStatus.value = '文件上传完成，开始导入...'
+            },
+            // onError callback
+            (error) => {
+              console.error('上传过程中出错:', error)
+              reject(error)
             }
-          } else {
-            const error = `上传失败，状态码: ${xhr.status}, 响应: ${xhr.responseText}`;
-            console.error(error);
-            reject(new Error(error));
-          }
-        });
-        
-        xhr.addEventListener('error', (event) => {
-          const error = '上传失败：网络错误';
-          console.error(error, event);
-          reject(new Error(error));
-        });
-        
-        xhr.addEventListener('timeout', () => {
-          const error = '上传超时';
-          console.error(error);
-          reject(new Error(error));
-        });
-        
-        // 设置超时时间为10分钟
-        xhr.timeout = 10 * 60 * 1000;
-        
-        xhr.open('POST', uploadUrl);
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        
-        console.log('开始发送文件数据...');
-        xhr.send(file);
-      });
+          )
+          
+          console.log('StreamingFileService上传完成，uploadId:', uploadId)
+          // 返回文件名，供导入流程使用
+          resolve(file.name)
+          
+        } catch (error) {
+          console.error('StreamingFileService上传失败:', error)
+          reject(error)
+        }
+      })
     }
     
     const handleExportResponse = (message) => {
@@ -584,6 +541,23 @@ export default {
     onMounted(() => {
       console.log('DataManager 组件已挂载')
       
+      // 设置全局流式上传进度回调，用于接收STOMP进度消息
+      if (!window.streamingProgressCallback) {
+        console.log('设置全局streamingProgressCallback')
+        window.streamingProgressCallback = (progressData) => {
+          console.log('DataManager收到流式上传进度:', progressData)
+          if (importing.value && uploadProgress.value < 100) {
+            uploadProgress.value = progressData.percentage || 0
+            if (progressData.speed > 0) {
+              const speedText = streamingFileService.formatSpeed(progressData.speed)
+              importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}% (${speedText})`
+            } else {
+              importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}%`
+            }
+          }
+        }
+      }
+      
       if (isConnected.value && stompClient.value) {
         try {
           // 安全地获取sessionId
@@ -639,6 +613,12 @@ export default {
       if (importSubscription) importSubscription.unsubscribe()
       if (exportProgressSubscription) exportProgressSubscription.unsubscribe()
       if (importProgressSubscription) importProgressSubscription.unsubscribe()
+      
+      // 清理全局回调
+      if (window.streamingProgressCallback) {
+        console.log('清理全局streamingProgressCallback')
+        window.streamingProgressCallback = null
+      }
     })
     
     const getDownloadUrl = computed(() => {
@@ -1084,6 +1064,13 @@ export default {
   font-size: 14px;
   font-weight: 500;
   transition: background 0.2s ease;
+}
+
+.progress-details {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
+  text-align: center;
 }
 
 .download-btn:hover {
