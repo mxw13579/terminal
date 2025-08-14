@@ -315,15 +315,11 @@
                   :system-checking="systemChecking"
                   :is-deploying="isDeploying"
                   :deployment-progress="deploymentProgress"
-                  :available-versions="availableVersions"
-                  :is-loading-versions="isLoadingVersions"
-                  :version-error="versionError"
                   :server-stats="systemStats"
                   :docker-containers="terminalDockerContainers"
                   @validate-system="handleValidateSystem"
                   @deploy="handleDeploy"
                   @deployment-complete="handleDeploymentComplete"
-                  @get-versions="handleGetVersions"
                   @step-confirmed="handleStepConfirmed"
                 />
               </div>
@@ -343,11 +339,6 @@
                 <ConfigurationEditor
                   @configuration-updated="handleConfigurationUpdated"
                 />
-              </div>
-
-              <!-- 版本管理 -->
-              <div v-else-if="activeTab === 'versions'" class="content-panel">
-                <VersionManager />
               </div>
 
               <!-- 日志查看 -->
@@ -394,7 +385,6 @@ import ServiceControls from '../components/sillytavern/ServiceControls.vue'
 import ConfigurationEditor from '../components/sillytavern/ConfigurationEditor.vue'
 import LogViewer from '../components/sillytavern/LogViewer.vue'
 import DataManager from '../components/sillytavern/DataManager.vue'
-import VersionManager from '../components/sillytavern/VersionManager.vue'
 import AccessInfo from '../components/sillytavern/AccessInfo.vue'
 import useConnectionManager from '../composables/useConnectionManager'
 import { useSillyTavern } from '../composables/useSillyTavern'
@@ -413,9 +403,6 @@ const {
   systemChecking,
   isDeploying,
   deploymentProgress,
-  availableVersions,
-  isLoadingVersions,
-  versionError,
   getContainerStatus,
   performServiceAction,
   validateSystem,
@@ -423,7 +410,6 @@ const {
   startInteractiveDeployment,
   confirmDeploymentStep,
   skipDeploymentStep,
-  getAvailableVersions,
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
 
@@ -457,12 +443,6 @@ const tabs = computed(() => [
     name: '配置管理',
     icon: 'fas fa-edit',
     disabled: !containerStatus.value?.exists
-  },
-  {
-    id: 'versions',
-    name: '版本管理',
-    icon: 'fab fa-docker',
-    disabled: false
   },
   {
     id: 'logs',
@@ -819,12 +799,6 @@ const handleDeploymentComplete = (success) => {
     // 部署失败时保持在部署页面，让用户查看错误信息
     console.error('部署失败，保持在当前页面')
   }
-}
-
-// 处理获取版本信息事件
-const handleGetVersions = () => {
-  console.log('收到获取版本信息事件')
-  getAvailableVersions()
 }
 
 // 处理步骤确认事件

@@ -1,193 +1,163 @@
 <template>
   <div class="configuration-editor">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">
-          <i class="fas fa-cog me-2"></i>
-          Configuration Settings
-        </h5>
-        <small class="text-muted">Modify SillyTavern authentication and server settings</small>
+    <div class="modern-card">
+      <!-- Header Section -->
+      <div class="card-header-modern">
+        <div class="header-content">
+          <div class="header-icon">
+            <i class="fas fa-cog"></i>
+          </div>
+          <div class="header-text">
+            <h5 class="card-title-modern mb-1">
+              账号密码设置
+            </h5>
+            <p class="card-subtitle-modern mb-0">
+              管理您的SillyTavern登录凭据
+            </p>
+          </div>
+        </div>
       </div>
       
-      <div class="card-body">
-        <div v-if="loading" class="text-center py-4">
-          <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading configuration...</span>
+      <div class="card-body-modern">
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-container">
+          <div class="loading-spinner">
+            <div class="spinner-custom"></div>
           </div>
-          <p class="mt-2 text-muted">Loading configuration...</p>
+          <p class="loading-text">加载配置中...</p>
         </div>
 
-        <form v-else @submit.prevent="saveConfiguration" class="needs-validation" novalidate>
+        <!-- Form Content -->
+        <form v-else @submit.prevent="saveConfiguration" class="modern-form">
           <!-- Authentication Section -->
-          <div class="row mb-4">
-            <div class="col-md-12">
-              <h6 class="fw-bold text-primary mb-3">
-                <i class="fas fa-shield-alt me-2"></i>
-                Authentication Settings
-              </h6>
-            </div>
-            
-            <div class="col-md-6">
-              <label for="username" class="form-label">
-                Username <span class="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                class="form-control"
-                :class="{ 'is-invalid': errors.username }"
-                id="username"
-                v-model="config.username"
-                placeholder="Enter username"
-                required
-                minlength="3"
-                pattern="[-a-zA-Z_]+"
-              />
-              <div v-if="errors.username" class="invalid-feedback">
-                {{ errors.username }}
+          <div class="config-section">
+            <div class="section-header">
+              <div class="section-icon auth-icon">
+                <i class="fas fa-shield-alt"></i>
               </div>
-              <div class="form-text">
-                用户名至少3个字符（只允许字母、下划线和短横线，不能包含数字）
+              <div class="section-info">
+                <h6 class="section-title">身份验证设置</h6>
+                <p class="section-description">配置您的登录凭据</p>
               </div>
             </div>
             
-            <div class="col-md-6">
-              <label for="password" class="form-label">
-                Password
-                <small class="text-muted">(leave empty to remove password)</small>
-              </label>
-              <div class="input-group">
-                <input
-                  :type="showPassword ? 'text' : 'password'"
-                  class="form-control"
-                  :class="{ 'is-invalid': errors.password }"
-                  id="password"
-                  v-model="config.password"
-                  placeholder="Enter new password"
-                  minlength="6"
-                />
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary"
-                  @click="showPassword = !showPassword"
-                >
-                  <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-                </button>
-              </div>
-              <div v-if="errors.password" class="invalid-feedback d-block">
-                {{ errors.password }}
-              </div>
-              <div class="form-text">
-                Password must be at least 6 characters (optional)
-              </div>
-            </div>
-          </div>
-
-          <!-- Server Settings Section - REMOVED PORT EDITING -->
-          <!-- Port is now read-only and not editable by users -->
-          <div class="row mb-4" v-if="config.port">
-            <div class="col-md-12">
-              <h6 class="fw-bold text-primary mb-3">
-                <i class="fas fa-server me-2"></i>
-                Server Information (Read-only)
-              </h6>
-            </div>
-            
-            <div class="col-md-6">
-              <label for="port-readonly" class="form-label">
-                Current Port
-              </label>
-              <input
-                type="number"
-                class="form-control"
-                id="port-readonly"
-                :value="config.port"
-                readonly
-                disabled
-              />
-              <div class="form-text">
-                Port configuration is managed automatically
-              </div>
-            </div>
-          </div>
-
-          <!-- Additional Settings -->
-          <div class="row mb-4" v-if="config.otherSettings && Object.keys(config.otherSettings).length > 0">
-            <div class="col-md-12">
-              <h6 class="fw-bold text-primary mb-3">
-                <i class="fas fa-sliders-h me-2"></i>
-                Additional Settings
-              </h6>
-              
-              <div class="row">
-                <div 
-                  v-for="(value, key) in config.otherSettings" 
-                  :key="key"
-                  class="col-md-6 mb-3"
-                >
-                  <label :for="'setting-' + key" class="form-label text-capitalize">
-                    {{ key.replace(/([A-Z])/g, ' $1').trim() }}
-                  </label>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="username" class="modern-label">
+                  <i class="fas fa-user label-icon"></i>
+                  用户名 <span class="required-mark">*</span>
+                </label>
+                <div class="input-wrapper">
                   <input
                     type="text"
-                    class="form-control"
-                    :id="'setting-' + key"
-                    v-model="config.otherSettings[key]"
-                    :placeholder="'Enter ' + key"
+                    class="modern-input"
+                    :class="{ 'input-error': errors.username }"
+                    id="username"
+                    v-model="config.username"
+                    placeholder="请输入用户名"
+                    required
+                    minlength="2"
+                    pattern="[a-zA-Z]+"
                   />
+                  <div v-if="errors.username" class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    {{ errors.username }}
+                  </div>
+                  <div class="input-hint">
+                    <i class="fas fa-info-circle"></i>
+                    至少2个字符，只允许英文字母
+                  </div>
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="password" class="modern-label">
+                  <i class="fas fa-lock label-icon"></i>
+                  密码 <span class="optional-mark">(可选)</span>
+                </label>
+                <div class="input-wrapper">
+                  <input
+                    type="text"
+                    class="modern-input"
+                    :class="{ 'input-error': errors.password }"
+                    id="password"
+                    v-model="config.password"
+                    placeholder="请输入新密码"
+                    minlength="6"
+                  />
+                  <div v-if="errors.password" class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    {{ errors.password }}
+                  </div>
+                  <div class="input-hint">
+                    <i class="fas fa-info-circle"></i>
+                    至少6个字符，留空则移除密码保护
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
           <!-- Action Buttons -->
-          <div class="row">
-            <div class="col-md-12">
-              <div class="d-flex justify-content-between align-items-center">
-                <div>
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary me-2"
-                    @click="loadConfiguration"
-                    :disabled="saving"
-                  >
-                    <i class="fas fa-refresh me-1"></i>
-                    Reset
-                  </button>
-                </div>
-                
-                <div>
-                  <button
-                    type="submit"
-                    class="btn btn-primary"
-                    :disabled="saving || !isFormValid"
-                  >
-                    <span v-if="saving" class="spinner-border spinner-border-sm me-2" role="status"></span>
-                    <i v-else class="fas fa-save me-1"></i>
-                    {{ saving ? 'Saving...' : 'Save Configuration' }}
-                  </button>
-                </div>
-              </div>
+          <div class="action-section">
+            <div class="button-group">
+              <button
+                type="button"
+                class="modern-btn btn-secondary"
+                @click="loadConfiguration"
+                :disabled="saving"
+              >
+                <i class="fas fa-refresh btn-icon"></i>
+                重置
+              </button>
+              
+              <button
+                type="submit"
+                class="modern-btn btn-primary"
+                :disabled="saving || !isFormValid"
+              >
+                <span v-if="saving" class="btn-spinner"></span>
+                <i v-else class="fas fa-save btn-icon"></i>
+                {{ saving ? '保存中...' : '保存配置' }}
+              </button>
             </div>
           </div>
         </form>
 
-        <!-- Restart Warning -->
-        <div v-if="requiresRestart" class="alert alert-warning mt-3" role="alert">
-          <i class="fas fa-exclamation-triangle me-2"></i>
-          <strong>Container Restart Required:</strong> 
-          Configuration changes require a container restart to take effect. 
-          Please restart the SillyTavern container from the Service Controls section.
-        </div>
+        <!-- Status Messages -->
+        <div class="status-messages">
+          <!-- Restart Warning -->
+          <div v-if="requiresRestart" class="status-alert alert-warning">
+            <div class="alert-icon">
+              <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="alert-content">
+              <strong>需要重启容器</strong>
+              <p>配置更改需要重启容器才能生效，请在服务控制区域重启SillyTavern容器。</p>
+            </div>
+          </div>
 
-        <!-- Success/Error Messages -->
-        <div v-if="successMessage" class="alert alert-success mt-3" role="alert">
-          <i class="fas fa-check-circle me-2"></i>
-          {{ successMessage }}
-        </div>
-        
-        <div v-if="errorMessage" class="alert alert-danger mt-3" role="alert">
-          <i class="fas fa-exclamation-circle me-2"></i>
-          {{ errorMessage }}
+          <!-- Success Message -->
+          <div v-if="successMessage" class="status-alert alert-success">
+            <div class="alert-icon">
+              <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="alert-content">
+              <strong>成功</strong>
+              <p>{{ successMessage }}</p>
+            </div>
+          </div>
+          
+          <!-- Error Message -->
+          <div v-if="errorMessage" class="status-alert alert-error">
+            <div class="alert-icon">
+              <i class="fas fa-exclamation-circle"></i>
+            </div>
+            <div class="alert-content">
+              <strong>错误</strong>
+              <p>{{ errorMessage }}</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -211,7 +181,6 @@ export default {
     
     const loading = ref(true)
     const saving = ref(false)
-    const showPassword = ref(false)
     const requiresRestart = ref(false)
     const successMessage = ref('')
     const errorMessage = ref('')
@@ -233,7 +202,8 @@ export default {
     
     const isFormValid = computed(() => {
       return config.value.username && 
-             config.value.username.length >= 3 && 
+             config.value.username.length >= 2 && 
+             /^[a-zA-Z]+$/.test(config.value.username) &&
              (!config.value.password || config.value.password.length >= 6)
     })
     
@@ -241,36 +211,32 @@ export default {
       errors.value = {}
       
       if (!config.value.username || config.value.username.trim().length === 0) {
-        errors.value.username = 'Username is required'
-      } else if (config.value.username.length < 3) {
-        errors.value.username = 'Username must be at least 3 characters long'
+        errors.value.username = '用户名不能为空'
+      } else if (config.value.username.length < 2) {
+        errors.value.username = '用户名至少2个字符'
       } else if (config.value.username.length > 20) {
-        errors.value.username = 'Username must not exceed 20 characters'
-      } else if (/\d/.test(config.value.username)) {
-        errors.value.username = 'Username cannot contain numbers'
-      } else if (!/^[a-zA-Z_-]+$/.test(config.value.username)) {
-        errors.value.username = 'Username can only contain letters, underscore, and dash'
+        errors.value.username = '用户名不能超过20个字符'
+      } else if (!/^[a-zA-Z]+$/.test(config.value.username)) {
+        errors.value.username = '用户名只能包含英文字母'
       }
       
       if (config.value.password && config.value.password.length < 6) {
-        errors.value.password = 'Password must be at least 6 characters long'
+        errors.value.password = '密码至少6个字符'
       }
-      
-      // Port validation removed - port is no longer editable
       
       return Object.keys(errors.value).length === 0
     }
     
     const loadConfiguration = () => {
       if (!isConnected.value) {
-        errorMessage.value = 'WebSocket connection not established'
+        errorMessage.value = 'WebSocket连接未建立'
         loading.value = false
         return
       }
       
       const client = stompClient.value
       if (!client) {
-        errorMessage.value = 'STOMP client is not available'
+        errorMessage.value = 'STOMP客户端不可用'
         loading.value = false
         return
       }
@@ -286,7 +252,7 @@ export default {
         })
       } catch (error) {
         console.error('Error sending configuration request:', error)
-        errorMessage.value = 'Failed to request configuration: ' + error.message
+        errorMessage.value = '获取配置失败: ' + error.message
         loading.value = false
       }
     }
@@ -297,13 +263,13 @@ export default {
       }
       
       if (!isConnected.value) {
-        errorMessage.value = 'WebSocket connection not established'
+        errorMessage.value = 'WebSocket连接未建立'
         return
       }
       
       const client = stompClient.value
       if (!client) {
-        errorMessage.value = 'STOMP client is not available'
+        errorMessage.value = 'STOMP客户端不可用'
         saving.value = false
         return
       }
@@ -320,7 +286,7 @@ export default {
         })
       } catch (error) {
         console.error('Error sending configuration update:', error)
-        errorMessage.value = 'Failed to save configuration: ' + error.message
+        errorMessage.value = '保存配置失败: ' + error.message
         saving.value = false
       }
     }
@@ -338,11 +304,11 @@ export default {
             password: '' // Don't populate password field for security
           }
         } else {
-          errorMessage.value = 'Failed to load configuration'
+          errorMessage.value = '加载配置失败'
         }
       } catch (error) {
         console.error('Error handling config response:', error)
-        errorMessage.value = 'Error processing configuration response'
+        errorMessage.value = '处理配置响应错误'
         loading.value = false
       }
     }
@@ -355,7 +321,7 @@ export default {
         saving.value = false
         
         if (response.success) {
-          successMessage.value = response.message || 'Configuration saved successfully'
+          successMessage.value = response.message || '配置保存成功'
           requiresRestart.value = response.requiresRestart || false
           
           // Reload configuration to get updated values
@@ -363,7 +329,7 @@ export default {
             loadConfiguration()
           }, 1000)
         } else {
-          errorMessage.value = response.message || 'Failed to save configuration'
+          errorMessage.value = response.message || '配置保存失败'
           
           if (response.errors) {
             errors.value = response.errors
@@ -371,7 +337,7 @@ export default {
         }
       } catch (error) {
         console.error('Error handling update response:', error)
-        errorMessage.value = 'Error processing configuration update response'
+        errorMessage.value = '处理配置更新响应错误'
         saving.value = false
       }
     }
@@ -404,12 +370,12 @@ export default {
           loadConfiguration()
         } catch (error) {
           console.error('Error setting up ConfigurationEditor subscriptions:', error)
-          errorMessage.value = 'Failed to initialize configuration editor: ' + error.message
+          errorMessage.value = '配置编辑器初始化失败: ' + error.message
           loading.value = false
         }
       } else {
         console.warn('ConfigurationEditor: Connection not available')
-        errorMessage.value = 'SSH connection is required for configuration management'
+        errorMessage.value = 'SSH连接是配置管理所必需的'
         loading.value = false
       }
     })
@@ -426,7 +392,6 @@ export default {
     return {
       loading,
       saving,
-      showPassword,
       requiresRestart,
       successMessage,
       errorMessage,
@@ -441,96 +406,477 @@ export default {
 </script>
 
 <style scoped>
+/* 主容器样式 */
 .configuration-editor {
-  max-width: 800px;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+/* 现代化卡片容器 */
+.modern-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.1),
+    0 4px 6px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 头部区域 */
+.card-header-modern {
+  background: linear-gradient(135deg, 
+    rgba(99, 102, 241, 0.9) 0%, 
+    rgba(139, 92, 246, 0.9) 50%, 
+    rgba(236, 72, 153, 0.9) 100%);
+  padding: 2rem;
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-header-modern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05' fill-rule='nonzero'%3E%3Cpath d='m36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  opacity: 0.3;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.header-icon {
+  width: 60px;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.card-title-modern {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card-subtitle-modern {
+  font-size: 1rem;
+  opacity: 0.9;
+  margin: 0;
+  font-weight: 400;
+}
+
+/* 主体内容 */
+.card-body-modern {
+  padding: 2.5rem;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+/* 加载状态 */
+.loading-container {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+
+.loading-spinner {
+  margin-bottom: 1.5rem;
+}
+
+.spinner-custom {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(99, 102, 241, 0.2);
+  border-left: 4px solid #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
   margin: 0 auto;
 }
 
-.card {
-  border: none;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.card-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-bottom: none;
-}
-
-.card-title {
+.loading-text {
+  color: #64748b;
   font-size: 1.1rem;
+  margin: 0;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 配置区域 */
+.config-section {
+  margin-bottom: 3rem;
+}
+
+.config-section:last-of-type {
+  margin-bottom: 2rem;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid rgba(99, 102, 241, 0.1);
+}
+
+.section-icon {
+  width: 45px;
+  height: 45px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: white;
+}
+
+.auth-icon {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.server-icon {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.settings-icon {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.section-title {
+  font-size: 1.25rem;
   font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 0.25rem 0;
 }
 
-.form-label {
-  font-weight: 500;
-  color: #495057;
-  margin-bottom: 0.5rem;
+.section-description {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin: 0;
 }
 
-.form-control:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+/* 表单网格 */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  padding: 0.6rem 1.5rem;
-  font-weight: 500;
+.form-group {
+  display: flex;
+  flex-direction: column;
 }
 
-.btn-primary:hover {
-  background: linear-gradient(135deg, #5969d3 0%, #6a4190 100%);
+/* 标签样式 */
+.modern-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.label-icon {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.required-mark {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.optional-mark {
+  color: #64748b;
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+/* 输入框样式 */
+.input-wrapper {
+  position: relative;
+}
+
+.modern-input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(5px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.modern-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  background: rgba(255, 255, 255, 0.95);
   transform: translateY(-1px);
 }
 
-.btn-outline-secondary {
-  padding: 0.6rem 1.5rem;
+.modern-input::placeholder {
+  color: #9ca3af;
+}
+
+.input-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
+}
+
+.readonly-input {
+  background: rgba(148, 163, 184, 0.1) !important;
+  cursor: not-allowed;
+  color: #64748b;
+}
+
+/* 提示信息 */
+.input-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.readonly-hint {
+  color: #94a3b8;
+}
+
+/* 错误信息 */
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #ef4444;
   font-weight: 500;
 }
 
-.alert {
+/* 操作按钮区域 */
+.action-section {
+  padding-top: 2rem;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  margin-top: 2rem;
+}
+
+.button-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* 现代化按钮 */
+.modern-btn {
+  padding: 0.875rem 2rem;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  min-width: 140px;
+  justify-content: center;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(148, 163, 184, 0.1);
+  color: #475569;
+  border: 2px solid #e2e8f0;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.modern-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-icon {
+  font-size: 0.9rem;
+}
+
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-left: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* 状态消息 */
+.status-messages {
+  margin-top: 2rem;
+}
+
+.status-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  backdrop-filter: blur(5px);
+}
+
+.alert-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.alert-content strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.alert-content p {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
 }
 
 .alert-warning {
-  background-color: #fff3cd;
-  color: #856404;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #92400e;
+}
+
+.alert-warning .alert-icon {
+  color: #f59e0b;
 }
 
 .alert-success {
-  background-color: #d1edff;
-  color: #0c5460;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #166534;
 }
 
-.alert-danger {
-  background-color: #f8d7da;
-  color: #721c24;
+.alert-success .alert-icon {
+  color: #22c55e;
 }
 
-.text-primary {
-  color: #667eea !important;
+.alert-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #991b1b;
 }
 
-.spinner-border-sm {
-  width: 1rem;
-  height: 1rem;
+.alert-error .alert-icon {
+  color: #ef4444;
 }
 
-.input-group .btn {
-  border-left: 0;
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .configuration-editor {
+    padding: 0.5rem;
+  }
+  
+  .card-header-modern {
+    padding: 1.5rem;
+  }
+  
+  .header-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+  
+  .card-body-modern {
+    padding: 1.5rem;
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .button-group {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  
+  .modern-btn {
+    min-width: 100%;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
+  }
 }
 
-.form-text {
-  font-size: 0.875rem;
-  color: #6c757d;
-}
-
-h6.fw-bold {
-  border-bottom: 2px solid #e9ecef;
-  padding-bottom: 0.5rem;
-  margin-bottom: 1rem;
+@media (max-width: 480px) {
+  .card-title-modern {
+    font-size: 1.5rem;
+  }
+  
+  .section-title {
+    font-size: 1.1rem;
+  }
+  
+  .modern-input {
+    padding: 0.75rem;
+  }
+  
+  .modern-btn {
+    padding: 0.75rem 1.5rem;
+  }
 }
 </style>
