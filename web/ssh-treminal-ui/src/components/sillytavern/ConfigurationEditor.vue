@@ -73,7 +73,7 @@
               <div class="form-group">
                 <label for="password" class="modern-label">
                   <i class="fas fa-lock label-icon"></i>
-                  密码 <span class="optional-mark">(可选)</span>
+                  密码 <span class="required-mark">*</span>
                 </label>
                 <div class="input-wrapper">
                   <input
@@ -82,7 +82,8 @@
                     :class="{ 'input-error': errors.password }"
                     id="password"
                     v-model="config.password"
-                    placeholder="请输入新密码"
+                    placeholder="请输入密码"
+                    required
                     minlength="6"
                   />
                   <div v-if="errors.password" class="error-message">
@@ -91,7 +92,7 @@
                   </div>
                   <div class="input-hint">
                     <i class="fas fa-info-circle"></i>
-                    至少6个字符，留空则移除密码保护
+                    至少6个字符，必填字段
                   </div>
                 </div>
               </div>
@@ -100,17 +101,7 @@
 
           <!-- Action Buttons -->
           <div class="action-section">
-            <div class="button-group">
-              <button
-                type="button"
-                class="modern-btn btn-secondary"
-                @click="loadConfiguration"
-                :disabled="saving"
-              >
-                <i class="fas fa-refresh btn-icon"></i>
-                重置
-              </button>
-              
+            <div class="button-group-center">
               <button
                 type="submit"
                 class="modern-btn btn-primary"
@@ -204,7 +195,8 @@ export default {
       return config.value.username && 
              config.value.username.length >= 2 && 
              /^[a-zA-Z]+$/.test(config.value.username) &&
-             (!config.value.password || config.value.password.length >= 6)
+             config.value.password && 
+             config.value.password.length >= 6
     })
     
     const validateForm = () => {
@@ -220,7 +212,9 @@ export default {
         errors.value.username = '用户名只能包含英文字母'
       }
       
-      if (config.value.password && config.value.password.length < 6) {
+      if (!config.value.password || config.value.password.trim().length === 0) {
+        errors.value.password = '密码不能为空'
+      } else if (config.value.password.length < 6) {
         errors.value.password = '密码至少6个字符'
       }
       
@@ -300,8 +294,8 @@ export default {
         
         if (response.success && response.payload) {
           config.value = {
-            ...response.payload,
-            password: '' // Don't populate password field for security
+            ...response.payload
+            // 显示当前密码，不再隐藏
           }
         } else {
           errorMessage.value = '加载配置失败'
@@ -398,7 +392,6 @@ export default {
       config,
       errors,
       isFormValid,
-      loadConfiguration,
       saveConfiguration
     }
   }
@@ -630,6 +623,7 @@ export default {
   backdrop-filter: blur(5px);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   outline: none;
+  color: #000000; /* 输入文字黑色 */
 }
 
 .modern-input:focus {
@@ -692,6 +686,12 @@ export default {
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.button-group-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 /* 现代化按钮 */
@@ -848,6 +848,11 @@ export default {
   
   .button-group {
     flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  
+  .button-group-center {
+    flex-direction: column;
     align-items: stretch;
   }
   
