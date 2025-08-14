@@ -62,6 +62,12 @@ public class DataExportDto {
     private String exportPath;
     
     /**
+     * 远程路径
+     * 被控服务器上的压缩包路径，用于流式下载
+     */
+    private String remotePath;
+    
+    /**
      * 过期时间
      * 导出数据过期并将被自动删除的时间
      */
@@ -77,12 +83,14 @@ public class DataExportDto {
      * 导出进度
      * 如果仍在进行中，显示导出进度（0-100），默认为100
      */
+    @Builder.Default
     private Integer progress = 100;
     
     /**
      * 是否完成
      * 标识导出是否已完成，默认为true
      */
+    @Builder.Default
     private Boolean completed = true;
     
     /**

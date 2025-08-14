@@ -21,7 +21,7 @@ export function useSillyTavern(options = {}) {
     console.log('useSillyTavern: 创建新的单例状态');
 
     // Get the unified connection manager
-    const { getStompClient } = useConnectionManager();
+    const { getStompClient, connectionState } = useConnectionManager();
 
     // --- State ---
     // Container status
@@ -687,9 +687,83 @@ export function useSillyTavern(options = {}) {
 
     const handleDataExportResponse = (data) => {
         console.log('收到数据导出响应:', data);
-        if (data.success) {
-            console.log('数据导出成功');
-            onShowModal("数据导出成功", "导出完成");
+        if (data.success && data.payload) {
+            console.log('数据导出成功，准备下载');
+            
+            // 构建下载URL
+            const baseUrl = data.payload.downloadUrl;
+            if (baseUrl) {
+                // 获取STOMP客户端
+                const client = getStompClient();
+                
+                // 获取sessionId - 优先使用connectionState中的currentSessionId
+                let sessionId = '';
+                
+                console.log('useSillyTavern调试信息:', {
+                    'connectionState': connectionState,
+                    'currentSessionId': connectionState?.currentSessionId,
+                    'isConnected': connectionState?.isConnected,
+                    'connectionInfo': connectionState?.connectionInfo,
+                    'client存在': !!client,
+                    'client.connected': client?.connected
+                });
+                
+                if (connectionState?.currentSessionId) {
+                    sessionId = connectionState.currentSessionId;
+                } else if (client?.ws?._websocket?.extensions?.sessionId) {
+                    sessionId = client.ws._websocket.extensions.sessionId;
+                } else if (client?.ws?._transport?.ws?.extensions?.sessionId) {
+                    sessionId = client.ws._transport.ws.extensions.sessionId;
+                } else if (client?.connectedHeaders?.['session-id']) {
+                    sessionId = client.connectedHeaders['session-id'];
+                } else {
+                    console.error('无法获取sessionId，这可能导致下载失败');
+                    sessionId = 'fallback_' + Math.random().toString(36).substr(2, 9);
+                }
+                
+                const separator = baseUrl.includes('?') ? '&' : '?';
+                // 确保使用后端API服务器的URL（端口8080），而不是前端开发服务器（端口5173）
+                const backendUrl = baseUrl.startsWith('/') 
+                    ? `${window.location.protocol}//${window.location.hostname}:8080${baseUrl}`
+                    : baseUrl;
+                const downloadUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(sessionId)}`;
+                
+                console.log('自动下载URL详细信息:', {
+                    baseUrl: baseUrl,
+                    backendUrl: backendUrl,
+                    sessionId: sessionId,
+                    fullDownloadUrl: downloadUrl,
+                    connectionStateSessionId: connectionState?.currentSessionId,
+                    clientInfo: client ? 'STOMP客户端存在' : 'STOMP客户端不存在'
+                });
+                
+                // 防止重复下载 - 检查是否已经在下载中
+                if (window.__sillyTavernDownloading) {
+                    console.log('下载已在进行中，跳过重复下载');
+                    return;
+                }
+                window.__sillyTavernDownloading = true;
+                
+                // 自动触发下载
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = data.payload.fileName || data.payload.filename || 'sillytavern_data.tar.gz';
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                console.log('自动下载已触发');
+                onShowModal("数据导出成功，下载已开始", "导出完成");
+                
+                // 5秒后重置下载标志
+                setTimeout(() => {
+                    window.__sillyTavernDownloading = false;
+                }, 5000);
+            } else {
+                console.error('未找到下载URL');
+                onShowModal("数据导出成功，但无法获取下载链接", "导出完成");
+            }
         } else {
             console.error('数据导出失败:', data.error);
             onShowModal("数据导出失败: " + (data.error || 'Unknown error'));

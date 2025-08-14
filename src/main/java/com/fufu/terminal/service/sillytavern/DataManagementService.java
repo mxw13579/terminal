@@ -79,45 +79,54 @@ public class DataManagementService {
     public CompletableFuture<DataExportDto> exportData(SshConnection connection, String containerName,
                                                        Consumer<String> progressCallback) {
         return CompletableFuture.supplyAsync(() -> {
+            String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
+            String exportFileName = generateExportFileName(containerName, timestamp);
+            String remoteZipPath = String.format("/tmp/sillytavern_export_%s.tar.gz", timestamp);
+            
             try {
-                String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
-                String exportFileName = generateExportFileName(containerName, timestamp);
-                Path localExportPath = Paths.get(tempDirectory, exportFileName);
-                progressCallback.accept("正在检查容器数据大小...");
-                long dataSizeBytes = getDataDirectorySize(connection, containerName);
+                progressCallback.accept("正在获取docker-compose路径...");
+                String dockerComposePath = findDockerComposePath(connection, containerName);
+                String hostDataPath = dockerComposePath + "/data";
+                
+                progressCallback.accept("正在检查数据目录大小...");
+                long dataSizeBytes = getHostDataDirectorySize(connection, hostDataPath);
                 if (dataSizeBytes > maxExportSizeBytes) {
                     throw new RuntimeException(String.format(
                             "数据目录过大: %,d bytes (最大: %,d bytes)",
                             dataSizeBytes, maxExportSizeBytes));
                 }
-                progressCallback.accept("正在容器内创建数据归档...");
-                String containerZipPath = String.format("%s_%s.zip", TEMP_EXPORT_PATH, timestamp);
+                
+                progressCallback.accept("正在打包数据目录...");
+                // 使用tar命令打包data目录，tar在所有Linux系统上都有
+                // 为路径添加引号以防特殊字符
                 executeCommand(connection, String.format(
-                        "sudo docker exec %s sh -c 'cd / && zip -r %s app/data/'",
-                        containerName, containerZipPath));
-                progressCallback.accept("正在复制归档到主机...");
-                String hostZipPath = String.format("/tmp/%s", exportFileName);
-                executeCommand(connection, String.format(
-                        "sudo docker cp %s:%s %s", containerName, containerZipPath, hostZipPath));
-                progressCallback.accept("正在传输文件到 Web 服务器...");
-                Files.createDirectories(localExportPath.getParent());
-                downloadFileFromRemote(connection, hostZipPath, localExportPath.toString());
-                progressCallback.accept("正在清理临时文件...");
-                executeCommand(connection, String.format("sudo docker exec %s rm -f %s", containerName, containerZipPath));
-                executeCommand(connection, String.format("rm -f %s", hostZipPath));
-                long fileSizeBytes = Files.size(localExportPath);
+                        "cd '%s' && tar -czf '%s' data/", dockerComposePath, remoteZipPath));
+                
+                progressCallback.accept("正在准备流式下载...");
+                long zipFileSize = getRemoteFileSize(connection, remoteZipPath);
+                
                 DataExportDto exportDto = new DataExportDto();
                 exportDto.setFileName(exportFileName);
-                exportDto.setDownloadUrl("/api/sillytavern/download/" + exportFileName);
-                exportDto.setSizeBytes(fileSizeBytes);
+                exportDto.setRemotePath(remoteZipPath);
+                exportDto.setDownloadUrl("/api/sillytavern/download-stream/" + timestamp);
+                exportDto.setSizeBytes(zipFileSize);
                 exportDto.setCreatedAt(LocalDateTime.now());
                 exportDto.setExpiresAt(LocalDateTime.now().plusHours(1));
-                fileCleanupService.scheduleCleanup(localExportPath.toString(), 1);
-                progressCallback.accept("导出完成");
-                log.info("数据导出完成: {} ({} bytes)", exportFileName, fileSizeBytes);
+                
+                // 安排远程文件清理
+                scheduleRemoteCleanup(connection, remoteZipPath, 1);
+                
+                progressCallback.accept("导出完成，准备下载");
+                log.info("数据导出完成: {} ({} bytes)", exportFileName, zipFileSize);
                 return exportDto;
             } catch (Exception e) {
                 log.error("数据导出失败", e);
+                // 清理可能已创建的临时文件
+                try {
+                    executeCommand(connection, String.format("rm -f '%s'", remoteZipPath));
+                } catch (Exception cleanupEx) {
+                    log.warn("清理导出临时文件失败: {}", cleanupEx.getMessage());
+                }
                 throw new RuntimeException("数据导出失败: " + e.getMessage(), e);
             }
         });
@@ -131,83 +140,139 @@ public class DataManagementService {
      * @return 格式化的文件名。
      */
     private String generateExportFileName(String containerName, String timestamp) {
-        return String.format("sillytavern_data_%s_%s.zip", containerName, timestamp);
+        return String.format("sillytavern_data_sillytavern_%s.tar.gz", timestamp);
     }
 
     /**
-     * 异步导入上传的ZIP文件到指定的Docker容器。
+     * 简化的数据导入流程 - 直接操作宿主机挂载的data目录
      * <p>
-     * 流程包括：
-     * 1. 验证本地上传的ZIP文件是否有效（结构、内容安全）。
-     * 2. 上传ZIP文件到远程宿主机。
-     * 3. 将ZIP文件从宿主机复制到容器内。
-     * 4. 在容器内创建当前数据的备份。
-     * 5. 验证备份的完整性。
-     * 6. 清空旧数据并解压新数据。
-     * 7. 如果解压失败，则自动从备份回滚。
-     * 8. 清理所有临时文件和过时的备份。
+     * 优化的流程：
+     * 1. 从远程SSH服务器下载上传的文件到本地临时目录
+     * 2. 验证本地文件是否有效（结构、内容安全）
+     * 3. 上传ZIP文件到远程宿主机临时目录
+     * 4. 在临时目录解压并验证data目录结构
+     * 5. 备份现有data目录
+     * 6. 全量拷贝新数据到data目录
+     * 7. 重启SillyTavern容器
+     * 8. 清理所有临时文件
      *
-     * @param connection       SSH连接对象。
-     * @param containerName    目标Docker容器的名称。
-     * @param uploadedFileName 已上传到本应用服务器的ZIP文件名。
-     * @param progressCallback 用于报告操作进度的回调函数。
-     * @return 一个 {@link CompletableFuture}，其结果为布尔值，表示导入是否成功。
+     * @param connection       SSH连接对象
+     * @param containerName    目标Docker容器的名称
+     * @param uploadedFileName 已上传到远程服务器的ZIP文件名
+     * @param progressCallback 用于报告操作进度的回调函数
+     * @return 一个 {@link CompletableFuture}，其结果为布尔值，表示导入是否成功
      */
     public CompletableFuture<Boolean> importData(SshConnection connection, String containerName,
                                                  String uploadedFileName, Consumer<String> progressCallback) {
         return CompletableFuture.supplyAsync(() -> {
-            Path localZipPath = Paths.get(tempDirectory, uploadedFileName);
+            String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
+            String remoteUploadedPath = "/tmp/" + uploadedFileName;
+            String localZipPath = null;
+            String remoteZipPath = String.format("/tmp/sillytavern_import_%s.tar.gz", timestamp);
+            String extractTempPath = String.format("/tmp/sillytavern_extract_%s", timestamp);
+            
             try {
-                if (!Files.exists(localZipPath)) {
-                    throw new RuntimeException("未找到上传文件: " + uploadedFileName);
-                }
+                progressCallback.accept("正在从远程服务器下载上传文件...");
+                
+                // 1. 从远程服务器下载上传的文件到本地临时目录
+                localZipPath = downloadUploadedFileToLocal(connection, remoteUploadedPath, uploadedFileName);
+                
                 progressCallback.accept("正在验证上传文件...");
-                if (!isValidDataZip(localZipPath)) {
-                    throw new RuntimeException("数据 ZIP 文件格式无效或包含不安全内容");
+                if (!isValidDataZip(Paths.get(localZipPath))) {
+                    throw new RuntimeException("数据ZIP文件格式无效或包含不安全内容");
                 }
-                progressCallback.accept("正在上传文件到远程服务器...");
-                String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
-                String remoteZipPath = String.format("/tmp/sillytavern_import_%s.zip", timestamp);
-                uploadFileToRemote(connection, localZipPath.toString(), remoteZipPath);
-                progressCallback.accept("正在复制文件到容器...");
-                String containerZipPath = String.format("%s_%s.zip", TEMP_IMPORT_PATH, timestamp);
-                executeCommand(connection, String.format(
-                        "sudo docker cp %s %s:%s", remoteZipPath, containerName, containerZipPath));
-                progressCallback.accept("创建自动备份...");
-                String backupPath = createEnhancedBackup(connection, containerName, timestamp);
-                progressCallback.accept("验证备份完整性...");
-                if (!verifyBackupIntegrity(connection, containerName, backupPath)) {
-                    throw new RuntimeException("备份完整性验证失败");
-                }
-                progressCallback.accept("正在解压导入数据...");
+                
+                progressCallback.accept("正在上传文件到被控服务器...");
+                uploadFileToRemote(connection, localZipPath, remoteZipPath);
+                
+                progressCallback.accept("正在获取docker-compose路径...");
+                String dockerComposePath = findDockerComposePath(connection, containerName);
+                String hostDataPath = dockerComposePath + "/data";
+                
+                progressCallback.accept("正在创建数据备份...");
+                String backupPath = createDataBackup(connection, hostDataPath, timestamp);
+                
                 try {
-                    executeCommand(connection, String.format(
-                            "sudo docker exec %s sh -c 'rm -rf %s/*'", containerName, CONTAINER_DATA_PATH));
-                    executeCommand(connection, String.format(
-                            "sudo docker exec %s sh -c 'cd / && unzip -o %s'", containerName, containerZipPath));
-                    String dataCheck = executeCommand(connection, String.format(
-                            "sudo docker exec %s ls -A %s", containerName, CONTAINER_DATA_PATH));
-                    if (dataCheck.trim().isEmpty()) {
-                        throw new RuntimeException("数据解压校验失败，目录为空");
+                    progressCallback.accept("正在临时目录解压...");
+                    // 创建临时解压目录
+                    executeCommand(connection, String.format("mkdir -p '%s'", extractTempPath));
+                    
+                    // 检测文件类型并使用相应的解压命令
+                    if (uploadedFileName.toLowerCase().endsWith(".zip")) {
+                        // ZIP文件：使用unzip命令（如果可用）或Python解压
+                        try {
+                            executeCommand(connection, String.format("cd '%s' && unzip -o '%s'", extractTempPath, remoteZipPath));
+                        } catch (Exception e) {
+                            if (e.getMessage().contains("unzip: command not found")) {
+                                // unzip不可用，使用python解压
+                                executeCommand(connection, String.format(
+                                    "cd '%s' && python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('.')\"", 
+                                    extractTempPath, remoteZipPath));
+                            } else {
+                                throw e;
+                            }
+                        }
+                    } else {
+                        // TAR.GZ文件：使用tar命令
+                        executeCommand(connection, String.format("cd '%s' && tar -xzf '%s'", extractTempPath, remoteZipPath));
                     }
+                    
+                    // 验证解压结果
+                    String extractedDataPath = extractTempPath + "/data";
+                    String checkExtracted = executeCommand(connection, String.format("ls -A '%s'", extractedDataPath));
+                    if (checkExtracted.trim().isEmpty()) {
+                        throw new RuntimeException("解压失败：未找到data目录");
+                    }
+                    
+                    progressCallback.accept("正在备份现有数据...");
+                    // 先删除现有data目录内容
+                    executeCommand(connection, String.format("rm -rf '%s'/*", hostDataPath));
+                    
+                    progressCallback.accept("正在导入新数据...");
+                    // 将解压的data目录内容拷贝到挂载目录
+                    executeCommand(connection, String.format("cp -r '%s'/* '%s'/", extractedDataPath, hostDataPath));
+                    
+                    // 设置正确的权限
+                    executeCommand(connection, String.format("chown -R 1000:1000 '%s'", hostDataPath));
+                    
+                    progressCallback.accept("正在重启SillyTavern容器...");
+                    restartSillyTavernContainer(connection, dockerComposePath);
+                    
                     progressCallback.accept("导入完成");
+                    return true;
+                    
                 } catch (Exception e) {
-                    progressCallback.accept("导入失败，正在自动回滚...");
-                    performAutomaticRollback(connection, containerName, backupPath);
+                    progressCallback.accept("导入失败，正在回滚...");
+                    performDataRollback(connection, backupPath, hostDataPath);
                     throw e;
                 }
-                progressCallback.accept("清理临时文件...");
-                executeCommand(connection, String.format("sudo docker exec %s rm -f %s", containerName, containerZipPath));
-                executeCommand(connection, String.format("rm -f %s", remoteZipPath));
-                cleanupOldBackups(connection, containerName, 3);
-                fileCleanupService.scheduleCleanup(localZipPath.toString(), 0);
-                log.info("数据导入完成: {}", containerName);
-                return true;
+                
             } catch (Exception e) {
                 log.error("数据导入失败: {}", containerName, e);
                 throw new RuntimeException("数据导入失败: " + e.getMessage(), e);
+            } finally {
+                // 清理所有临时文件
+                cleanupImportTempFiles(connection, remoteUploadedPath, remoteZipPath, extractTempPath, localZipPath);
             }
         });
+    }
+    
+    /**
+     * 从远程SSH服务器下载上传的文件到本地临时目录
+     */
+    private String downloadUploadedFileToLocal(SshConnection connection, String remoteUploadedPath, String uploadedFileName) throws Exception {
+        // 确保本地临时目录存在
+        Path tempDir = Paths.get(tempDirectory);
+        if (!Files.exists(tempDir)) {
+            Files.createDirectories(tempDir);
+        }
+        
+        String localFilePath = Paths.get(tempDirectory, uploadedFileName).toString();
+        
+        log.info("从远程下载文件: {} -> {}", remoteUploadedPath, localFilePath);
+        downloadFileFromRemote(connection, remoteUploadedPath, localFilePath);
+        
+        return localFilePath;
     }
     /**
      * 获取容器内数据目录大小（字节）。
@@ -230,39 +295,62 @@ public class DataManagementService {
 
     /**
      * 使用纯Java API验证ZIP文件的完整性、结构和内容安全性。
+     * 确保压缩包根目录必须是data文件夹
      *
      * @param zipPath 指向待验证ZIP文件的路径。
      * @return 如果文件有效且安全，则返回true；否则返回false。
      */
     private boolean isValidDataZip(Path zipPath) {
-        final Set<String> requiredDirs = Set.of("app/data/", "app/data/characters/", "app/data/chats/");
+        final Set<String> requiredDirs = Set.of("data/", "data/characters/", "data/chats/");
         final Set<String> suspiciousExtensions = Set.of(".exe", ".bat", ".sh", ".cmd", ".scr", ".vbs", ".jar");
+        
         try {
             // 1. 检查文件大小
             if (Files.size(zipPath) > maxExportSizeBytes) {
                 log.warn("ZIP文件过大: {} bytes (限制: {} bytes)", Files.size(zipPath), maxExportSizeBytes);
                 return false;
             }
+            
             // 2. 使用ZipFile API进行验证，可同时检查完整性
             try (ZipFile zf = new ZipFile(zipPath.toFile())) {
                 Set<String> entryNames = zf.stream()
                         .map(java.util.zip.ZipEntry::getName)
                         .collect(Collectors.toSet());
-                // 3. 检查必需的目录结构
+                
+                // 3. 关键验证：确保压缩包根目录必须是data文件夹
+                boolean hasDataAsRoot = entryNames.contains("data/");
+                boolean allEntriesUnderData = entryNames.stream()
+                        .filter(name -> !name.equals("data/"))
+                        .allMatch(name -> name.startsWith("data/"));
+                
+                if (!hasDataAsRoot) {
+                    log.warn("ZIP文件根目录必须包含data/文件夹");
+                    return false;
+                }
+                
+                if (!allEntriesUnderData) {
+                    log.warn("ZIP文件中存在data/目录外的文件，压缩包根目录必须只有data文件夹");
+                    return false;
+                }
+                
+                // 4. 检查必需的目录结构
                 for (String requiredDir : requiredDirs) {
                     if (entryNames.stream().noneMatch(name -> name.startsWith(requiredDir))) {
                         log.warn("ZIP文件缺少必要路径: {}", requiredDir);
                         return false;
                     }
                 }
-                // 4. 检查是否包含可疑文件（基于扩展名和路径遍历攻击）
+                
+                // 5. 检查是否包含可疑文件（基于扩展名和路径遍历攻击）
                 for (String entryName : entryNames) {
                     String lowerCaseName = entryName.toLowerCase();
+                    
                     // 检查路径遍历
                     if (lowerCaseName.contains("../") || lowerCaseName.contains("..\\")) {
                         log.warn("ZIP文件包含潜在的路径遍历攻击: {}", entryName);
                         return false;
                     }
+                    
                     // 检查可疑扩展名
                     for (String ext : suspiciousExtensions) {
                         if (lowerCaseName.endsWith(ext)) {
@@ -272,6 +360,7 @@ public class DataManagementService {
                     }
                 }
             }
+            
             log.info("ZIP文件验证通过: {}", zipPath);
             return true;
         } catch (ZipException e) {
@@ -578,6 +667,152 @@ public class DataManagementService {
             throw new Exception("命令执行被中断: " + command, e);
         } catch (IOException e) {
             throw new Exception("命令执行 IO 错误: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 查找docker-compose.yaml所在目录（通过容器挂载信息）
+     */
+    private String findDockerComposePath(SshConnection connection, String containerName) throws Exception {
+        String inspectOutput = executeCommand(connection, 
+            String.format("docker inspect %s --format='{{range .Mounts}}{{if eq .Destination \"/home/node/app/data\"}}{{.Source}}{{end}}{{end}}'", containerName));
+        
+        if (inspectOutput.trim().isEmpty()) {
+            throw new RuntimeException("未找到data目录挂载路径");
+        }
+        
+        String mountedDataPath = inspectOutput.trim();
+        log.info("发现挂载路径: {}", mountedDataPath);
+        
+        // 挂载路径是 /path/to/compose/data，父目录就是docker-compose.yaml所在目录
+        // 直接使用字符串操作而不是Paths.get，避免Windows路径分隔符问题
+        String dockerComposePath;
+        if (mountedDataPath.endsWith("/data")) {
+            dockerComposePath = mountedDataPath.substring(0, mountedDataPath.length() - 5); // 移除 "/data"
+        } else {
+            // 如果路径不是以 /data 结尾，使用最后一个 / 之前的部分
+            int lastSlash = mountedDataPath.lastIndexOf('/');
+            if (lastSlash > 0) {
+                dockerComposePath = mountedDataPath.substring(0, lastSlash);
+            } else {
+                throw new RuntimeException("无法解析docker-compose路径，挂载路径格式异常: " + mountedDataPath);
+            }
+        }
+        
+        log.info("解析的docker-compose路径: {}", dockerComposePath);
+        return dockerComposePath;
+    }
+
+    /**
+     * 获取宿主机data目录大小
+     */
+    private long getHostDataDirectorySize(SshConnection connection, String hostDataPath) throws Exception {
+        String sizeOutput = executeCommand(connection, String.format("du -sb '%s' | cut -f1", hostDataPath));
+        try {
+            return Long.parseLong(sizeOutput.trim());
+        } catch (NumberFormatException e) {
+            log.warn("无法解析数据目录大小: {}", sizeOutput);
+            return 0;
+        }
+    }
+
+    /**
+     * 获取远程文件大小
+     */
+    private long getRemoteFileSize(SshConnection connection, String remoteFilePath) throws Exception {
+        String sizeOutput = executeCommand(connection, String.format("stat -c%%s '%s'", remoteFilePath));
+        try {
+            return Long.parseLong(sizeOutput.trim());
+        } catch (NumberFormatException e) {
+            log.warn("无法解析文件大小: {}", sizeOutput);
+            return 0;
+        }
+    }
+
+    /**
+     * 安排远程文件清理
+     */
+    private void scheduleRemoteCleanup(SshConnection connection, String remoteFilePath, int delayHours) {
+        CompletableFuture.delayedExecutor(delayHours, TimeUnit.HOURS)
+            .execute(() -> {
+                try {
+                    executeCommand(connection, String.format("rm -f '%s'", remoteFilePath));
+                    log.info("远程文件清理完成: {}", remoteFilePath);
+                } catch (Exception e) {
+                    log.warn("远程文件清理失败: {}", remoteFilePath, e);
+                }
+            });
+    }
+
+    /**
+     * 创建宿主机数据备份
+     */
+    private String createDataBackup(SshConnection connection, String hostDataPath, String timestamp) throws Exception {
+        String backupPath = hostDataPath + "_backup_" + timestamp;
+        executeCommand(connection, String.format("cp -r '%s' '%s'", hostDataPath, backupPath));
+        log.info("数据备份创建完成: {}", backupPath);
+        return backupPath;
+    }
+
+    /**
+     * 执行数据回滚
+     */
+    private void performDataRollback(SshConnection connection, String backupPath, String hostDataPath) {
+        try {
+            executeCommand(connection, String.format("rm -rf '%s'", hostDataPath));
+            executeCommand(connection, String.format("mv '%s' '%s'", backupPath, hostDataPath));
+            log.info("数据回滚成功");
+        } catch (Exception e) {
+            log.error("数据回滚失败: {}", e.getMessage());
+            throw new RuntimeException("数据回滚失败，请手动恢复数据");
+        }
+    }
+
+    /**
+     * 重启SillyTavern容器
+     */
+    private void restartSillyTavernContainer(SshConnection connection, String dockerComposePath) throws Exception {
+        // 停止容器
+        executeCommand(connection, String.format("cd '%s' && docker-compose stop sillytavern", dockerComposePath));
+        
+        // 等待2秒确保完全停止
+        Thread.sleep(2000);
+        
+        // 启动容器
+        executeCommand(connection, String.format("cd '%s' && docker-compose up -d sillytavern", dockerComposePath));
+        
+        log.info("SillyTavern容器重启完成");
+    }
+
+    /**
+     * 清理导入临时文件
+     */
+    private void cleanupImportTempFiles(SshConnection connection, String remoteUploadedPath, String remoteZipPath, 
+                                       String extractTempPath, String localZipPath) {
+        // 清理被控服务器临时文件
+        try {
+            if (remoteUploadedPath != null) {
+                executeCommand(connection, String.format("rm -f '%s'", remoteUploadedPath));
+            }
+            if (remoteZipPath != null) {
+                executeCommand(connection, String.format("rm -f '%s'", remoteZipPath));
+            }
+            if (extractTempPath != null) {
+                executeCommand(connection, String.format("rm -rf '%s'", extractTempPath));
+            }
+            log.info("被控服务器临时文件清理完成");
+        } catch (Exception e) {
+            log.warn("清理被控服务器临时文件失败: {}", e.getMessage());
+        }
+        
+        // 清理Server端临时文件
+        if (localZipPath != null) {
+            try {
+                Files.deleteIfExists(Paths.get(localZipPath));
+                log.info("本地临时文件清理完成: {}", localZipPath);
+            } catch (IOException e) {
+                log.warn("清理本地临时文件失败: {}", e.getMessage());
+            }
         }
     }
 }
