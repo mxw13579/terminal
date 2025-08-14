@@ -196,13 +196,19 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSillyTavern } from '@/composables/useSillyTavern'
+import useConnectionManager from '@/composables/useConnectionManager'
 
 export default {
   name: 'DataManager',
   setup() {
-    const { stompClient, isConnected } = useSillyTavern()
+    const sillyTavernApi = useSillyTavern()
+    const { connectionState, getStompClient } = useConnectionManager()
+    
+    // Computed properties for connection status
+    const isConnected = computed(() => connectionState.isConnected)
+    const stompClient = computed(() => getStompClient())
     
     const exporting = ref(false)
     const importing = ref(false)
@@ -290,7 +296,16 @@ export default {
       successMessage.value = ''
       errorMessage.value = ''
       
-      stompClient.value.send('/app/sillytavern/export-data', {}, JSON.stringify({}))
+      const client = stompClient.value
+      if (!client) {
+        errorMessage.value = 'STOMP client is not available'
+        return
+      }
+      
+      client.publish({
+        destination: '/app/sillytavern/export-data',
+        body: JSON.stringify({})
+      })
     }
     
     const startImport = async () => {
@@ -315,9 +330,17 @@ export default {
         const uploadedFileName = await uploadFile(selectedFile.value)
         
         // Start import process
-        stompClient.value.send('/app/sillytavern/import-data', {}, JSON.stringify({
-          uploadedFileName: uploadedFileName
-        }))
+        const client = stompClient.value
+        if (!client) {
+          throw new Error('STOMP client is not available')
+        }
+        
+        client.publish({
+          destination: '/app/sillytavern/import-data',
+          body: JSON.stringify({
+            uploadedFileName: uploadedFileName
+          })
+        })
         
       } catch (error) {
         importing.value = false

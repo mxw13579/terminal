@@ -177,13 +177,19 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSillyTavern } from '@/composables/useSillyTavern'
+import useConnectionManager from '@/composables/useConnectionManager'
 
 export default {
   name: 'VersionManager',
   setup() {
-    const { stompClient, isConnected } = useSillyTavern()
+    const sillyTavernApi = useSillyTavern()
+    const { connectionState, getStompClient } = useConnectionManager()
+    
+    // Computed properties for connection status
+    const isConnected = computed(() => connectionState.isConnected)
+    const stompClient = computed(() => getStompClient())
     
     const loading = ref(true)
     const isUpgrading = ref(false)
@@ -229,7 +235,15 @@ export default {
       successMessage.value = ''
       
       try {
-        stompClient.value.send('/app/sillytavern/get-version-info', {}, JSON.stringify({}))
+        const client = stompClient.value
+        if (!client) {
+          throw new Error('STOMP client is not available')
+        }
+        
+        client.publish({
+          destination: '/app/sillytavern/get-version-info',
+          body: JSON.stringify({})
+        })
       } catch (error) {
         errorMessage.value = '发送请求失败: ' + error.message
         loading.value = false
@@ -255,7 +269,15 @@ export default {
         }
         
         try {
-          stompClient.value.send('/app/sillytavern/service-action', {}, JSON.stringify(request))
+          const client = stompClient.value
+          if (!client) {
+            throw new Error('STOMP client is not available')
+          }
+          
+          client.publish({
+            destination: '/app/sillytavern/service-action',
+            body: JSON.stringify(request)
+          })
         } catch (error) {
           errorMessage.value = '发送版本切换请求失败: ' + error.message
           isUpgrading.value = false
@@ -281,7 +303,15 @@ export default {
         successMessage.value = ''
         
         try {
-          stompClient.value.send('/app/sillytavern/cleanup-images', {}, JSON.stringify({}))
+          const client = stompClient.value
+          if (!client) {
+            throw new Error('STOMP client is not available')
+          }
+          
+          client.publish({
+            destination: '/app/sillytavern/cleanup-images',
+            body: JSON.stringify({})
+          })
         } catch (error) {
           errorMessage.value = '发送清理请求失败: ' + error.message
           isCleaningUp.value = false

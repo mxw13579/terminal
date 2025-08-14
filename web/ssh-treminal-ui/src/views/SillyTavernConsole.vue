@@ -331,7 +331,6 @@
               <!-- 服务控制 -->
               <div v-else-if="activeTab === 'services'" class="content-panel">
                 <ServiceControls
-                  :connection="connectionState.connectionInfo"
                   :container-status="containerStatus"
                   :is-performing-action="isActionLoading"
                   :current-action="currentActionType"
@@ -342,7 +341,6 @@
               <!-- 配置管理 -->
               <div v-else-if="activeTab === 'configuration'" class="content-panel">
                 <ConfigurationEditor
-                  :connection="connectionState.connectionInfo"
                   @configuration-updated="handleConfigurationUpdated"
                 />
               </div>
@@ -363,7 +361,6 @@
               <!-- 数据管理 -->
               <div v-else-if="activeTab === 'data'" class="content-panel">
                 <DataManager
-                  :connection="connectionState.connectionInfo"
                   @export-completed="handleExportCompleted"
                   @import-completed="handleImportCompleted"
                 />

@@ -40,7 +40,7 @@
                 placeholder="Enter username"
                 required
                 minlength="3"
-                pattern="[a-zA-Z_-]+"
+                pattern="[-a-zA-Z_]+"
               />
               <div v-if="errors.username" class="invalid-feedback">
                 {{ errors.username }}
@@ -82,35 +82,30 @@
             </div>
           </div>
 
-          <!-- Server Settings Section -->
-          <div class="row mb-4">
+          <!-- Server Settings Section - REMOVED PORT EDITING -->
+          <!-- Port is now read-only and not editable by users -->
+          <div class="row mb-4" v-if="config.port">
             <div class="col-md-12">
               <h6 class="fw-bold text-primary mb-3">
                 <i class="fas fa-server me-2"></i>
-                Server Settings
+                Server Information (Read-only)
               </h6>
             </div>
             
             <div class="col-md-6">
-              <label for="port" class="form-label">
-                Port <span class="text-danger">*</span>
+              <label for="port-readonly" class="form-label">
+                Current Port
               </label>
               <input
                 type="number"
                 class="form-control"
-                :class="{ 'is-invalid': errors.port }"
-                id="port"
-                v-model.number="config.port"
-                placeholder="8000"
-                min="1024"
-                max="65535"
-                required
+                id="port-readonly"
+                :value="config.port"
+                readonly
+                disabled
               />
-              <div v-if="errors.port" class="invalid-feedback">
-                {{ errors.port }}
-              </div>
               <div class="form-text">
-                Port number between 1024 and 65535
+                Port configuration is managed automatically
               </div>
             </div>
           </div>
@@ -202,11 +197,17 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSillyTavern } from '@/composables/useSillyTavern'
+import useConnectionManager from '@/composables/useConnectionManager'
 
 export default {
   name: 'ConfigurationEditor',
   setup() {
-    const { stompClient, isConnected } = useSillyTavern()
+    const sillyTavernApi = useSillyTavern()
+    const { connectionState, getStompClient } = useConnectionManager()
+    
+    // Computed properties for connection status
+    const isConnected = computed(() => connectionState.isConnected)
+    const stompClient = computed(() => getStompClient())
     
     const loading = ref(true)
     const saving = ref(false)
@@ -233,8 +234,6 @@ export default {
     const isFormValid = computed(() => {
       return config.value.username && 
              config.value.username.length >= 3 && 
-             config.value.port >= 1024 && 
-             config.value.port <= 65535 &&
              (!config.value.password || config.value.password.length >= 6)
     })
     
@@ -257,9 +256,7 @@ export default {
         errors.value.password = 'Password must be at least 6 characters long'
       }
       
-      if (!config.value.port || config.value.port < 1024 || config.value.port > 65535) {
-        errors.value.port = 'Port must be between 1024 and 65535'
-      }
+      // Port validation removed - port is no longer editable
       
       return Object.keys(errors.value).length === 0
     }
@@ -267,14 +264,31 @@ export default {
     const loadConfiguration = () => {
       if (!isConnected.value) {
         errorMessage.value = 'WebSocket connection not established'
+        loading.value = false
         return
       }
       
-      loading.value = true
-      successMessage.value = ''
-      errorMessage.value = ''
+      const client = stompClient.value
+      if (!client) {
+        errorMessage.value = 'STOMP client is not available'
+        loading.value = false
+        return
+      }
       
-      stompClient.value.send('/app/sillytavern/get-config', {}, JSON.stringify({}))
+      try {
+        loading.value = true
+        successMessage.value = ''
+        errorMessage.value = ''
+        
+        client.publish({
+          destination: '/app/sillytavern/get-config',
+          body: JSON.stringify({})
+        })
+      } catch (error) {
+        console.error('Error sending configuration request:', error)
+        errorMessage.value = 'Failed to request configuration: ' + error.message
+        loading.value = false
+      }
     }
     
     const saveConfiguration = () => {
@@ -287,17 +301,35 @@ export default {
         return
       }
       
-      saving.value = true
-      successMessage.value = ''
-      errorMessage.value = ''
-      requiresRestart.value = false
+      const client = stompClient.value
+      if (!client) {
+        errorMessage.value = 'STOMP client is not available'
+        saving.value = false
+        return
+      }
       
-      stompClient.value.send('/app/sillytavern/update-config', {}, JSON.stringify(config.value))
+      try {
+        saving.value = true
+        successMessage.value = ''
+        errorMessage.value = ''
+        requiresRestart.value = false
+        
+        client.publish({
+          destination: '/app/sillytavern/update-config',
+          body: JSON.stringify(config.value)
+        })
+      } catch (error) {
+        console.error('Error sending configuration update:', error)
+        errorMessage.value = 'Failed to save configuration: ' + error.message
+        saving.value = false
+      }
     }
     
     const handleConfigResponse = (message) => {
+      console.log('ConfigurationEditor: Received config response:', message)
       try {
         const response = JSON.parse(message.body)
+        console.log('Config response parsed:', response)
         loading.value = false
         
         if (response.success && response.payload) {
@@ -316,8 +348,10 @@ export default {
     }
     
     const handleUpdateResponse = (message) => {
+      console.log('ConfigurationEditor: Received config update response:', message)
       try {
         const response = JSON.parse(message.body)
+        console.log('Config update response parsed:', response)
         saving.value = false
         
         if (response.success) {
@@ -344,22 +378,39 @@ export default {
     
     onMounted(() => {
       // Subscribe to configuration responses
+      console.log('ConfigurationEditor mounted, checking connection...')
+      console.log('isConnected:', isConnected.value)
+      console.log('stompClient:', !!stompClient.value)
+      
       if (isConnected.value && stompClient.value) {
-        const sessionId = stompClient.value.ws._websocket?.extensions?.sessionId || 
-                          Math.random().toString(36).substr(2, 9)
+        const client = stompClient.value
+        console.log('STOMP client available, setting up subscriptions')
         
-        configSubscription = stompClient.value.subscribe(
-          `/queue/sillytavern/config-user${sessionId}`,
-          handleConfigResponse
-        )
-        
-        updateSubscription = stompClient.value.subscribe(
-          `/queue/sillytavern/config-updated-user${sessionId}`,
-          handleUpdateResponse
-        )
-        
-        // Load initial configuration
-        loadConfiguration()
+        try {
+          configSubscription = client.subscribe(
+            `/user/queue/sillytavern/config`,
+            handleConfigResponse
+          )
+          console.log('Config subscription created for:', `/user/queue/sillytavern/config`)
+          
+          updateSubscription = client.subscribe(
+            `/user/queue/sillytavern/config-updated`,
+            handleUpdateResponse
+          )
+          console.log('Config update subscription created for:', `/user/queue/sillytavern/config-updated`)
+          
+          console.log('Subscriptions created, loading configuration')
+          // Load initial configuration
+          loadConfiguration()
+        } catch (error) {
+          console.error('Error setting up ConfigurationEditor subscriptions:', error)
+          errorMessage.value = 'Failed to initialize configuration editor: ' + error.message
+          loading.value = false
+        }
+      } else {
+        console.warn('ConfigurationEditor: Connection not available')
+        errorMessage.value = 'SSH connection is required for configuration management'
+        loading.value = false
       }
     })
     

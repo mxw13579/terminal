@@ -118,12 +118,6 @@ export function useSillyTavern(options = {}) {
                         case 'logs':
                             handleLogsResponse(data);
                             break;
-                        case 'config':
-                            handleConfigResponse(data);
-                            break;
-                        case 'config-updated':
-                            handleConfigUpdateResponse(data);
-                            break;
                         case 'version-info':
                             handleVersionInfoResponse(data);
                             break;
@@ -199,26 +193,6 @@ export function useSillyTavern(options = {}) {
                 handleLogsResponse(data);
             } catch (e) {
                 console.error('Error processing logs response:', e);
-            }
-        });
-
-        // Subscribe to configuration responses
-        client.subscribe('/user/queue/sillytavern/config', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                handleConfigResponse(data);
-            } catch (e) {
-                console.error('Error processing config response:', e);
-            }
-        });
-
-        // Subscribe to configuration update responses
-        client.subscribe('/user/queue/sillytavern/config-updated', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                handleConfigUpdateResponse(data);
-            } catch (e) {
-                console.error('Error processing config update response:', e);
             }
         });
 

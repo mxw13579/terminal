@@ -27,7 +27,8 @@
       "Bash(%PATH%)",
       "Bash(\"C:\\Program Files\\nodejs\\npm.cmd\" run build)",
       "Bash(cat:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(sudo docker logs:*)"
     ],
     "deny": []
   }
