@@ -105,9 +105,9 @@
                 <div class="stat-item progress-item">
                   <span class="stat-label">内存使用率</span>
                   <div class="progress-bar">
-                    <div class="progress-bar-inner" :style="{ width: (serverStats.memUsage || 0) + '%' }"></div>
+                    <div class="progress-bar-inner" :style="{ width: getMemoryPercentage(serverStats) + '%' }"></div>
                   </div>
-                  <span class="stat-percent">{{ (serverStats.memUsage || 0).toFixed(2) }}%</span>
+                  <span class="stat-percent">{{ getMemoryPercentage(serverStats).toFixed(2) }}%</span>
                 </div>
                 <div class="stat-item progress-item">
                   <span class="stat-label">硬盘使用率 (/)</span>
@@ -879,6 +879,25 @@ export default {
   },
   
   methods: {
+    getMemoryPercentage(stats) {
+      if (!stats || (!stats.memoryUsage && !stats.memUsage)) return 0;
+      
+      // 优先使用新的字段名 memoryUsage（后端实际返回的字段名）
+      const memData = stats.memoryUsage || stats.memUsage;
+      
+      // 新格式：对象格式，包含percentage字段
+      if (typeof memData === 'object' && memData.percentage !== undefined) {
+        return memData.percentage || 0;
+      }
+      
+      // 旧格式：直接是数字
+      if (typeof memData === 'number') {
+        return memData;
+      }
+      
+      return 0;
+    },
+    
     selectMode(mode) {
       this.selectedMode = mode
     },

@@ -48,7 +48,7 @@
         </div>
         <div class="stat-item">
           <span class="stat-label">网络 I/O</span>
-          <span class="stat-value small-text">接收: {{ stats.netRx }} | 发送: {{ stats.netTx }}</span>
+          <span class="stat-value small-text">接收: {{ getNetworkRx(stats) }} | 发送: {{ getNetworkTx(stats) }}</span>
         </div>
       </section>
 
@@ -91,7 +91,7 @@ const getCpuPercentage = (stats) => {
     return stats.cpuUsage.percentage || 0;
   }
   
-  // 旧格式：直接是数字
+  // 旧格式：直接是数字（后端当前返回格式）
   if (typeof stats.cpuUsage === 'number') {
     return stats.cpuUsage;
   }
@@ -101,16 +101,19 @@ const getCpuPercentage = (stats) => {
 
 // 处理内存使用率数据（兼容新旧格式）
 const getMemoryPercentage = (stats) => {
-  if (!stats || !stats.memUsage) return 0;
+  if (!stats || (!stats.memoryUsage && !stats.memUsage)) return 0;
+  
+  // 首先尝试新的字段名 memoryUsage（后端实际返回的字段名）
+  const memData = stats.memoryUsage || stats.memUsage;
   
   // 新格式：对象格式，包含percentage字段
-  if (typeof stats.memUsage === 'object' && stats.memUsage.percentage !== undefined) {
-    return stats.memUsage.percentage || 0;
+  if (typeof memData === 'object' && memData.percentage !== undefined) {
+    return memData.percentage || 0;
   }
   
   // 旧格式：直接是数字
-  if (typeof stats.memUsage === 'number') {
-    return stats.memUsage;
+  if (typeof memData === 'number') {
+    return memData;
   }
   
   return 0;
@@ -131,6 +134,40 @@ const getDiskPercentage = (stats) => {
   }
   
   return 0;
+};
+
+// 处理网络接收数据（兼容新旧格式）
+const getNetworkRx = (stats) => {
+  if (!stats) return 'N/A';
+  
+  // 新格式：networkStats对象
+  if (stats.networkStats && stats.networkStats.rx) {
+    return stats.networkStats.rx;
+  }
+  
+  // 旧格式：直接字段
+  if (stats.netRx) {
+    return stats.netRx;
+  }
+  
+  return 'N/A';
+};
+
+// 处理网络发送数据（兼容新旧格式）
+const getNetworkTx = (stats) => {
+  if (!stats) return 'N/A';
+  
+  // 新格式：networkStats对象
+  if (stats.networkStats && stats.networkStats.tx) {
+    return stats.networkStats.tx;
+  }
+  
+  // 旧格式：直接字段
+  if (stats.netTx) {
+    return stats.netTx;
+  }
+  
+  return 'N/A';
 };
 </script>
 

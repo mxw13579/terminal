@@ -683,20 +683,19 @@ const getCpuUsage = (stats) => {
 
 // 格式化内存和磁盘使用情况
 const formatMemoryUsage = (stats) => {
-
-
-  if (!stats || stats.memUsage === undefined) {
+  if (!stats || (!stats.memoryUsage && !stats.memUsage)) {
     return { used: '0', total: '0', percentage: 0 }
   }
 
+  // 优先使用新的字段名 memoryUsage（后端实际返回的字段名）
+  const memData = stats.memoryUsage || stats.memUsage;
+
   // 如果是数字，说明只有百分比信息（旧格式兼容）
-  if (typeof stats.memUsage === 'number') {
-    return { used: '未知', total: '未知', percentage: stats.memUsage }
+  if (typeof memData === 'number') {
+    return { used: '未知', total: '未知', percentage: memData }
   }
 
   // 如果是对象，说明有详细信息（新格式）
-  const memData = stats.memUsage
-
   if (!memData || typeof memData !== 'object') {
     return { used: '0', total: '0', percentage: 0 }
   }

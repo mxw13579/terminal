@@ -289,13 +289,42 @@ public class SshMonitorService {
             return r;
         }
         try {
-            String[] parts = Arrays.stream(out.split("\\n"))
-                    .filter(l->l.startsWith("Mem:"))
-                    .findFirst().orElse("").trim().split("\\s+");
-            long total=Long.parseLong(parts[1]), used=Long.parseLong(parts[2]);
-            double pct= total>0 ? used*100.0/total : 0.0;
-            r.put("used", used); r.put("total", total); r.put("percentage", pct);
-        } catch(Exception e){ log.warn("Mem 解析失败",e); r.put("used",0L);r.put("total",0L);r.put("percentage",0.0);}
+            // 解析 free -m 输出
+            // 格式通常为:
+            //               total        used        free      shared  buff/cache   available
+            // Mem:           15867        1234       13456          45        1177       14145
+            String[] lines = out.split("\\n");
+            String memLine = null;
+            for (String line : lines) {
+                if (line.trim().startsWith("Mem:")) {
+                    memLine = line.trim();
+                    break;
+                }
+            }
+            
+            if (memLine != null) {
+                String[] parts = memLine.split("\\s+");
+                // parts[0] = "Mem:", parts[1] = total, parts[2] = used
+                if (parts.length >= 3) {
+                    long total = Long.parseLong(parts[1]);
+                    long used = Long.parseLong(parts[2]);
+                    double pct = total > 0 ? used * 100.0 / total : 0.0;
+                    r.put("used", used);
+                    r.put("total", total);
+                    r.put("percentage", pct);
+                    log.debug("内存解析成功: total={}MB, used={}MB, percentage={}%", total, used, pct);
+                } else {
+                    log.warn("内存行格式不正确: parts.length={}, line='{}'", parts.length, memLine);
+                    r.put("used",0L);r.put("total",0L);r.put("percentage",0.0);
+                }
+            } else {
+                log.warn("未找到内存信息行，free -m 输出: '{}'", out);
+                r.put("used",0L);r.put("total",0L);r.put("percentage",0.0);
+            }
+        } catch(Exception e){ 
+            log.warn("内存解析失败，free -m 输出: '{}', 错误: {}", out, e.getMessage(), e); 
+            r.put("used",0L);r.put("total",0L);r.put("percentage",0.0);
+        }
         return r;
     }
 
