@@ -280,7 +280,9 @@ public class RealTimeLogService {
                     synchronized (batchLines) {
                         if (!batchLines.isEmpty()) {
                             log.info("推送最后批次日志，行数: {}, 内容: {}", batchLines.size(), batchLines);
+                            log.info("最后批次推送前的详细信息: sessionId={}, running={}", sessionId, running);
                             pushLogsToClient(batchLines, true);
+                            log.info("最后批次推送完成");
                         } else {
                             log.info("没有剩余批次需要推送");
                         }
@@ -317,38 +319,47 @@ public class RealTimeLogService {
          * @param isComplete 是否为最后一批
          */
         private void pushLogsToClient(List<String> newLines, boolean isComplete) {
-            // 对日志按时间戳进行排序
-            List<String> sortedLines = new ArrayList<>(newLines);
-            sortedLines.sort((line1, line2) -> {
-                String timestamp1 = extractTimestamp(line1);
-                String timestamp2 = extractTimestamp(line2);
+            try {
+                // 对日志按时间戳进行排序
+                List<String> sortedLines = new ArrayList<>(newLines);
+                sortedLines.sort((line1, line2) -> {
+                    String timestamp1 = extractTimestamp(line1);
+                    String timestamp2 = extractTimestamp(line2);
+                    
+                    if (timestamp1 != null && timestamp2 != null) {
+                        return timestamp1.compareTo(timestamp2);
+                    }
+                    // 如果没有时间戳，保持原顺序
+                    return 0;
+                });
                 
-                if (timestamp1 != null && timestamp2 != null) {
-                    return timestamp1.compareTo(timestamp2);
-                }
-                // 如果没有时间戳，保持原顺序
-                return 0;
-            });
-            
-            RealTimeLogDto logDto = RealTimeLogDto.builder()
-                    .sessionId(sessionId)
-                    .containerName(containerName)
-                    .lines(sortedLines) // 使用排序后的日志
-                    .totalLines(logBuffer.size())
-                    .timestamp(LocalDateTime.now())
-                    .isRealTime(true)
-                    .isComplete(isComplete)
-                    .build();
+                RealTimeLogDto logDto = RealTimeLogDto.builder()
+                        .sessionId(sessionId)
+                        .containerName(containerName)
+                        .lines(sortedLines) // 使用排序后的日志
+                        .totalLines(logBuffer.size())
+                        .timestamp(LocalDateTime.now())
+                        .isRealTime(true)
+                        .isComplete(isComplete)
+                        .build();
 
-            // 使用与STOMP控制器一致的消息格式和路径
-            Map<String, Object> message = Map.of(
-                    "type", "realtime-logs",
-                    "success", true,
-                    "payload", logDto
-            );
-            log.info("推送日志到客户端，行数: {}, 路径: /queue/sillytavern/realtime-logs，内容: {}", sortedLines.size(), sortedLines);
-            // 发送到统一的路径 /user/queue/sillytavern/realtime-logs
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/realtime-logs", message);
+                // 使用与STOMP控制器一致的消息格式和路径
+                Map<String, Object> message = Map.of(
+                        "type", "realtime-logs",
+                        "success", true,
+                        "payload", logDto
+                );
+                log.info("推送日志到客户端，行数: {}, 路径: /queue/sillytavern/realtime-logs，内容: {}, isComplete: {}", 
+                        sortedLines.size(), sortedLines, isComplete);
+                
+                // 发送到统一的路径 /user/queue/sillytavern/realtime-logs
+                messagingTemplate.convertAndSendToUser(sessionId, "/queue/sillytavern/realtime-logs", message);
+                
+                log.info("WebSocket消息发送完成，sessionId: {}, 消息类型: realtime-logs", sessionId);
+            } catch (Exception e) {
+                log.error("推送日志到客户端时发生异常，sessionId: {}, 行数: {}, 错误: {}", 
+                        sessionId, newLines.size(), e.getMessage(), e);
+            }
         }
 
         /**

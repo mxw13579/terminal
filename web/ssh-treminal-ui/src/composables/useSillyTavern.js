@@ -564,6 +564,7 @@ export function useSillyTavern(options = {}) {
         // 检查数据格式：如果有type字段，说明是实时日志消息
         if (data.type === 'realtime-logs' && data.payload) {
             console.log('处理实时日志，payload结构:', data.payload);
+            console.log('isComplete标记:', data.payload.isComplete);
 
             let newLines = [];
             // 检查是否有lines字段（这是真正的日志内容）
@@ -604,8 +605,23 @@ export function useSillyTavern(options = {}) {
                 if (uniqueNewLines.length > 0) {
                     logs.value = [...logs.value, ...uniqueNewLines];
                     console.log('添加去重后的日志，新增行数:', uniqueNewLines.length, '总长度:', logs.value.length);
+                    
+                    // 特别标记最后一批数据
+                    if (data.payload.isComplete) {
+                        console.log('🚨 收到最后一批日志数据！isComplete=true，总日志数:', logs.value.length);
+                    }
                 } else {
                     console.log('所有新日志都是重复的，跳过添加');
+                    
+                    // 即使是重复数据，也要检查是否为最后批次
+                    if (data.payload.isComplete) {
+                        console.log('🚨 收到最后一批日志数据（重复数据）！isComplete=true，总日志数:', logs.value.length);
+                    }
+                }
+            } else {
+                // 没有新日志行，但检查是否为最后批次
+                if (data.payload.isComplete) {
+                    console.log('🚨 收到最后一批日志数据（空批次）！isComplete=true，总日志数:', logs.value.length);
                 }
             }
         } else if (data.success !== undefined) {
