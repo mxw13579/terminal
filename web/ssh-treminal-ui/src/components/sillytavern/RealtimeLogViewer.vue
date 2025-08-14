@@ -7,8 +7,8 @@
             <!-- 简化标题，只保留全屏按钮 -->
           </div>
           <div class="header-actions">
-            <button 
-              @click="toggleFullscreen" 
+            <button
+              @click="toggleFullscreen"
               class="btn btn-sm btn-outline-light"
               :title="isFullscreen ? '退出全屏' : '全屏显示'"
             >
@@ -17,9 +17,8 @@
           </div>
         </div>
       </div>
-      
+
       <div class="card-body">
-        <!-- 直接显示日志区域，移除所有控制面板 -->
         <div class="log-display-area">
           <div v-if="logs.length === 0" class="log-empty">
             <div class="empty-icon">
@@ -32,33 +31,33 @@
               调试: filteredLogs.length={{ logs.length }}, rawLogs.length={{ rawLogs.value?.length || 0 }}
             </div>
           </div>
-          
+
           <div v-else class="log-container-wrapper">
             <div class="log-container" ref="logContainer">
-              
-              <div 
-                v-for="(log, index) in logs" 
+
+              <div
+                v-for="(log, index) in logs"
                 :key="index"
                 class="log-line"
               >
                 {{ log }}
               </div>
             </div>
-            
+
             <!-- 自动滚动开关 -->
             <div class="scroll-controls">
               <div class="form-check form-switch">
-                <input 
-                  class="form-check-input" 
-                  type="checkbox" 
-                  id="autoScroll" 
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="autoScroll"
                   v-model="autoScroll"
                 >
                 <label class="form-check-label" for="autoScroll">
                   自动滚动到底部
                 </label>
               </div>
-              
+
               <div class="scroll-buttons">
                 <button @click="scrollToTop" class="btn btn-sm btn-outline-secondary me-1">
                   <i class="fas fa-angle-double-up"></i>
@@ -70,8 +69,6 @@
             </div>
           </div>
         </div>
-
-        <!-- 日志操作按钮 - 已移除下载、复制和搜索功能 -->
 
         <!-- 错误消息 -->
         <div v-if="errorMessage" class="alert alert-danger mt-3" role="alert">
@@ -107,11 +104,11 @@ export default {
   setup(props) {
     const sillyTavern = useSillyTavern()
     const { connectionState, getStompClient } = useConnectionManager()
-    
+
     // 直接从单例状态获取logs和实时日志状态
     const sillyTavernLogs = sillyTavern.logs
     const isRealtimeActive = sillyTavern.isRealtimeLogsActive // 使用全局状态
-    
+
     console.log('RealtimeLogViewer获取sillyTavern.logs引用:', {
       isRef: !!sillyTavernLogs,
       isReadonly: sillyTavernLogs?._v_isReadonly,
@@ -122,7 +119,7 @@ export default {
       sillyTavernType: typeof sillyTavern,
       sillyTavernKeys: Object.keys(sillyTavern).slice(0, 10)
     })
-    
+
     // 添加调试监听 - 监听readonly引用
     watch(sillyTavernLogs, (newLogs) => {
       console.log('🔍 RealtimeLogViewer检测到sillyTavern.logs变化:', {
@@ -132,7 +129,7 @@ export default {
         isArray: Array.isArray(newLogs)
       })
     }, { deep: true, immediate: true })
-    
+
     // 同时监听整个sillyTavern对象的变化
     watch(() => sillyTavern.logs.value, (newLogs) => {
       console.log('🎯 直接监听sillyTavern.logs.value变化:', {
@@ -140,7 +137,7 @@ export default {
         sample: newLogs?.slice(-2) || []
       })
     }, { immediate: true })
-    
+
     // 从统一连接管理器获取STOMP连接状态
     const isConnected = computed(() => connectionState.isConnected)
     const stompClient = computed(() => {
@@ -155,7 +152,7 @@ export default {
       })
       return client
     })
-    
+
     // 响应式状态（移除了 isRealtimeActive - 现在使用全局状态）
     const totalLines = ref(0)
     const autoScroll = ref(true)
@@ -164,22 +161,22 @@ export default {
     const successMessage = ref('')
     const memoryInfo = ref(null)
     const isFullscreen = ref(false) // 全屏状态
-    
+
     // 日志容器引用
     const logContainer = ref(null)
-    
+
     // 日志配置
     const logConfig = reactive({
-      maxLines: 50
+      maxLines: 200
     })
-    
+
     // 计算属性
     const realtimeStatus = computed(() => {
       if (!isConnected.value) return 'disconnected'
       if (isRealtimeActive.value) return 'active'
       return 'inactive'
     })
-    
+
     // 对日志按时间戳排序，但保持原始格式
     const displayLogs = computed(() => {
       console.log('计算displayLogs，当前sillyTavernLogs长度:', sillyTavernLogs.value?.length || 0)
@@ -187,11 +184,11 @@ export default {
         console.log('sillyTavernLogs为空，返回空数组')
         return []
       }
-      
+
       // 清理ANSI转义字符和其他转义序列，但保持原始格式
       const cleanedLogs = sillyTavernLogs.value.map(log => {
         if (typeof log !== 'string') return log
-        
+
         return log
           // 移除ANSI转义序列 (如 \x1B[1m\x1B[32m)
           .replace(/\x1B\[[0-9;]*[mGK]/g, '')
@@ -200,34 +197,34 @@ export default {
           // 只移除行尾的空白，保持行首缩进和空行
           .replace(/\s+$/, '')
       })
-      
+
       // 按时间戳排序日志（如果有时间戳的话）
       const sortedLogs = cleanedLogs.slice().sort((a, b) => {
         // 提取时间戳正则：2025-08-13T14:18:38.501597355Z
         const timestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)/
         const timestampA = a.match(timestampRegex)?.[1]
         const timestampB = b.match(timestampRegex)?.[1]
-        
+
         // 如果两个都有时间戳，按时间排序
         if (timestampA && timestampB) {
           return new Date(timestampA).getTime() - new Date(timestampB).getTime()
         }
-        
+
         // 如果只有一个有时间戳，有时间戳的排在前面
         if (timestampA && !timestampB) return -1
         if (!timestampA && timestampB) return 1
-        
+
         // 如果都没有时间戳，保持原顺序
         return 0
       })
-      
+
       console.log('返回排序后的日志:', sortedLogs.length)
       return sortedLogs
     })
-    
+
     // 方法
     // 实用函数
-    
+
     const getStatusText = () => {
       switch (realtimeStatus.value) {
         case 'active': return '实时日志已启动'
@@ -236,7 +233,7 @@ export default {
         default: return '状态未知'
       }
     }
-    
+
     const getMemoryProgressClass = () => {
       if (!memoryInfo.value) return 'bg-primary'
       const percent = memoryInfo.value.memoryUsagePercent
@@ -244,7 +241,7 @@ export default {
       if (percent >= 70) return 'bg-warning'
       return 'bg-success'
     }
-    
+
     const getLogTimestamp = (log) => {
       // 尝试提取时间戳（Docker日志格式：2024-01-01T12:00:00.000000000Z）
       const timestampMatch = log.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}/)
@@ -253,7 +250,7 @@ export default {
       }
       return ''
     }
-    
+
     const getLogLevel = (log) => {
       const upperLog = log.toUpperCase()
       if (upperLog.includes('[ERROR]') || upperLog.includes('ERROR')) return 'ERROR'
@@ -262,20 +259,20 @@ export default {
       if (upperLog.includes('[DEBUG]') || upperLog.includes('DEBUG')) return 'DEBUG'
       return ''
     }
-    
+
     const getLogContent = (log) => {
       // 移除时间戳和日志级别，返回纯内容
       let content = log
-      
+
       // 移除时间戳
       content = content.replace(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[^\\s]*\\s*/, '')
-      
+
       // 移除日志级别标记
       content = content.replace(/^\\[(ERROR|WARN|INFO|DEBUG)\\]\\s*/, '')
-      
+
       return content || log
     }
-    
+
     const getLogLineClass = (log) => {
       const level = getLogLevel(log)
       switch (level) {
@@ -286,7 +283,7 @@ export default {
         default: return ''
       }
     }
-    
+
     const onConfigChange = () => {
       if (isRealtimeActive.value) {
         // 重启实时日志以应用新配置
@@ -296,30 +293,30 @@ export default {
         }, 500)
       }
     }
-    
+
     const startRealtimeLogs = () => {
       if (!isConnected.value) {
         errorMessage.value = 'WebSocket连接未建立'
         return
       }
-      
+
       errorMessage.value = ''
       successMessage.value = ''
-      
+
       // 全局清空已在useSillyTavern中处理，这里无需重复清空
-      
+
       // 使用全局的启动方法
       const success = sillyTavern.startRealtimeLogs(props.containerName, logConfig.maxLines)
       if (!success) {
         errorMessage.value = '启动实时日志失败'
       }
     }
-    
+
     const stopRealtimeLogs = () => {
       // 使用全局的停止方法
       sillyTavern.stopRealtimeLogs()
     }
-    
+
     const clearLogs = () => {
       // 通过useSillyTavern清空日志
       if (sillyTavern && sillyTavern.logs) {
@@ -329,21 +326,21 @@ export default {
       totalLines.value = 0
       memoryInfo.value = null
     }
-    
+
     const scrollToTop = async () => {
       await nextTick()
       if (logContainer.value) {
         logContainer.value.scrollTop = 0
       }
     }
-    
+
     const scrollToBottom = async () => {
       await nextTick()
       if (logContainer.value) {
         logContainer.value.scrollTop = logContainer.value.scrollHeight
       }
     }
-    
+
     const toggleFullscreen = () => {
       isFullscreen.value = !isFullscreen.value
       // 全屏切换后自动滚动到底部
@@ -353,14 +350,14 @@ export default {
         }
       })
     }
-    
+
     // 监听ESC键退出全屏
     const handleKeydown = (event) => {
       if (event.key === 'Escape' && isFullscreen.value) {
         isFullscreen.value = false
       }
     }
-    
+
     // 监听自动滚动变化 - 使用sillyTavernLogs
     watch(sillyTavernLogs, (newLogs) => {
       console.log('🎯 watch触发，自动滚动条件:', {
@@ -372,7 +369,7 @@ export default {
         nextTick(() => scrollToBottom())
       }
     }, { deep: true })
-    
+
     // 监听displayLogs变化以调试
     watch(displayLogs, (newDisplayLogs) => {
       console.log('🔍 displayLogs变化:', {
@@ -381,7 +378,7 @@ export default {
         sample: newDisplayLogs?.slice(-2) || []
       })
     })
-    
+
     // 生命周期 - 简化版本，不再重复订阅
     onMounted(() => {
       console.log('RealtimeLogViewer mounted, 当前sillyTavernLogs长度:', sillyTavernLogs.value?.length || 0)
@@ -393,10 +390,10 @@ export default {
         sillyTavernObject: !!sillyTavern,
         sillyTavernKeys: sillyTavern ? Object.keys(sillyTavern) : []
       })
-      
+
       // 添加键盘事件监听
       window.addEventListener('keydown', handleKeydown)
-      
+
       // 自动启动实时日志（如果连接已就绪）
       setTimeout(() => {
         if (isConnected.value && !isRealtimeActive.value) {
@@ -405,17 +402,17 @@ export default {
         }
       }, 1000) // 延迟1秒确保WebSocket连接稳定
     })
-    
+
     onUnmounted(() => {
       // 移除键盘事件监听
       window.removeEventListener('keydown', handleKeydown)
-      
+
       // 停止实时日志
       if (isRealtimeActive.value) {
         stopRealtimeLogs()
       }
     })
-    
+
     return {
       // 响应式状态
       logs: displayLogs,
@@ -430,11 +427,11 @@ export default {
       logContainer,
       logConfig,
       isFullscreen, // 全屏状态
-      
+
       // 计算属性
       isConnected,
       realtimeStatus,
-      
+
       // 方法
       getStatusText,
       getMemoryProgressClass,
@@ -785,30 +782,30 @@ export default {
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .log-stats .row {
     flex-direction: column;
     gap: 0.5rem;
     text-align: center;
   }
-  
+
   .log-actions .row {
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .log-search {
     text-align: center;
   }
-  
+
   .log-search .input-group {
     max-width: 100%;
   }
-  
+
   .log-timestamp {
     display: none;
   }
-  
+
   .log-level {
     width: 45px;
   }
