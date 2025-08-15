@@ -199,7 +199,74 @@ export default {
     
     // Initialize StreamingFileService with session provider
     const streamingFileService = new StreamingFileService(() => {
-      return connectionManager.connectionState?.currentSessionId || null
+      const client = stompClient.value
+      
+      console.log('🔍 获取真实session ID:')
+      
+      // 方法1: 从connectionManager获取（最可靠）
+      const managedSessionId = connectionManager.connectionState?.currentSessionId
+      console.log('- connectionManager sessionId:', managedSessionId)
+      
+      if (managedSessionId && managedSessionId !== 'default' && !managedSessionId.startsWith('invalid_')) {
+        console.log('✅ 使用connectionManager的真实sessionId:', managedSessionId)
+        return managedSessionId
+      }
+      
+      // 方法2: 从STOMP客户端直接获取
+      console.log('- client存在:', !!client)
+      if (client) {
+        console.log('- client.ws存在:', !!client.ws)
+        if (client.ws) {
+          console.log('- client.ws._websocket存在:', !!client.ws._websocket)
+          console.log('- client.ws._transport存在:', !!client.ws._transport)
+          
+          // 尝试从_websocket获取
+          if (client.ws._websocket) {
+            const wsUrl = client.ws._websocket.url || ''
+            console.log('- WebSocket URL:', wsUrl)
+            
+            const sockJSMatch = wsUrl.match(/\/ws\/[^/]+\/([^/]+)\/websocket/)
+            console.log('- URL匹配结果:', sockJSMatch)
+            
+            if (sockJSMatch && sockJSMatch[1] && sockJSMatch[1] !== 'websocket') {
+              console.log('✅ 从WebSocket URL提取sessionId:', sockJSMatch[1])
+              return sockJSMatch[1]
+            }
+          }
+          
+          // 尝试从_transport获取
+          if (client.ws._transport && client.ws._transport.url) {
+            const transportUrl = client.ws._transport.url || ''
+            console.log('- Transport URL:', transportUrl)
+            
+            const transportMatch = transportUrl.match(/\/ws\/[^/]+\/([^/]+)\/websocket/)
+            console.log('- Transport URL匹配结果:', transportMatch)
+            
+            if (transportMatch && transportMatch[1] && transportMatch[1] !== 'websocket') {
+              console.log('✅ 从Transport URL提取sessionId:', transportMatch[1])
+              return transportMatch[1]
+            }
+          }
+        }
+      }
+      
+      // 方法3: 从连接头获取
+      if (client?.connectedHeaders) {
+        const headerSessionId = client.connectedHeaders.session || 
+                               client.connectedHeaders['session-id'] ||
+                               client.connectedHeaders.sessionId
+        if (headerSessionId && headerSessionId !== 'default') {
+          console.log('✅ 从connectedHeaders获取sessionId:', headerSessionId)
+          return headerSessionId
+        }
+      }
+      
+      // 如果真的获取不到，这表明STOMP连接有问题
+      console.error('🚨 无法获取真实session ID，STOMP连接可能有问题')
+      console.log('- 当前连接状态:', connectionManager.connectionState)
+      console.log('- STOMP客户端状态:', client)
+      
+      throw new Error('无法验证用户会话，请重新连接SSH后再试')
     })
     
     const exporting = ref(false)
@@ -337,7 +404,7 @@ export default {
         
         // 第二阶段：开始导入流程
         importStatus.value = '📨 正在发送导入请求...'
-        uploadProgress.value = 0  // 重置上传进度
+        // 不要重置上传进度，保持显示
         importProgress.value = 5   // 开始导入进度
         console.log('阶段2: 开始导入流程')
         
@@ -560,41 +627,43 @@ export default {
       
       if (isConnected.value && stompClient.value) {
         try {
-          // 安全地获取sessionId
-          let sessionId = '';
+          // 使用正确的方式获取真实sessionId
+          const realSessionId = connectionManager.connectionState?.currentSessionId
           
-          if (stompClient.value.ws && stompClient.value.ws._websocket && stompClient.value.ws._websocket.extensions) {
-            sessionId = stompClient.value.ws._websocket.extensions.sessionId;
+          if (!realSessionId || realSessionId === 'default' || realSessionId.startsWith('invalid_')) {
+            console.error('无法获取有效的session ID，当前值:', realSessionId)
+            console.error('STOMP订阅设置失败 - 需要有效的session ID')
+            return
           }
           
-          if (!sessionId) {
-            sessionId = Math.random().toString(36).substr(2, 9);
-            console.log('使用随机生成的sessionId:', sessionId);
-          } else {
-            console.log('使用WebSocket sessionId:', sessionId);
-          }
+          console.log('✅ 使用真实sessionId设置STOMP订阅:', realSessionId)
           
           exportSubscription = stompClient.value.subscribe(
-            `/queue/sillytavern/export-user${sessionId}`,
+            `/queue/sillytavern/export-user${realSessionId}`,
             handleExportResponse
           )
           
           importSubscription = stompClient.value.subscribe(
-            `/queue/sillytavern/import-user${sessionId}`,
+            `/queue/sillytavern/import-user${realSessionId}`,
             handleImportResponse
           )
           
           exportProgressSubscription = stompClient.value.subscribe(
-            `/queue/sillytavern/export-progress-user${sessionId}`,
+            `/queue/sillytavern/export-progress-user${realSessionId}`,
             handleExportProgress
           )
           
           importProgressSubscription = stompClient.value.subscribe(
-            `/queue/sillytavern/import-progress-user${sessionId}`,
+            `/queue/sillytavern/import-progress-user${realSessionId}`,
             handleImportProgress
           )
           
-          console.log('STOMP订阅设置完成');
+          console.log('✅ STOMP订阅设置完成，订阅队列:', {
+            export: `/queue/sillytavern/export-user${realSessionId}`,
+            import: `/queue/sillytavern/import-user${realSessionId}`,
+            exportProgress: `/queue/sillytavern/export-progress-user${realSessionId}`,
+            importProgress: `/queue/sillytavern/import-progress-user${realSessionId}`
+          })
         } catch (error) {
           console.error('设置STOMP订阅时出错:', error);
         }
@@ -626,20 +695,15 @@ export default {
         return '#'
       }
       
-      const client = stompClient.value
-      if (!client) {
-        console.warn('STOMP 客户端不可用，无法构建下载URL')
+      // 使用真实的session ID
+      const realSessionId = connectionManager.connectionState?.currentSessionId
+      
+      if (!realSessionId || realSessionId === 'default' || realSessionId.startsWith('invalid_')) {
+        console.warn('无法获取有效的session ID用于下载URL，当前值:', realSessionId)
         return '#'
       }
       
-      let sessionId = 'fallback_' + Math.random().toString(36).substr(2, 9)
-      try {
-        if (client.ws && client.ws._websocket && client.ws._websocket.extensions && client.ws._websocket.extensions.sessionId) {
-          sessionId = client.ws._websocket.extensions.sessionId
-        }
-      } catch (e) {
-        console.warn('DataManager获取WebSocket sessionId失败:', e.message)
-      }
+      console.log('✅ 使用真实sessionId构建下载URL:', realSessionId)
       
       const separator = exportResult.value.downloadUrl.includes('?') ? '&' : '?';
       
@@ -648,15 +712,13 @@ export default {
       const backendUrl = baseUrl.startsWith('/') 
         ? `${window.location.protocol}//${window.location.hostname}:8080${baseUrl}`
         : baseUrl;
-      const fullUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(sessionId)}`;
+      const fullUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(realSessionId)}`;
       
-      console.log('DataManager构建手动下载URL详细信息:', {
+      console.log('DataManager构建下载URL详细信息:', {
         baseUrl: exportResult.value.downloadUrl,
         backendUrl: backendUrl,
-        sessionId: sessionId,
-        fullUrl: fullUrl,
-        connectionManagerState: connectionManager.connectionState?.currentSessionId,
-        clientInfo: client ? 'STOMP客户端存在' : 'STOMP客户端不存在'
+        sessionId: realSessionId,
+        fullUrl: fullUrl
       });
       
       return fullUrl;

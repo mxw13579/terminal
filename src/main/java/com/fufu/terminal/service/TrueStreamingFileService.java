@@ -164,7 +164,8 @@ public class TrueStreamingFileService {
      */
     private void processDirectStreamUpload(SshConnection connection, StreamingProgress progress,
                                            String remotePath, String filename, InputStream inputStream) {
-        String fullRemotePath = Paths.get(remotePath, filename).toString().replace('\\', '/');
+        // remotePath已经是完整路径，不需要再拼接filename
+        String fullRemotePath = remotePath.replace('\\', '/');
         String tempRemotePath = fullRemotePath + ".tmp";
 
         progress.setStatus("uploading");

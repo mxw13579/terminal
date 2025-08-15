@@ -118,10 +118,58 @@ export function useConnectionManager() {
       // Connection success handler
       stompClient.onConnect = (frame) => {
         console.log('STOMP connection successful:', frame)
+        console.log('STOMP frame headers:', frame.headers)
+        console.log('Available header keys:', Object.keys(frame.headers || {}))
+        
         connectionState.isConnected = true
         connectionState.connectionInfo = connectionInfo
-        connectionState.currentSessionId = frame.headers.session || 'default'
+        
+        // 关键修复：正确获取STOMP session ID
+        // 真实的session ID在后端被设置为user-name
+        let realSessionId = null
+        
+        // 方法1：从frame headers的user-name获取（这是后端设置的真实session ID）
+        if (frame.headers['user-name']) {
+          realSessionId = frame.headers['user-name']
+          console.log('✅ 从STOMP user-name获取真实sessionId:', realSessionId)
+        }
+        
+        // 方法2：从其他headers获取
+        if (!realSessionId) {
+          realSessionId = frame.headers.session || frame.headers['session-id'] || frame.headers.sessionId
+          if (realSessionId && realSessionId !== 'default') {
+            console.log('✅ 从STOMP headers获取sessionId:', realSessionId)
+          } else {
+            realSessionId = null
+          }
+        }
+        
+        // 方法3：从STOMP客户端内部获取
+        if (!realSessionId && stompClient && stompClient.ws && stompClient.ws._websocket) {
+          const wsUrl = stompClient.ws._websocket.url || ''
+          console.log('WebSocket URL:', wsUrl)
+          
+          const sockJSMatch = wsUrl.match(/\/ws\/[^/]+\/([^/]+)\/websocket/)
+          if (sockJSMatch && sockJSMatch[1] && sockJSMatch[1] !== 'websocket') {
+            realSessionId = sockJSMatch[1]
+            console.log('✅ 从SockJS URL获取sessionId:', realSessionId)
+          }
+        }
+        
+        // 如果还是获取不到，使用default但发出警告
+        if (!realSessionId) {
+          console.warn('⚠️ 无法获取真实session ID，使用default')
+          realSessionId = 'default'
+        }
+        
+        connectionState.currentSessionId = realSessionId
         connectionState.connecting = false
+        
+        // Store connected headers for session access
+        if (stompClient && frame.headers) {
+          stompClient.connectedHeaders = frame.headers
+          console.log('Stored connectedHeaders:', stompClient.connectedHeaders)
+        }
 
         // Save successful connection
         saveConnection(connectionInfo)

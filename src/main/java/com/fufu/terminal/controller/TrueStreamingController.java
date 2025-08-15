@@ -50,14 +50,23 @@ public class TrueStreamingController {
         SshConnection connection = sessionManager.getConnection(sessionId);
         if (connection == null) {
             log.warn("流式上传未找到SSH连接，sessionId: {}", sessionId);
-            return createErrorResponseEntity(HttpStatus.NOT_FOUND, "SSH connection not found");
+            return createErrorResponseEntity(HttpStatus.UNAUTHORIZED, "Invalid session ID or session expired");
         }
+        
+        // 安全验证：确保 session ID 不是临时ID
+        if (sessionId.startsWith("temp_")) {
+            log.error("安全拒绝：检测到临时session ID，sessionId: {}, 来源IP: {}", sessionId, request.getRemoteAddr());
+            return createErrorResponseEntity(HttpStatus.FORBIDDEN, "Temporary session IDs are not allowed for security reasons");
+        }
+        
+        // 创建final变量供lambda使用
+        final SshConnection finalConnection = connection;
 
         StreamingResponseBody responseBody = outputStream -> {
             String uploadId = null;
             try {
                 CompletableFuture<String> uploadFuture = streamingService.directStreamUpload(
-                        connection, sessionId, remotePath, filename,
+                        finalConnection, sessionId, remotePath, filename,
                         request.getInputStream(),
                         contentLength != null ? contentLength : -1,
                         request.getRemoteAddr()
