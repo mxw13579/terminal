@@ -13,8 +13,10 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -37,73 +39,184 @@ public class TrueStreamingController {
      * 此方法会立即返回HTTP 200 OK和响应头，与浏览器建立一个持久的响应流，
      * 防止浏览器因长时间等待而主动断开连接 (ECONNRESET)。
      */
+    /**
+     * 临时测试端点：绕过会话验证，直接测试文件上传
+     * 仅用于调试文件损坏问题
+     */
+    @PostMapping(value = "/test-upload",
+            consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> testUpload(
+            @RequestParam String filename,
+            HttpServletRequest request) {
+
+        try {
+            // 直接保存到临时文件，不经过SFTP
+            String tempFile = "/tmp/test_" + filename;
+
+            log.info("测试上传: 保存文件到 {}", tempFile);
+
+            // 读取请求体并直接写入文件
+            try (InputStream inputStream = request.getInputStream();
+                 java.io.FileOutputStream outputStream = new java.io.FileOutputStream(tempFile)) {
+
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalBytes = 0;
+
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                }
+
+                log.info("测试上传完成: {} bytes 写入到 {}", totalBytes, tempFile);
+
+                return ResponseEntity.ok(String.format("{\"message\":\"测试上传成功\",\"file\":\"%s\",\"size\":%d}", tempFile, totalBytes));
+            }
+
+        } catch (Exception e) {
+            log.error("测试上传失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(String.format("{\"error\":\"%s\"}", e.getMessage()));
+        }
+    }
+
+    /**
+     * 测试端点：直接SFTP上传，绕过所有包装器
+     */
+    @PostMapping(value = "/test-sftp-upload",
+            consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> testSftpUpload(
+            @RequestParam String sessionId,
+            @RequestParam String filename,
+            HttpServletRequest request) {
+
+        try {
+            SshConnection connection = sessionManager.getConnection(sessionId);
+            if (connection == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body("{\"error\":\"Invalid session ID\"}");
+            }
+
+            InputStream inputStream = request.getInputStream();
+
+            // 直接使用SFTP上传，不使用任何包装器
+            com.jcraft.jsch.ChannelSftp sftpChannel = connection.getOrCreateSftpChannel();
+            String remotePath = "/root/test_" + filename;
+
+            log.info("测试直接SFTP上传到: {}", remotePath);
+
+            // 直接上传原始流
+            sftpChannel.put(inputStream, remotePath);
+
+            log.info("测试直接SFTP上传完成: {}", remotePath);
+
+            return ResponseEntity.ok(String.format(
+                "{\"message\":\"直接SFTP上传成功\",\"remotePath\":\"%s\"}",
+                remotePath
+            ));
+
+        } catch (Exception e) {
+            log.error("测试直接SFTP上传失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(String.format("{\"error\":\"%s\"}", e.getMessage()));
+        }
+    }
+    @PostMapping(value = "/debug-hash",
+            consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> debugHash(HttpServletRequest request) {
+
+        try {
+            InputStream inputStream = request.getInputStream();
+            java.security.MessageDigest sha256 = java.security.MessageDigest.getInstance("SHA-256");
+
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            long totalBytes = 0;
+
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                sha256.update(buffer, 0, bytesRead);
+                totalBytes += bytesRead;
+            }
+
+            String hash = bytesToHex(sha256.digest());
+
+            return ResponseEntity.ok(String.format(
+                "{\"totalBytes\":%d,\"sha256\":\"%s\"}",
+                totalBytes, hash
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(String.format("{\"error\":\"%s\"}", e.getMessage()));
+        }
+    }
+
+    /**
+     * 流式上传最终解决方案：使用Spring MVC的CompletableFuture异步支持。
+     * 此方法会立即返回，但Servlet容器会保持连接开放，直到后台上传任务完成。
+     * 这是处理长时间运行的请求上传的标准、正确方式。
+     */
     @PostMapping(value = "/upload",
             consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<StreamingResponseBody> streamUpload(
+    public CompletableFuture<ResponseEntity<Map<String, String>>> streamUpload(
             @RequestParam String sessionId,
             @RequestParam String remotePath,
             @RequestParam String filename,
             @RequestHeader(value = "Content-Length", required = false) Long contentLength,
             HttpServletRequest request) {
-
-        // 添加详细的参数调试日志
-        log.info("流式上传请求参数: sessionId={}, remotePath={}, filename={}, contentLength={}", 
-            sessionId, remotePath, filename, contentLength);
-
+        log.info("异步上传请求: sessionId={}, remotePath={}, filename={}, contentLength={}",
+                sessionId, remotePath, filename, contentLength);
         SshConnection connection = sessionManager.getConnection(sessionId);
         if (connection == null) {
-            log.warn("流式上传未找到SSH连接，sessionId: {}", sessionId);
-            return createErrorResponseEntity(HttpStatus.UNAUTHORIZED, "Invalid session ID or session expired");
+            log.warn("异步上传未找到SSH连接, sessionId: {}", sessionId);
+            // 对于异步方法，需要返回一个已完成的Future来立即响应错误
+            return CompletableFuture.completedFuture(
+                    createErrorResponseEntity(HttpStatus.UNAUTHORIZED, "Invalid session ID or session expired")
+            );
         }
-        
-        // 安全验证：确保 session ID 不是临时ID
         if (sessionId.startsWith("temp_")) {
-            log.error("安全拒绝：检测到临时session ID，sessionId: {}, 来源IP: {}", sessionId, request.getRemoteAddr());
-            return createErrorResponseEntity(HttpStatus.FORBIDDEN, "Temporary session IDs are not allowed for security reasons");
+            log.error("安全拒绝: 检测到临时session ID, sessionId: {}, 来源IP: {}", sessionId, request.getRemoteAddr());
+            return CompletableFuture.completedFuture(
+                    createErrorResponseEntity(HttpStatus.FORBIDDEN, "Temporary session IDs are not allowed for security reasons")
+            );
         }
-        
-        // 创建final变量供lambda使用
-        final SshConnection finalConnection = connection;
-
-        StreamingResponseBody responseBody = outputStream -> {
-            String uploadId = null;
-            try {
-                CompletableFuture<String> uploadFuture = streamingService.directStreamUpload(
-                        finalConnection, sessionId, remotePath, filename,
-                        request.getInputStream(),
-                        contentLength != null ? contentLength : -1,
-                        request.getRemoteAddr()
+        try {
+            // 直接调用返回CompletableFuture的服务方法
+            // Spring将管理请求的生命周期，确保InputStream在后台任务完成前保持有效
+            return streamingService.directStreamUpload(
+                    connection, sessionId, remotePath, filename,
+                    request.getInputStream(),
+                    contentLength != null ? contentLength : -1,
+                    request.getRemoteAddr()
+            ).thenApply(uploadId -> {
+                // 异步任务成功完成时的回调
+                log.info("异步上传成功完成, ID: {}, 文件: {}", uploadId, filename);
+                Map<String, String> successResponse = Map.of(
+                        "uploadId", uploadId,
+                        "status", "completed"
                 );
-
-                // 在Spring管理的后台线程中安全地等待结果
-                uploadId = uploadFuture.get();
-
-                log.info("StreamingResponseBody: 真正流式上传完成，ID: {}, 文件: {}", uploadId, filename);
-                String successResponse = String.format("{\"uploadId\":\"%s\",\"status\":\"completed\"}", uploadId);
-                outputStream.write(successResponse.getBytes(StandardCharsets.UTF_8));
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // 保持中断状态
-                log.error("StreamingResponseBody: 上传任务被中断, uploadId: {}", uploadId, e);
-                writeErrorToStream(outputStream, "Upload task was interrupted.");
-            } catch (ExecutionException e) {
-                Throwable cause = e.getCause() != null ? e.getCause() : e;
-                log.error("StreamingResponseBody: 上传任务执行失败, uploadId: {}", uploadId, cause);
-                writeErrorToStream(outputStream, "Stream upload failed: " + cause.getMessage());
-            } catch (Exception e) {
-                log.error("StreamingResponseBody: 启动上传时发生意外错误", e);
-                writeErrorToStream(outputStream, "An unexpected error occurred: " + e.getMessage());
-            } finally {
-                // 不要在这里强制关闭流，让Spring框架管理流的生命周期
-                // 强制关闭会导致前端收到ECONNRESET错误
-                // outputStream.close();
-            }
-        };
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(responseBody);
+                return ResponseEntity.ok(successResponse);
+            }).exceptionally(ex -> {
+                // 异步任务执行过程中发生异常时的回调
+                Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                log.error("异步上传失败, 文件: {}", filename, cause);
+                return createErrorResponseEntity(HttpStatus.INTERNAL_SERVER_ERROR, "Stream upload failed: " + cause.getMessage());
+            });
+        } catch (Exception e) {
+            // 捕获在调用streamingService之前可能发生的同步异常 (例如 getInputStream 失败)
+            log.error("启动异步上传时发生意外错误", e);
+            return CompletableFuture.completedFuture(
+                    createErrorResponseEntity(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred: " + e.getMessage())
+            );
+        }
+    }
+    // 辅助方法，用于创建统一的错误响应
+    private ResponseEntity<Map<String, String>> createErrorResponseEntity(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(Map.of("error", message));
     }
 
     /**
@@ -113,24 +226,24 @@ public class TrueStreamingController {
         String errorResponse = String.format("{\"error\":\"%s\"}", message.replace("\"", "\\\""));
         os.write(errorResponse.getBytes(StandardCharsets.UTF_8));
     }
-
-    /**
-     * 为方法创建流式错误响应
-     */
-    private ResponseEntity<StreamingResponseBody> createErrorResponseEntity(HttpStatus status, String message) {
-        String escapedMessage = message.replace("\"", "\\\"");
-        String errorJson = String.format("{\"error\":\"%s\"}", escapedMessage);
-
-        StreamingResponseBody body = outputStream -> {
-            outputStream.write(errorJson.getBytes(StandardCharsets.UTF_8));
-            // 不要强制关闭，让Spring管理
-            // outputStream.close();
-        };
-
-        return ResponseEntity.status(status)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body);
-    }
+//
+//    /**
+//     * 为方法创建流式错误响应
+//     */
+//    private ResponseEntity<StreamingResponseBody> createErrorResponseEntity(HttpStatus status, String message) {
+//        String escapedMessage = message.replace("\"", "\\\"");
+//        String errorJson = String.format("{\"error\":\"%s\"}", escapedMessage);
+//
+//        StreamingResponseBody body = outputStream -> {
+//            outputStream.write(errorJson.getBytes(StandardCharsets.UTF_8));
+//            // 不要强制关闭，让Spring管理
+//            // outputStream.close();
+//        };
+//
+//        return ResponseEntity.status(status)
+//                .contentType(MediaType.APPLICATION_JSON)
+//                .body(body);
+//    }
 
     /**
      * 检查上传进度
@@ -185,5 +298,16 @@ public class TrueStreamingController {
         return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(String.format("{\"error\":\"%s\"}", escapedMessage));
+    }
+
+    /**
+     * 将字节数组转换为十六进制字符串
+     */
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder();
+        for (byte b : bytes) {
+            result.append(String.format("%02x", b));
+        }
+        return result.toString();
     }
 }

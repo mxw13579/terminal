@@ -31,7 +31,8 @@
       "Bash(sudo docker logs:*)",
       "Bash(where java)",
       "Bash(taskkill:*)",
-      "Bash(start-frontend.cmd)"
+      "Bash(start-frontend.cmd)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "additionalDirectories": [

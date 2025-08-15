@@ -41,41 +41,17 @@ export default defineConfig({
           });
 
           proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('🔄 API代理请求 (手动模式):', req.method, req.url);
+            console.log('🔄 API代理请求:', req.method, req.url);
 
-            // 设置更大的缓冲区和更好的流控制
-            req.setMaxListeners(0);
-            proxyReq.setMaxListeners(0);
-            
-            // 禁用Nagle算法以减少延迟
-            if (proxyReq.socket) {
-              proxyReq.socket.setNoDelay(true);
-            }
-            
-            // 设置更大的highWaterMark以处理大文件
-            const options = {
-              highWaterMark: 1024 * 1024 // 1MB 缓冲区
-            };
-
-            // 关键修复 #2: 我们将浏览器发来的原始请求流(req)
-            // 通过管道直接连接到即将发往后端的代理请求流(proxyReq)。
-            // 这就像把两根水管直接拧在一起，数据直接流过，避免了代理的任何干预。
-            req.pipe(proxyReq, { end: true });
-
-            // 增加一个错误处理，以防管道过程中出现问题
-            req.on('error', (err) => {
-              console.error('❌ 浏览器请求流错误:', err);
-              // 如果浏览器端的流出错（例如用户关闭了浏览器），则销毁到后端的连接
-              proxyReq.destroy();
-            });
-            
-            // 添加更多的流事件监听以便调试
             req.on('data', (chunk) => {
-              console.debug(`📤 代理接收数据块: ${chunk.length} bytes`);
+              proxyReq.write(chunk);
             });
-            
-            proxyReq.on('drain', () => {
-              console.debug('🌊 后端代理流可写');
+            req.on('end', () => {
+              proxyReq.end();
+            });
+            req.on('error', (err) => {
+                console.error('❌ 浏览器请求流错误:', err);
+                proxyReq.destroy();
             });
           });
 

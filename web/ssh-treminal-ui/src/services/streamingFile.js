@@ -60,20 +60,28 @@ export class StreamingFileService {
      * @returns {string}
      */
     getApiUrl(path) {
-        // 强制在开发环境中使用相对路径以利用Vite代理
-        // 不管检测结果如何，只要端口是5173相关就使用相对路径
+        // 生产环境测试：使用Nginx代理
+        const USE_NGINX_PROXY = false; // 设置为 true 使用Nginx代理测试
+        
+        if (USE_NGINX_PROXY) {
+            console.log(`使用Nginx代理: http://localhost:3000${path}`);
+            return `http://localhost:3000${path}`;
+        }
+        
+        // 开发环境选项：如果Vite代理导致文件损坏，可以直接连接后端
+        const BYPASS_VITE_PROXY = true; // 设置为 false 使用Vite代理，true 直接连接后端
+        
         const currentPort = window.location.port;
         const isDevelopment = import.meta.env.DEV || 
                             currentPort === '5173' || 
                             currentPort.startsWith('517') ||
                             !this.backendBaseUrl;
         
-        if (isDevelopment) {
-            console.log(`开发环境 - 使用相对路径: ${path}`, {
-                port: currentPort,
-                isDev: import.meta.env.DEV,
-                backendBaseUrl: this.backendBaseUrl
-            });
+        if (isDevelopment && BYPASS_VITE_PROXY) {
+            console.log(`开发环境 - 直接连接后端: http://localhost:8080${path}`);
+            return `http://localhost:8080${path}`;
+        } else if (isDevelopment) {
+            console.log(`开发环境 - 使用Vite代理: ${path}`);
             return path;
         }
         
@@ -271,14 +279,14 @@ export class StreamingFileService {
                 throw new Error('未找到有效的会话ID，请确保SSH连接已建立');
             }
 
-            // 构建流式上传URL - 强制使用相对路径确保通过Vite代理
+            // 构建流式上传URL - 使用原始的upload接口
             const uploadPath = '/api/streaming/upload';
             const params = new URLSearchParams({
                 sessionId,
                 remotePath,
                 filename: file.name
             });
-            const finalUrl = `${uploadPath}?${params.toString()}`;
+            const finalUrl = this.getApiUrl(`${uploadPath}?${params.toString()}`);
 
             // 创建XMLHttpRequest用于进度追踪
             const xhr = new XMLHttpRequest();
@@ -624,18 +632,23 @@ export class StreamingFileService {
                     url: finalUrl,
                     filename: file.name,
                     size: file.size,
-                    type: 'application/octet-stream'
+                    type: file.type,
+                    contentType: 'application/octet-stream'
                 });
                 
                 xhr.open('POST', finalUrl);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-                xhr.setRequestHeader('Content-Length', file.size.toString());
                 
-                // 设置超时时间为30分钟，匹配Vite代理配置
-                xhr.timeout = 1800000; // 30分钟
-                
-                // 直接发送文件内容作为二进制流
-                xhr.send(file);
+                // 🔧 紧急修复：完全按照成功测试页面的方式处理
+                file.arrayBuffer().then(arrayBuffer => {
+                    xhr.setRequestHeader('Content-Length', arrayBuffer.byteLength.toString());
+                    xhr.send(arrayBuffer);
+                }).catch(error => {
+                    console.error('文件读取失败:', error);
+                    const err = new Error('文件读取失败');
+                    if (onError) onError(err);
+                    reject(err);
+                });
             });
 
         } catch (error) {
