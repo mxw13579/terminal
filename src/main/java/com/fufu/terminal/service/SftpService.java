@@ -76,6 +76,23 @@ public class SftpService {
     public void handleSftpList(final WebSocketSession session, final SshConnection sshConnection, String path) throws IOException {
         try {
             ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
+            
+            // 🔧 修复：检查SFTP连接状态并强制重新获取干净的连接
+            log.debug("检查SFTP连接状态: connected={}, closed={}", 
+                channelSftp.isConnected(), channelSftp.isClosed());
+            
+            if (!channelSftp.isConnected() || channelSftp.isClosed()) {
+                log.warn("SFTP通道状态异常，强制重新连接...");
+                // 强制关闭旧连接并获取新连接
+                try {
+                    channelSftp.disconnect();
+                } catch (Exception e) {
+                    log.debug("关闭旧SFTP连接时出错: {}", e.getMessage());
+                }
+                channelSftp = sshConnection.getOrCreateSftpChannel();
+                log.info("已重新建立SFTP连接");
+            }
+            
             path = (path == null || path.isEmpty() || path.equals(".")) ? channelSftp.getHome() : path;
             
             // 修复realpath调用问题 - JSch库在某些服务器上会抛出"Success"异常
@@ -87,12 +104,40 @@ public class SftpService {
                 log.warn("realpath失败，使用原始路径: {} (错误: {})", path, e.getMessage());
                 absolutePath = path;
                 
+                // 如果原始路径也是相对路径，尝试获取当前工作目录
+                if (!absolutePath.startsWith("/")) {
+                    try {
+                        String currentDir = channelSftp.pwd();
+                        absolutePath = currentDir.endsWith("/") ? currentDir + path : currentDir + "/" + path;
+                        log.info("构造绝对路径: {}", absolutePath);
+                    } catch (SftpException pwdEx) {
+                        log.warn("无法获取当前工作目录: {}", pwdEx.getMessage());
+                    }
+                }
+                
                 // 验证路径是否存在和可访问
                 try {
                     channelSftp.lstat(absolutePath);
                 } catch (SftpException statEx) {
-                    log.error("路径不存在或不可访问: {}", absolutePath);
-                    throw new IOException("路径不存在或不可访问: " + absolutePath);
+                    log.error("路径不存在或不可访问: {}，尝试使用HOME目录", absolutePath);
+                    // 最后的备用方案：使用HOME目录
+                    try {
+                        absolutePath = channelSftp.getHome();
+                        log.info("使用HOME目录作为备用: {}", absolutePath);
+                        // 再次验证HOME目录是否可访问
+                        channelSftp.lstat(absolutePath);
+                    } catch (SftpException homeEx) {
+                        log.error("HOME目录也无法访问: {}，尝试使用根目录", homeEx.getMessage());
+                        // 最终备用方案：使用根目录
+                        absolutePath = "/";
+                        try {
+                            channelSftp.lstat(absolutePath);
+                            log.info("使用根目录作为最终备用: {}", absolutePath);
+                        } catch (SftpException rootEx) {
+                            log.error("根目录也无法访问: {}", rootEx.getMessage());
+                            throw new IOException("无法访问任何有效目录");
+                        }
+                    }
                 }
             }
 
@@ -102,11 +147,26 @@ public class SftpService {
 
             // 添加返回上级目录的条目
             if (!"/".equals(absolutePath)) {
+                // 🔧 修复：使用Unix路径处理，避免Windows路径混淆
+                String parentPath;
+                if (absolutePath.endsWith("/")) {
+                    absolutePath = absolutePath.substring(0, absolutePath.length() - 1);
+                }
+                int lastSlash = absolutePath.lastIndexOf('/');
+                if (lastSlash <= 0) {
+                    parentPath = "/";
+                } else {
+                    parentPath = absolutePath.substring(0, lastSlash);
+                    if (parentPath.isEmpty()) {
+                        parentPath = "/";
+                    }
+                }
+                
                 fileList.add(Map.of(
                         "name", "..",
                         "longname", "d---------   - owner group         0 Jan 01 00:00 ..",
                         "isDirectory", true,
-                        "path", Paths.get(absolutePath, "..").normalize().toString().replace("\\", "/")
+                        "path", parentPath
                 ));
             }
 
@@ -120,7 +180,14 @@ public class SftpService {
                 fileInfo.put("isDirectory", entry.getAttrs().isDir());
                 fileInfo.put("size", entry.getAttrs().getSize());
                 fileInfo.put("mtime", entry.getAttrs().getMTime());
-                fileInfo.put("path", Paths.get(absolutePath, entry.getFilename()).normalize().toString().replace("\\", "/"));
+                // 🔧 修复：使用Unix路径拼接，避免Windows路径问题
+                String fullPath;
+                if (absolutePath.endsWith("/")) {
+                    fullPath = absolutePath + entry.getFilename();
+                } else {
+                    fullPath = absolutePath + "/" + entry.getFilename();
+                }
+                fileInfo.put("path", fullPath);
                 fileList.add(fileInfo);
             }
 

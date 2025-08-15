@@ -434,66 +434,13 @@ export class StreamingFileService {
                 
                 // 使用浏览器原生进度事件作为初始进度显示（仅在后端数据不可用时）
                 xhr.upload.onprogress = (event) => {
-                    // 如果已经有后端实时进度，就不使用浏览器进度
-                    if (usingBackendProgress) return;
-                    
-                    if (event.lengthComputable && onProgress) {
-                        const percentage = Math.round((event.loaded / event.total) * 100);
-                        const currentTime = Date.now();
-                        const uploadInfo = this.activeUploads.get(uploadId);
-                        
-                        // 使用滑动窗口计算平均速度（更平滑）
-                        let speed = 0;
-                        if (uploadInfo) {
-                            if (!uploadInfo.speedHistory) {
-                                uploadInfo.speedHistory = [];
-                            }
-                            
-                            // 计算瞬时速度
-                            const timeDiff = currentTime - uploadInfo.lastProgressTime;
-                            const bytesDiff = event.loaded - uploadInfo.lastProgressLoaded;
-                            
-                            if (timeDiff > 0 && bytesDiff > 0) {
-                                const instantSpeed = (bytesDiff / timeDiff) * 1000;
-                                
-                                // 添加到历史记录
-                                uploadInfo.speedHistory.push(instantSpeed);
-                                if (uploadInfo.speedHistory.length > 5) { // 保持最近5个数据点
-                                    uploadInfo.speedHistory.shift();
-                                }
-                                
-                                // 计算平均速度
-                                speed = uploadInfo.speedHistory.reduce((sum, s) => sum + s, 0) / uploadInfo.speedHistory.length;
-                                
-                                // 更新跟踪信息
-                                uploadInfo.lastProgressTime = currentTime;
-                                uploadInfo.lastProgressLoaded = event.loaded;
-                            } else {
-                                // 回退到总体平均速度
-                                const totalTime = currentTime - uploadInfo.startTime;
-                                if (totalTime > 1000) {
-                                    speed = event.loaded * 1000 / totalTime;
-                                }
-                            }
-                        }
-                        
-                        console.log(`📱 浏览器进度(临时): ${percentage}% (${event.loaded}/${event.total} bytes) - 速度: ${this.formatSpeed(speed)}`);
-                        console.warn('⚠️  等待后端实时进度接管...');
-                        
-                        onProgress({
-                            uploadId,
-                            loaded: event.loaded,
-                            total: event.total,
-                            percentage,
-                            speed,
-                            status: 'streaming'
-                        });
-                    }
+                    // 🔧 修复：完全禁用浏览器进度，强制等待后端进度
+                    console.log('⚠️  浏览器上传进度已禁用，等待后端进度接管...');
+                    // 不调用onProgress，强制等待后端真实进度
                 };
 
-                // 上传完成处理
+                // 上传完成处理 - 适配新的CompletableFuture接口
                 xhr.onload = () => {
-                    // 不要清理真实进度定时器，因为我们要开始使用它
                     this.activeUploads.delete(uploadId);
                     
                     if (xhr.status >= 200 && xhr.status < 300) {
@@ -503,17 +450,32 @@ export class StreamingFileService {
                             
                             console.log(`上传HTTP请求完成，获得后端uploadId: ${backendUploadId}`);
                             
-                            // 立即开始使用后端uploadId查询真实进度
-                            startRealProgressTracking(backendUploadId);
-                            
-                            if (onComplete) {
-                                onComplete({
-                                    uploadId: backendUploadId,
-                                    status: 'completed',
-                                    message: '文件流式传输完成！'
-                                });
+                            // 检查是否已经完成（新的CompletableFuture接口可能直接返回completed状态）
+                            if (response.status === 'completed') {
+                                console.log('后端已完成上传，直接标记为完成');
+                                if (onProgress) {
+                                    onProgress({
+                                        uploadId: backendUploadId,
+                                        loaded: file.size,
+                                        total: file.size,
+                                        percentage: 100,
+                                        speed: 0,
+                                        status: 'completed'
+                                    });
+                                }
+                                if (onComplete) {
+                                    onComplete({
+                                        uploadId: backendUploadId,
+                                        status: 'completed',
+                                        message: '文件上传完成！'
+                                    });
+                                }
+                                resolve(backendUploadId);
+                            } else {
+                                // 如果还在处理中，开始轮询进度
+                                startRealProgressTracking(backendUploadId);
                             }
-                            resolve(backendUploadId);
+                            
                         } catch (e) {
                             const error = new Error('解析响应失败: ' + e.message);
                             if (onError) onError(error);
@@ -639,10 +601,16 @@ export class StreamingFileService {
                 xhr.open('POST', finalUrl);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
                 
-                // 🔧 紧急修复：完全按照成功测试页面的方式处理
+                // 🔧 修复：完全按照成功测试页面的方式处理，但保留进度跟踪
                 file.arrayBuffer().then(arrayBuffer => {
                     xhr.setRequestHeader('Content-Length', arrayBuffer.byteLength.toString());
                     xhr.send(arrayBuffer);
+                    
+                    // 立即开始查询后端真实进度
+                    setTimeout(() => {
+                        console.log('🔄 开始查询后端进度...');
+                        startRealProgressTracking('uploading'); // 开始轮询后端进度
+                    }, 1000); // 延迟1秒确保后端开始处理
                 }).catch(error => {
                     console.error('文件读取失败:', error);
                     const err = new Error('文件读取失败');

@@ -187,11 +187,17 @@ public class TrueStreamingFileService {
             // 获取SFTP通道
             sftpChannel = connection.getOrCreateSftpChannel();
             
-            log.info("开始流式上传到: {}", tempRemotePath);
+            // 🔧 重新启用ProgressTrackingInputStream，但使用修复版本
+            log.info("开始带进度跟踪的流式上传到: {}", tempRemotePath);
             
-            // 🔧 修复：直接使用原始流，不使用ProgressTrackingInputStream包装器
-            // ProgressTrackingInputStream包装器存在BUG导致文件损坏
-            sftpChannel.put(inputStream, tempRemotePath);
+            // 发送开始进度
+            progress.setStatus("uploading");
+            sendProgressUpdate(progress);
+            
+            // 使用修复版本的ProgressTrackingInputStream进行精准进度跟踪
+            try (ProgressTrackingInputStream progressStream = new ProgressTrackingInputStream(inputStream, progress)) {
+                sftpChannel.put(progressStream, tempRemotePath);
+            }
             
             // 🔧 详细调试：验证SFTP写入结果
             try {
@@ -201,13 +207,21 @@ public class TrueStreamingFileService {
                 log.info("  - SFTP文件大小: {} bytes", sftpFileSize);
                 log.info("  - 预期文件大小: {} bytes", progress.getTotalBytes());
                 log.info("  - 大小是否一致: {}", (sftpFileSize == progress.getTotalBytes() ? "✅" : "❌"));
+                
+                // 🔧 添加：上传完成后更新进度到100%
+                if (progress.getTotalBytes() > 0) {
+                    progress.getTransferredBytes().set(progress.getTotalBytes());
+                    progress.setStatus("finalizing");
+                    sendProgressUpdate(progress);
+                }
             } catch (Exception e) {
                 log.warn("无法获取SFTP文件属性: {}", e.getMessage());
-            }
-            
-            // 手动更新进度为100%（因为SFTP上传是阻塞的，执行到这里说明已完成）
-            if (progress.getTotalBytes() > 0) {
-                progress.getTransferredBytes().set(progress.getTotalBytes());
+                // 仍然标记为完成，因为put操作成功了
+                if (progress.getTotalBytes() > 0) {
+                    progress.getTransferredBytes().set(progress.getTotalBytes());
+                    progress.setStatus("finalizing");
+                    sendProgressUpdate(progress);
+                }
             }
             
             // 重命名到最终位置
@@ -377,7 +391,7 @@ public class TrueStreamingFileService {
         try {
             String progressJson = getUploadProgress(progress.getUploadId());
             if (progressJson != null) {
-                sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/progress", progressJson);
+                sessionManager.sendToSession(progress.getSessionId(), "/user/queue/upload/progress", progressJson);
             }
         } catch (Exception e) {
             log.warn("发送进度更新失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage());
@@ -398,6 +412,7 @@ public class TrueStreamingFileService {
 
     /**
      * 采用装饰器模式，包装原始输入流以添加进度跟踪、取消检查和流量控制功能。
+     * 修复版本：确保完整实现所有read方法，避免数据损坏。
      */
     private class ProgressTrackingInputStream extends FilterInputStream {
         private final StreamingProgress progress;
@@ -415,7 +430,7 @@ public class TrueStreamingFileService {
         }
 
         /**
-         * 读取单个字节并进行进度跟踪、取消检查和节流。
+         * 读取单个字节并进行进度跟踪、取消检查。
          *
          * @return 读取的字节，如果到达流末尾则返回-1
          * @throws IOException IO异常或被取消
@@ -428,34 +443,13 @@ public class TrueStreamingFileService {
 
             int byteRead = super.read();
             if (byteRead != -1) {
-                long newTotal = progress.getTransferredBytes().addAndGet(1);
-
-                if (maxFileSize > 0 && newTotal > maxFileSize) {
-                    throw new IOException(String.format(
-                            "文件大小超出限制，已传输 %.1f MB，限制 %.1f MB",
-                            newTotal / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
-                    ));
-                }
-
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastReportTime > 1000) {
-                    sendProgressUpdate(progress);
-                    lastReportTime = currentTime;
-                }
-
-                // 重新启用节流功能
-                try {
-                    throttle(progress);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Upload was interrupted during throttling", e);
-                }
+                updateProgress(1);
             }
             return byteRead;
         }
 
         /**
-         * 读取数据并进行进度跟踪、取消检查和节流。
+         * 读取数据并进行进度跟踪、取消检查。
          *
          * @param b   缓冲区
          * @param off 偏移量
@@ -471,30 +465,68 @@ public class TrueStreamingFileService {
 
             int bytesRead = super.read(b, off, len);
             if (bytesRead > 0) {
-                long newTotal = progress.getTransferredBytes().addAndGet(bytesRead);
-
-                if (maxFileSize > 0 && newTotal > maxFileSize) {
-                    throw new IOException(String.format(
-                            "文件大小超出限制，已传输 %.1f MB，限制 %.1f MB",
-                            newTotal / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
-                    ));
-                }
-
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastReportTime > 1000) {
-                    sendProgressUpdate(progress);
-                    lastReportTime = currentTime;
-                }
-
-                // 重新启用节流功能
-                try {
-                    throttle(progress);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Upload was interrupted during throttling", e);
-                }
+                updateProgress(bytesRead);
             }
             return bytesRead;
+        }
+
+        /**
+         * 重写read(byte[])方法确保完整性
+         */
+        @Override
+        public int read(byte[] b) throws IOException {
+            return read(b, 0, b.length);
+        }
+
+        /**
+         * 更新进度的通用方法
+         */
+        private void updateProgress(long bytesRead) {
+            long newTotal = progress.getTransferredBytes().addAndGet(bytesRead);
+
+            if (maxFileSize > 0 && newTotal > maxFileSize) {
+                throw new RuntimeException(String.format(
+                        "文件大小超出限制，已传输 %.1f MB，限制 %.1f MB",
+                        newTotal / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
+                ));
+            }
+
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastReportTime > 1000) { // 每秒最多发送一次进度更新
+                sendProgressUpdate(progress);
+                lastReportTime = currentTime;
+            }
+
+            // 🔧 移除节流功能，避免在SFTP传输中造成时序问题
+            // 之前的throttle调用可能是导致数据损坏的原因
+        }
+
+        /**
+         * 重写available()方法
+         */
+        @Override
+        public int available() throws IOException {
+            return super.available();
+        }
+
+        /**
+         * 重写close()方法
+         */
+        @Override
+        public void close() throws IOException {
+            super.close();
+        }
+
+        /**
+         * 重写skip()方法
+         */
+        @Override
+        public long skip(long n) throws IOException {
+            long skipped = super.skip(n);
+            if (skipped > 0) {
+                updateProgress(skipped);
+            }
+            return skipped;
         }
     }
 

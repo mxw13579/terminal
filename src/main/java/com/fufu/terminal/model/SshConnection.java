@@ -113,9 +113,17 @@ public class SshConnection {
      */
     public ChannelSftp getOrCreateSftpChannel() throws JSchException {
         ChannelSftp sftp = channelSftp;
-        if (sftp == null || sftp.isClosed()) {
+        if (sftp == null || sftp.isClosed() || !sftp.isConnected()) {
             synchronized (this) {
-                if (channelSftp == null || channelSftp.isClosed()) {
+                if (channelSftp == null || channelSftp.isClosed() || !channelSftp.isConnected()) {
+                    // 如果旧连接存在但状态不正常，先关闭它
+                    if (channelSftp != null) {
+                        try {
+                            channelSftp.disconnect();
+                        } catch (Exception e) {
+                            // 忽略断开连接时的错误
+                        }
+                    }
                     channelSftp = (ChannelSftp) session.openChannel("sftp");
                     channelSftp.connect();
                 }
