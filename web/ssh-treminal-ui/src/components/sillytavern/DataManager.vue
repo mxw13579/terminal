@@ -134,25 +134,89 @@
             </button>
           </div>
 
-          <!-- 强制显示的上传进度条 -->
-          <div v-if="importing && (uploadProgress > 0 || importProgress > 0)" class="progress-section" style="background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; padding: 15px;">
+          <!-- 多步骤进度显示 -->
+          <div v-if="importing" class="steps-progress-section" style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <!-- 总体进度标题 -->
+            <div class="steps-header" style="margin-bottom: 15px; text-align: center;">
+              <h4 style="margin: 0; color: #495057; font-size: 16px;">
+                数据导入进度：第 {{ currentStep + 1 }} 步 / 共 {{ totalSteps }} 步
+              </h4>
+              <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                当前：{{ currentStepName }}
+              </p>
+            </div>
+            
+            <!-- 步骤列表 -->
+            <div class="steps-list">
+              <div 
+                v-for="(step, index) in importSteps" 
+                :key="step.id"
+                class="step-item"
+                :class="{
+                  'step-completed': step.status === 'completed',
+                  'step-active': step.status === 'active',
+                  'step-error': step.status === 'error',
+                  'step-pending': step.status === 'pending'
+                }"
+                style="display: flex; align-items: center; margin-bottom: 10px; padding: 8px 12px; border-radius: 6px;"
+              >
+                <!-- 步骤图标 -->
+                <div class="step-icon" style="width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 12px; font-weight: bold;">
+                  <i v-if="step.status === 'completed'" class="fas fa-check" style="color: white;"></i>
+                  <i v-else-if="step.status === 'active'" class="fas fa-spinner fa-spin" style="color: white;"></i>
+                  <i v-else-if="step.status === 'error'" class="fas fa-times" style="color: white;"></i>
+                  <span v-else style="color: white;">{{ step.id }}</span>
+                </div>
+                
+                <!-- 步骤名称 -->
+                <div class="step-name" style="flex: 1; font-weight: 500;">
+                  {{ step.name }}
+                </div>
+                
+                <!-- 步骤状态 -->
+                <div class="step-status" style="font-size: 12px; margin-left: 8px;">
+                  <span v-if="step.status === 'completed'" style="color: #28a745;">✓ 完成</span>
+                  <span v-else-if="step.status === 'active'" style="color: #007bff;">进行中...</span>
+                  <span v-else-if="step.status === 'error'" style="color: #dc3545;">失败</span>
+                  <span v-else style="color: #6c757d;">等待中</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 当前步骤进度条 -->
+            <div v-if="currentStep >= 0 && importSteps[currentStep]?.status === 'active'" class="current-step-progress" style="margin-top: 15px;">
+              <div class="progress-bar-container" style="background: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden;">
+                <div 
+                  class="progress-bar"
+                  style="background: linear-gradient(90deg, #007bff, #0056b3); height: 100%; transition: width 0.3s ease;"
+                  :style="{ width: importSteps[currentStep].progress + '%' }"
+                ></div>
+              </div>
+              <div style="text-align: center; margin-top: 5px; font-size: 12px; color: #6c757d;">
+                {{ importSteps[currentStep].progress }}%
+              </div>
+            </div>
+          </div>
+          
+          <!-- 原来的进度条保持作为备用（隐藏） -->
+          <div v-if="false" class="progress-section" style="background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; padding: 15px;">
             <div class="progress-header" style="margin-bottom: 10px;">
               <span class="progress-label" style="font-weight: bold; color: #1976d2;">
                 {{ importStatus || (uploadProgress < 100 ? '正在上传文件...' : '正在处理数据...') }}
               </span>
               <span class="progress-percentage" style="font-weight: bold; color: #1976d2;">
-                {{ Math.round(uploadProgress > 0 ? uploadProgress : importProgress) }}%
+                {{ Math.round(uploadProgress < 100 ? uploadProgress : importProgress) }}%
               </span>
             </div>
             <div class="progress-bar-container" style="background: #bbdefb; border-radius: 10px; height: 20px; overflow: hidden;">
               <div 
                 class="progress-bar"
                 style="background: linear-gradient(90deg, #2196f3, #1976d2); height: 100%; transition: width 0.3s ease;"
-                :style="{ width: (uploadProgress > 0 ? uploadProgress : importProgress) + '%' }"
+                :style="{ width: (uploadProgress < 100 ? uploadProgress : importProgress) + '%' }"
               ></div>
             </div>
             <div style="margin-top: 8px; font-size: 12px; color: #666;">
-              阶段: {{ uploadProgress > 0 && uploadProgress < 100 ? '文件上传' : '数据导入' }}
+              阶段: {{ uploadProgress < 100 ? '文件上传' : '数据导入' }}
             </div>
           </div>
           
@@ -279,6 +343,45 @@ export default {
     const exportStatus = ref('')
     const exportResult = ref(null)
     
+    // 重新设计的多步骤进度系统
+    const importSteps = ref([
+      { id: 1, name: '上传文件', status: 'pending', progress: 0 },
+      { id: 2, name: '验证文件', status: 'pending', progress: 0 },
+      { id: 3, name: '备份数据', status: 'pending', progress: 0 },
+      { id: 4, name: '解压文件', status: 'pending', progress: 0 },
+      { id: 5, name: '导入数据', status: 'pending', progress: 0 },
+      { id: 6, name: '重启容器', status: 'pending', progress: 0 }
+    ])
+    const currentStep = ref(0) // 当前步骤索引 (0-based)
+    const totalSteps = computed(() => importSteps.value.length)
+    const currentStepName = computed(() => {
+      if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
+        return importSteps.value[currentStep.value].name
+      }
+      return ''
+    })
+    
+    // 更新步骤状态的函数
+    const updateStepStatus = (stepIndex, status, progress = 0) => {
+      if (stepIndex >= 0 && stepIndex < importSteps.value.length) {
+        importSteps.value[stepIndex].status = status
+        importSteps.value[stepIndex].progress = progress
+        
+        if (status === 'active') {
+          currentStep.value = stepIndex
+        }
+      }
+    }
+    
+    // 重置所有步骤
+    const resetSteps = () => {
+      importSteps.value.forEach(step => {
+        step.status = 'pending'
+        step.progress = 0
+      })
+      currentStep.value = 0
+    }
+    
     const importProgress = ref(0)
     const importStatus = ref('')
     
@@ -387,6 +490,9 @@ export default {
       successMessage.value = ''
       errorMessage.value = ''
       
+      // 重置步骤状态
+      resetSteps()
+      
       console.log('✅ 状态已设置:', {
         importing: importing.value,
         importProgress: importProgress.value,
@@ -396,13 +502,16 @@ export default {
       
       try {
         // 第一阶段：上传文件
+        updateStepStatus(0, 'active', 0) // 开始上传文件
         importStatus.value = '📤 正在上传文件到服务器...'
         console.log('阶段1: 开始上传文件')
         
         const uploadedFileName = await uploadFile(selectedFile.value)
         console.log('阶段1: 文件上传完成，文件名:', uploadedFileName)
+        updateStepStatus(0, 'completed', 100) // 上传文件完成
         
         // 第二阶段：开始导入流程
+        updateStepStatus(1, 'active', 0) // 开始验证文件
         importStatus.value = '📨 正在发送导入请求...'
         // 不要重置上传进度，保持显示
         importProgress.value = 5   // 开始导入进度
@@ -431,6 +540,10 @@ export default {
         
       } catch (error) {
         console.error('❌ 导入流程失败:', error)
+        // 设置当前步骤为错误状态
+        if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
+          updateStepStatus(currentStep.value, 'error', 0)
+        }
         importing.value = false
         uploadProgress.value = 0
         importProgress.value = 0
@@ -446,12 +559,19 @@ export default {
         try {
           const remotePath = `/tmp/${file.name}`
           
+          console.log('🔍 开始上传文件诊断信息:')
+          console.log('- 文件名:', file.name)
+          console.log('- 文件大小:', file.size, 'bytes (', formatFileSize(file.size), ')')
+          console.log('- 文件类型:', file.type)
+          console.log('- 最后修改时间:', new Date(file.lastModified).toISOString())
+          
           const uploadId = await streamingFileService.streamUploadFile(
             file,
             remotePath,
             // onProgress callback
             (progressData) => {
               uploadProgress.value = progressData.percentage || 0
+              updateStepStatus(0, 'active', progressData.percentage || 0) // 更新第一步进度
               importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}%`
               
               if (progressData.speed > 0) {
@@ -515,6 +635,13 @@ export default {
         importing.value = false
         
         if (response.success) {
+          // 确保所有步骤都标记为完成
+          importSteps.value.forEach((step, index) => {
+            if (step.status !== 'completed') {
+              updateStepStatus(index, 'completed', 100)
+            }
+          })
+          
           importProgress.value = 100
           importStatus.value = '导入完成'
           successMessage.value = response.message || '数据导入成功'
@@ -528,6 +655,11 @@ export default {
           // 清除选中的文件
           clearSelection()
         } else {
+          // 设置当前步骤为错误状态
+          if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
+            updateStepStatus(currentStep.value, 'error', 0)
+          }
+          
           importStatus.value = '导入失败'
           errorMessage.value = response.message || '数据导入失败'
           
@@ -539,6 +671,10 @@ export default {
         }
       } catch (error) {
         console.error('处理导入响应时出错:', error)
+        // 设置当前步骤为错误状态
+        if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
+          updateStepStatus(currentStep.value, 'error', 0)
+        }
         errorMessage.value = '处理导入响应时出错: ' + error.message
         importing.value = false
         importStatus.value = '导入失败'
@@ -568,36 +704,46 @@ export default {
           importStatus.value = progress.message
         }
         
-        // 根据消息内容设置合适的进度值
+        // 根据消息内容更新对应步骤状态
         if (progress.message) {
           const msg = progress.message.toLowerCase()
           
-          if (msg.includes('下载') || msg.includes('download')) {
-            importProgress.value = 10
-          } else if (msg.includes('验证') || msg.includes('verify')) {
+          if (msg.includes('验证') || msg.includes('verify')) {
+            // 步骤2：验证文件
+            updateStepStatus(1, 'active', 50)
             importProgress.value = 20
-          } else if (msg.includes('上传') || msg.includes('upload')) {
-            importProgress.value = 30
-          } else if (msg.includes('docker-compose') || msg.includes('路径')) {
-            importProgress.value = 40
           } else if (msg.includes('备份') || msg.includes('backup')) {
-            importProgress.value = 50
+            // 完成验证，开始备份
+            updateStepStatus(1, 'completed', 100)
+            updateStepStatus(2, 'active', 30)
+            importProgress.value = 40
           } else if (msg.includes('解压') || msg.includes('extract')) {
+            // 完成备份，开始解压
+            updateStepStatus(2, 'completed', 100)
+            updateStepStatus(3, 'active', 20)
             importProgress.value = 60
-          } else if (msg.includes('导入') || msg.includes('import')) {
-            importProgress.value = 70
-          } else if (msg.includes('拷贝') || msg.includes('copy')) {
+          } else if (msg.includes('导入') || msg.includes('import') || msg.includes('拷贝') || msg.includes('copy')) {
+            // 完成解压，开始导入数据
+            updateStepStatus(3, 'completed', 100)
+            updateStepStatus(4, 'active', 40)
             importProgress.value = 80
           } else if (msg.includes('重启') || msg.includes('restart')) {
+            // 完成导入，开始重启容器
+            updateStepStatus(4, 'completed', 100)
+            updateStepStatus(5, 'active', 60)
             importProgress.value = 90
           } else if (msg.includes('完成') || msg.includes('complete')) {
+            // 全部完成
+            updateStepStatus(5, 'completed', 100)
             importProgress.value = 100
           }
         }
         
         console.log('导入进度更新:', {
           status: importStatus.value,
-          progress: importProgress.value
+          progress: importProgress.value,
+          currentStep: currentStep.value + 1,
+          totalSteps: totalSteps.value
         })
         
       } catch (error) {
@@ -615,6 +761,7 @@ export default {
           console.log('DataManager收到流式上传进度:', progressData)
           if (importing.value && uploadProgress.value < 100) {
             uploadProgress.value = progressData.percentage || 0
+            updateStepStatus(0, 'active', progressData.percentage || 0) // 更新第一步进度
             if (progressData.speed > 0) {
               const speedText = streamingFileService.formatSpeed(progressData.speed)
               importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}% (${speedText})`
@@ -744,7 +891,14 @@ export default {
       handleFileSelect,
       clearSelection,
       startExport,
-      startImport
+      startImport,
+      // 多步骤进度相关
+      importSteps,
+      currentStep,
+      totalSteps,
+      currentStepName,
+      updateStepStatus,
+      resetSteps
     }
   }
 }
@@ -1139,5 +1293,42 @@ export default {
   background: #0056b3;
   text-decoration: none;
   color: white;
+}
+
+/* 多步骤进度样式 */
+.step-item.step-pending {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+}
+
+.step-item.step-pending .step-icon {
+  background: #6c757d;
+}
+
+.step-item.step-active {
+  background: #e3f2fd;
+  border: 1px solid #2196f3;
+}
+
+.step-item.step-active .step-icon {
+  background: #2196f3;
+}
+
+.step-item.step-completed {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+}
+
+.step-item.step-completed .step-icon {
+  background: #28a745;
+}
+
+.step-item.step-error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+
+.step-item.step-error .step-icon {
+  background: #dc3545;
 }
 </style>

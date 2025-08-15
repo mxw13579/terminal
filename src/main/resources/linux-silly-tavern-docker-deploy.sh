@@ -506,7 +506,7 @@ if [ $? -eq 0 ]; then
     echo "--------------------------------------------------"
     echo "✅ SillyTavern 已成功部署！"
     echo "--------------------------------------------------"
-    
+
     # 从 ipinfo.io 的返回结果中解析出 IP 地址
     public_ip=$(curl -sS ipinfo.io | grep '"ip":' | cut -d'"' -f4)
 
@@ -515,16 +515,16 @@ if [ $? -eq 0 ]; then
 
     # 写入部署信息文件 (支持NAT环境)
     echo "正在写入部署信息文件..."
-    
+
     # 检测端口映射 (从docker-compose.yaml中提取)
     external_port=$(grep -o '"[0-9]*:8000"' /data/docker/sillytavem/docker-compose.yaml | cut -d':' -f1 | tr -d '"')
     [ -z "$external_port" ] && external_port="8000"
-    
+
     # 询问是否为NAT环境
     nat_external_port="null"
     nat_external_host="null"
     environment_type="direct"
-    
+
     if [[ $enable_external_access == "y" ]]; then
         echo ""
         echo "检测到您开启了外网访问。"

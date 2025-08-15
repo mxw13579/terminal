@@ -173,6 +173,29 @@ public class DataManagementService {
             try {
                 progressCallback.accept("正在验证上传文件...");
                 
+                // 调试：检查文件信息
+                try {
+                    String fileInfo = executeCommand(connection, String.format("ls -la '%s'", remoteUploadedPath));
+                    String fileSizeInfo = executeCommand(connection, String.format("stat -c '%%s' '%s'", remoteUploadedPath));
+                    String fileTypeInfo = executeCommand(connection, String.format("file '%s'", remoteUploadedPath));
+                    
+                    log.info("上传文件详细信息:");
+                    log.info("文件列表: {}", fileInfo);
+                    log.info("文件大小: {} bytes", fileSizeInfo.trim());
+                    log.info("文件类型: {}", fileTypeInfo);
+                    
+                    // 检查文件大小是否为0或异常小
+                    long actualFileSize = Long.parseLong(fileSizeInfo.trim());
+                    log.info("实际文件大小: {} bytes", actualFileSize);
+                    
+                    if (actualFileSize < 1000) {
+                        log.error("文件大小异常：实际大小 {} bytes，这可能表明文件上传未完成或损坏", actualFileSize);
+                        throw new RuntimeException(String.format("上传的文件大小异常: %d bytes，文件可能损坏或上传不完整", actualFileSize));
+                    }
+                } catch (Exception e) {
+                    log.warn("获取文件信息失败: {}", e.getMessage());
+                }
+                
                 // 1. 直接在远程验证文件
                 if (!isValidRemoteArchive(connection, remoteUploadedPath)) {
                     throw new RuntimeException("数据归档文件格式无效或包含不安全内容");
@@ -189,6 +212,22 @@ public class DataManagementService {
                     progressCallback.accept("正在临时目录解压...");
                     // 创建临时解压目录
                     executeCommand(connection, String.format("mkdir -p '%s'", extractTempPath));
+                    
+                    // 在解压前验证文件完整性
+                    progressCallback.accept("正在验证文件完整性...");
+                    try {
+                        if (uploadedFileName.toLowerCase().endsWith(".zip")) {
+                            // 验证ZIP文件
+                            executeCommand(connection, String.format("unzip -t '%s'", remoteUploadedPath));
+                        } else {
+                            // 验证TAR.GZ文件
+                            executeCommand(connection, String.format("gzip -t '%s'", remoteUploadedPath));
+                        }
+                        log.info("文件完整性验证通过: {}", remoteUploadedPath);
+                    } catch (Exception e) {
+                        log.error("文件完整性验证失败: {}", remoteUploadedPath, e);
+                        throw new RuntimeException("上传的文件已损坏，无法解压。请重新上传文件。");
+                    }
                     
                     // 检测文件类型并使用相应的解压命令
                     if (uploadedFileName.toLowerCase().endsWith(".zip")) {

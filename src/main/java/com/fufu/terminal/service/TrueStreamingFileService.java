@@ -14,6 +14,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -176,13 +178,19 @@ public class TrueStreamingFileService {
 
         ChannelSftp sftpChannel = null;
         try {
+            // 获取SFTP通道
             sftpChannel = connection.getOrCreateSftpChannel();
-            try (OutputStream sftpOutputStream = sftpChannel.put(tempRemotePath);
-                 InputStream trackingInputStream = new ProgressTrackingInputStream(inputStream, progress)) {
-
-                trackingInputStream.transferTo(sftpOutputStream);
+            
+            // 真正的流式上传：直接使用原始inputStream，不缓存到内存
+            // 这才是真正的流式处理，像前端StreamingFileService那样
+            log.info("开始真正的流式上传到: {}", tempRemotePath);
+            
+            // 使用ProgressTrackingInputStream包装原始流以跟踪进度
+            try (ProgressTrackingInputStream progressStream = new ProgressTrackingInputStream(inputStream, progress)) {
+                sftpChannel.put(progressStream, tempRemotePath);
             }
-
+            
+            // 重命名到最终位置
             sftpChannel.rename(tempRemotePath, fullRemotePath);
 
             progress.setStatus("completed");
@@ -418,6 +426,7 @@ public class TrueStreamingFileService {
                     lastReportTime = currentTime;
                 }
 
+                // 重新启用节流功能
                 try {
                     throttle(progress);
                 } catch (InterruptedException e) {
