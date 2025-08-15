@@ -166,9 +166,14 @@ public class TrueStreamingFileService {
      */
     private void processDirectStreamUpload(SshConnection connection, StreamingProgress progress,
                                            String remotePath, String filename, InputStream inputStream) {
-        // remotePath已经是完整路径，不需要再拼接filename
-        String fullRemotePath = remotePath.replace('\\', '/');
-        String tempRemotePath = fullRemotePath + ".tmp";
+        // 正确组合路径：remotePath是目录，filename是文件名，需要组合成完整文件路径
+        String fullRemotePath;
+        if (remotePath.endsWith("/")) {
+            fullRemotePath = remotePath + filename;
+        } else {
+            fullRemotePath = remotePath + "/" + filename;
+        }
+        fullRemotePath = fullRemotePath.replace('\\', '/');
 
         progress.setStatus("uploading");
         progress.setRemotePath(fullRemotePath);
@@ -178,20 +183,24 @@ public class TrueStreamingFileService {
 
         ChannelSftp sftpChannel = null;
         try {
-            // 获取SFTP通道
+            // 使用共享SFTP通道，避免创建独立通道导致状态污染
             sftpChannel = connection.getOrCreateSftpChannel();
+            log.info("使用共享SFTP通道进行流式上传");
             
             // 真正的流式上传：直接使用原始inputStream，不缓存到内存
-            // 这才是真正的流式处理，像前端StreamingFileService那样
-            log.info("开始真正的流式上传到: {}", tempRemotePath);
+            log.info("开始真正的流式上传到: {}", fullRemotePath);
+            
+            // 添加详细的字节计数调试
+            log.info("调试：流式上传开始前，progress初始状态: transferredBytes={}, totalBytes={}", 
+                progress.getTransferredBytes().get(), progress.getTotalBytes());
             
             // 使用ProgressTrackingInputStream包装原始流以跟踪进度
             try (ProgressTrackingInputStream progressStream = new ProgressTrackingInputStream(inputStream, progress)) {
-                sftpChannel.put(progressStream, tempRemotePath);
+                // 直接上传到目标文件，避免rename操作
+                sftpChannel.put(progressStream, fullRemotePath);
             }
             
-            // 重命名到最终位置
-            sftpChannel.rename(tempRemotePath, fullRemotePath);
+            log.info("流式上传完成，直接写入目标文件: {}", fullRemotePath);
 
             progress.setStatus("completed");
             sendProgressUpdate(progress);
@@ -204,12 +213,12 @@ public class TrueStreamingFileService {
 
             sendProgressUpdate(progress);
 
-            if (sftpChannel != null && sftpChannel.isConnected()) {
-                cleanupTemporaryFile(sftpChannel, tempRemotePath);
-            } else {
-                cleanupTemporaryFile(connection, tempRemotePath);
-            }
+            // 临时移除文件清理逻辑，因为已经不使用.tmp文件了
+            log.info("上传失败，但不需要清理.tmp文件（直接上传模式）");
             throw new RuntimeException("Upload failed for " + progress.getFilename(), e);
+        } finally {
+            // 不需要关闭共享SFTP通道，它由SshConnection管理
+            log.info("流式上传操作完成，共享SFTP通道继续保持连接");
         }
     }
 
@@ -395,6 +404,46 @@ public class TrueStreamingFileService {
         }
 
         /**
+         * 重写单字节读取方法，确保所有读取都被跟踪
+         */
+        @Override
+        public int read() throws IOException {
+            if (progress.isCancelled()) {
+                throw new IOException(String.format("文件 '%s' 的上传已被用户取消", progress.getFilename()));
+            }
+
+            int byteRead = super.read();
+            if (byteRead != -1) {
+                // 单字节读取也要跟踪
+                long newTotal = progress.getTransferredBytes().addAndGet(1);
+
+                if (maxFileSize > 0 && newTotal > maxFileSize) {
+                    throw new IOException(String.format(
+                            "文件大小超出限制，已传输 %.1f MB，限制 %.1f MB",
+                            newTotal / (1024.0 * 1024.0), maxFileSize / (1024.0 * 1024.0)
+                    ));
+                }
+
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - lastReportTime > 1000) {
+                    sendProgressUpdate(progress);
+                    lastReportTime = currentTime;
+                }
+
+                // 单字节读取时不需要节流，避免过度节流
+            }
+            return byteRead;
+        }
+
+        /**
+         * 重写批量读取方法，确保所有读取都被跟踪
+         */
+        @Override
+        public int read(byte[] b) throws IOException {
+            return read(b, 0, b.length);
+        }
+
+        /**
          * 读取数据并进行进度跟踪、取消检查和节流。
          *
          * @param b   缓冲区
@@ -426,13 +475,13 @@ public class TrueStreamingFileService {
                     lastReportTime = currentTime;
                 }
 
-                // 重新启用节流功能
-                try {
-                    throttle(progress);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Upload was interrupted during throttling", e);
-                }
+                // 暂时禁用节流功能，测试是否影响数据完整性
+                // try {
+                //     throttle(progress);
+                // } catch (InterruptedException e) {
+                //     Thread.currentThread().interrupt();
+                //     throw new IOException("Upload was interrupted during throttling", e);
+                // }
             }
             return bytesRead;
         }

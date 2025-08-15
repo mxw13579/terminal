@@ -47,6 +47,10 @@ public class TrueStreamingController {
             @RequestHeader(value = "Content-Length", required = false) Long contentLength,
             HttpServletRequest request) {
 
+        // 添加详细的参数调试日志
+        log.info("流式上传请求参数: sessionId={}, remotePath={}, filename={}, contentLength={}", 
+            sessionId, remotePath, filename, contentLength);
+
         SshConnection connection = sessionManager.getConnection(sessionId);
         if (connection == null) {
             log.warn("流式上传未找到SSH连接，sessionId: {}", sessionId);

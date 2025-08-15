@@ -220,8 +220,9 @@ public class DataManagementService {
                             // 验证ZIP文件
                             executeCommand(connection, String.format("unzip -t '%s'", remoteUploadedPath));
                         } else {
-                            // 验证TAR.GZ文件
-                            executeCommand(connection, String.format("gzip -t '%s'", remoteUploadedPath));
+                            // 对于TAR.GZ文件，使用tar命令验证（更可靠）
+                            // 因为前面的isValidRemoteArchive已经用tar -tzf验证过了，这里再次确认
+                            executeCommand(connection, String.format("tar -tzf '%s' > /dev/null", remoteUploadedPath));
                         }
                         log.info("文件完整性验证通过: {}", remoteUploadedPath);
                     } catch (Exception e) {
@@ -283,8 +284,9 @@ public class DataManagementService {
                 log.error("数据导入失败: {}", containerName, e);
                 throw new RuntimeException("数据导入失败: " + e.getMessage(), e);
             } finally {
-                // 清理所有临时文件
-                cleanupImportTempFiles(connection, remoteUploadedPath, null, extractTempPath, null);
+                // 临时禁用文件清理，保留文件以供检查
+                log.info("临时禁用文件清理，保留文件: {}", remoteUploadedPath);
+                // cleanupImportTempFiles(connection, remoteUploadedPath, null, extractTempPath, null);
             }
         });
     }
