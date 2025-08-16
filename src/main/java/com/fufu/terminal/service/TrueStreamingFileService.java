@@ -492,9 +492,16 @@ public class TrueStreamingFileService {
             }
 
             long currentTime = System.currentTimeMillis();
-            if (currentTime - lastReportTime > 1000) { // 每秒最多发送一次进度更新
+            if (currentTime - lastReportTime > 500) { // 🔧 调试：改为每500ms发送一次进度更新，更频繁
                 sendProgressUpdate(progress);
                 lastReportTime = currentTime;
+                
+                // 🔧 调试：添加小延迟以便观察进度
+                try {
+                    Thread.sleep(50); // 50ms延迟，让进度更容易观察
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
 
             // 🔧 移除节流功能，避免在SFTP传输中造成时序问题

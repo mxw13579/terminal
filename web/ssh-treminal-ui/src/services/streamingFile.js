@@ -322,8 +322,11 @@ export class StreamingFileService {
                 
                 // 设置全局回调来接收STOMP实时进度
                 console.log('🎯 设置streamingProgressCallback, uploadId:', uploadId);
+                console.log('🎯 当前window对象:', window);
                 window.streamingProgressCallback = (progressData) => {
                     console.log('📩 streamingProgressCallback被调用:', progressData);
+                    console.log('📩 当前usingBackendProgress状态:', usingBackendProgress);
+                    console.log('📩 文件名匹配检查:', progressData.filename, '===', file.name);
                     
                     // 简化逻辑：如果收到了后端进度数据，直接使用，不做严格的ID匹配
                     // 因为在上传期间，前端uploadId和后端uploadId不同是正常的
@@ -374,39 +377,37 @@ export class StreamingFileService {
                     }
                 };
                 
-                // 开始真实进度查询的函数 - 作为STOMP的备用方案
+                // 🔧 测试：立即检查全局回调是否设置成功
+                console.log('🔧 验证streamingProgressCallback设置:', typeof window.streamingProgressCallback);
+                console.log('🔧 验证回调函数:', window.streamingProgressCallback?.toString().substring(0, 100));
+                
+                // 开始真实进度查询的函数 - 强制使用HTTP轮询进行调试
                 const startRealProgressTracking = (backendUploadId) => {
                     realUploadId = backendUploadId;
-                    console.log(`💡 备用方案：开始使用后端uploadId查询真实进度: ${backendUploadId}`);
+                    console.log(`💡 开始HTTP轮询后端进度: ${backendUploadId}`);
                     
-                    // 延迟启动，给STOMP消息一点时间
-                    setTimeout(() => {
-                        if (usingBackendProgress) {
-                            console.log('✅ 已有STOMP实时进度，跳过轮询');
-                            return;
-                        }
-                        
-                        console.log('🔄 STOMP进度未收到，使用HTTP轮询备用');
-                        realProgressTimer = setInterval(async () => {
-                            try {
-                                if (usingBackendProgress) {
-                                    clearInterval(realProgressTimer);
-                                    realProgressTimer = null;
-                                    return;
-                                }
+                    // 🔧 调试：立即开始HTTP轮询，不等待STOMP
+                    realProgressTimer = setInterval(async () => {
+                        try {
+                            const sessionId = this.getSessionId();
+                            if (!sessionId || !realUploadId) {
+                                console.warn('⚠️ sessionId或uploadId缺失，停止轮询');
+                                return;
+                            }
+                            
+                            const progressUrl = this.getApiUrl(`/api/streaming/upload/${realUploadId}/progress`);
+                            console.log(`📡 查询进度URL: ${progressUrl}?sessionId=${sessionId}`);
+                            
+                            const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
+                            
+                            if (response.ok) {
+                                const progressData = await response.json();
+                                console.log(`📊 HTTP轮询进度响应:`, progressData);
                                 
-                                const sessionId = this.getSessionId();
-                                if (!sessionId || !realUploadId) return;
-                                
-                                const progressUrl = this.getApiUrl(`/api/streaming/upload/${realUploadId}/progress`);
-                                const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
-                                
-                                if (response.ok) {
-                                    const progressData = await response.json();
+                                if (progressData && progressData.percentage !== undefined) {
+                                    console.log(`📈 更新进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes)`);
                                     
-                                    if (progressData && progressData.percentage !== undefined) {
-                                        console.log(`📊 HTTP轮询进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes)`);
-                                        
+                                    if (onProgress) {
                                         onProgress({
                                             uploadId: realUploadId,
                                             loaded: progressData.transferredBytes || 0,
@@ -415,21 +416,38 @@ export class StreamingFileService {
                                             speed: progressData.speed || 0,
                                             status: progressData.status === 'completed' ? 'completed' : 'streaming'
                                         });
+                                    }
+                                    
+                                    // 如果后端显示完成，停止进度查询
+                                    if (progressData.status === 'completed' || progressData.percentage >= 100) {
+                                        console.log('✅ 后端进度显示完成，停止轮询');
+                                        clearInterval(realProgressTimer);
+                                        realProgressTimer = null;
                                         
-                                        // 如果后端显示完成，停止进度查询
-                                        if (progressData.status === 'completed' || progressData.percentage >= 100) {
-                                            clearInterval(realProgressTimer);
-                                            realProgressTimer = null;
+                                        if (onComplete) {
+                                            onComplete({
+                                                uploadId: realUploadId,
+                                                status: 'completed',
+                                                message: '文件上传完成！'
+                                            });
                                         }
+                                        resolve(realUploadId);
                                     }
                                 } else {
-                                    console.warn(`进度查询失败: ${response.status} ${response.statusText}`);
+                                    console.log('📊 后端进度数据为空或无效');
                                 }
-                            } catch (error) {
-                                console.warn('查询真实上传进度失败:', error.message);
+                            } else {
+                                console.warn(`❌ 进度查询失败: ${response.status} ${response.statusText}`);
+                                if (response.status === 404) {
+                                    console.log('📊 进度查询404，可能已完成，停止轮询');
+                                    clearInterval(realProgressTimer);
+                                    realProgressTimer = null;
+                                }
                             }
-                        }, 1000); // 每秒查询一次真实进度
-                    }, 2000); // 延迟2秒启动
+                        } catch (error) {
+                            console.warn('🚨 查询真实上传进度失败:', error.message);
+                        }
+                    }, 1000); // 每秒查询一次
                 };
                 
                 // 使用浏览器原生进度事件作为初始进度显示（仅在后端数据不可用时）
@@ -441,6 +459,7 @@ export class StreamingFileService {
 
                 // 上传完成处理 - 适配新的CompletableFuture接口
                 xhr.onload = () => {
+                    console.log('🎯 xhr.onload 被调用! status:', xhr.status, 'responseText:', xhr.responseText);
                     this.activeUploads.delete(uploadId);
                     
                     if (xhr.status >= 200 && xhr.status < 300) {
@@ -448,31 +467,51 @@ export class StreamingFileService {
                             const response = JSON.parse(xhr.responseText);
                             const backendUploadId = response.uploadId || uploadId;
                             
-                            console.log(`上传HTTP请求完成，获得后端uploadId: ${backendUploadId}`);
+                            console.log(`✅ 上传HTTP请求完成，获得后端uploadId: ${backendUploadId}`);
+                            console.log('📋 后端响应详情:', response);
                             
                             // 检查是否已经完成（新的CompletableFuture接口可能直接返回completed状态）
                             if (response.status === 'completed') {
-                                console.log('后端已完成上传，直接标记为完成');
+                                console.log('🏁 后端已完成上传，直接标记为完成');
+                                
+                                // 🔧 模拟进度更新过程，让用户能看到100%的进度
                                 if (onProgress) {
+                                    // 先显示开始进度
                                     onProgress({
                                         uploadId: backendUploadId,
-                                        loaded: file.size,
+                                        loaded: 0,
                                         total: file.size,
-                                        percentage: 100,
+                                        percentage: 0,
                                         speed: 0,
-                                        status: 'completed'
+                                        status: 'uploading'
                                     });
+                                    
+                                    // 延迟一点显示完成进度
+                                    setTimeout(() => {
+                                        onProgress({
+                                            uploadId: backendUploadId,
+                                            loaded: file.size,
+                                            total: file.size,
+                                            percentage: 100,
+                                            speed: 0,
+                                            status: 'completed'
+                                        });
+                                    }, 100);
                                 }
+                                
                                 if (onComplete) {
-                                    onComplete({
-                                        uploadId: backendUploadId,
-                                        status: 'completed',
-                                        message: '文件上传完成！'
-                                    });
+                                    setTimeout(() => {
+                                        onComplete({
+                                            uploadId: backendUploadId,
+                                            status: 'completed',
+                                            message: '文件上传完成！'
+                                        });
+                                    }, 200);
                                 }
                                 resolve(backendUploadId);
                             } else {
                                 // 如果还在处理中，开始轮询进度
+                                console.log('🔄 后端还在处理中，启动进度轮询:', backendUploadId);
                                 startRealProgressTracking(backendUploadId);
                             }
                             
@@ -606,11 +645,8 @@ export class StreamingFileService {
                     xhr.setRequestHeader('Content-Length', arrayBuffer.byteLength.toString());
                     xhr.send(arrayBuffer);
                     
-                    // 立即开始查询后端真实进度
-                    setTimeout(() => {
-                        console.log('🔄 开始查询后端进度...');
-                        startRealProgressTracking('uploading'); // 开始轮询后端进度
-                    }, 1000); // 延迟1秒确保后端开始处理
+                    // 不要在这里立即查询进度，等待xhr.onload获得真实的uploadId
+                    console.log('📤 数据已发送，等待后端返回uploadId...');
                 }).catch(error => {
                     console.error('文件读取失败:', error);
                     const err = new Error('文件读取失败');

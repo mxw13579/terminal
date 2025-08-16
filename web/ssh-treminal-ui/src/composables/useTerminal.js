@@ -50,17 +50,259 @@ export function useTerminal(options = {}) {
     let externalAttachTimer = null;
     const streamingFileService = new StreamingFileService(() => stompSessionId);
 
+    // 声明函数变量，稍后定义
+    let tryAttachExternalClient;
+    let scheduleExternalAttach;
+    let subscribeToQueues;
+    let testStompSubscription;
+    let forceResubscribe;
+
+    // 立即定义所有函数，避免作用域问题
+    
+    // 强制重新订阅所有队列的函数
+    forceResubscribe = () => {
+        console.log('🔄 强制重新订阅所有队列...');
+        console.log('🔄 当前STOMP客户端:', stompClient);
+        console.log('🔄 客户端连接状态:', stompClient?.connected);
+        console.log('🔄 当前会话ID:', stompSessionId);
+        
+        if (stompClient && stompClient.connected) {
+            console.log('🔄 清理现有订阅...');
+            // 先清理现有订阅
+            Object.keys(stompClient.subscriptions || {}).forEach(subId => {
+                console.log('🔄 取消订阅:', subId);
+                stompClient.subscriptions[subId].unsubscribe();
+            });
+            
+            // 重新订阅
+            console.log('🔄 重新执行订阅...');
+            subscribeToQueues();
+            
+            // 重新请求会话信息
+            setTimeout(() => {
+                console.log('🔄 重新请求会话信息...');
+                stompClient.publish({
+                    destination: '/app/session/info',
+                    body: JSON.stringify({ request: 'sessionInfo' })
+                });
+            }, 1000);
+        } else {
+            console.error('🔄 STOMP客户端未连接，无法重新订阅');
+        }
+    };
+
+    // 测试STOMP订阅功能
+    testStompSubscription = () => {
+        console.log('🔍 开始测试STOMP订阅...');
+        console.log('🔍 STOMP客户端连接状态:', stompClient?.connected);
+        console.log('🔍 当前会话ID:', stompSessionId);
+        console.log('🔍 当前订阅列表:', Object.keys(stompClient?.subscriptions || {}));
+        
+        // 发送一个测试消息请求
+        if (stompClient && stompClient.connected) {
+            console.log('🔍 发送测试消息到后端...');
+            stompClient.publish({
+                destination: '/app/test/subscription',
+                body: JSON.stringify({ 
+                    test: 'subscription',
+                    sessionId: stompSessionId 
+                })
+            });
+        } else {
+            console.error('🔍 STOMP客户端未连接，无法发送测试消息');
+        }
+    };
+
+    // 订阅所有队列
+    subscribeToQueues = () => {
+        console.log('🚀 开始订阅所有STOMP队列...');
+        console.log('🚀 当前STOMP客户端状态:', stompClient?.connected);
+        console.log('🚀 当前subscriptionsReady状态:', subscriptionsReady);
+        console.log('🚀 STOMP客户端对象:', stompClient);
+        console.log('🚀 STOMP连接URL:', stompClient?.webSocket?.url);
+        
+        // 首先订阅会话信息（最重要）
+        const sessionSub = stompClient.subscribe('/user/queue/session', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('📨 收到会话消息:', data);
+                if (data.type === 'session_established' && data.sessionId) {
+                    stompSessionId = data.sessionId;
+                    console.log('✅ 收到后端发送的STOMP会话ID:', stompSessionId);
+                    console.log('🔗 当前streamingFileService的sessionIdProvider将返回:', stompSessionId);
+                    
+                    // 🔧 调试：更新window对象中的会话ID
+                    window.stompSessionId = stompSessionId;
+                    console.log('🔧 已更新window.stompSessionId:', stompSessionId);
+                }
+            } catch (e) {
+                console.error('Error processing session message:', e);
+            }
+        });
+        console.log('✅ 会话订阅完成:', sessionSub);
+        
+        // 订阅终端输出
+        const terminalSub = stompClient.subscribe('/user/queue/terminal', (message) => {
+            console.log('Received terminal output message:', message);
+            try {
+                const data = JSON.parse(message.body);
+                console.log('Parsed terminal data:', data);
+                if (term && data.payload) {
+                    // 使用缓冲区和requestAnimationFrame优化输出
+                    bufferTerminalOutput(data.payload);
+                } else {
+                    console.warn('Cannot write to terminal:', { term: !!term, payload: !!data.payload });
+                }
+            } catch (e) {
+                console.error('Error processing terminal output:', e, 'Message body:', message.body);
+            }
+        });
+        console.log('Subscribed to terminal output:', terminalSub);
+
+        // 订阅终端错误
+        const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                console.log('收到错误消息:', data);
+                
+                // 提取错误信息，支持多种格式
+                let errorMessage = '未知错误';
+                if (data.payload) {
+                    errorMessage = data.payload;
+                } else if (data.message) {
+                    errorMessage = data.message;
+                } else if (data.error) {
+                    errorMessage = data.error;
+                } else if (typeof data === 'string') {
+                    errorMessage = data;
+                } else {
+                    errorMessage = JSON.stringify(data);
+                }
+                
+                onShowModal("终端错误: " + errorMessage);
+            } catch (e) {
+                console.error('Error processing terminal error:', e);
+                onShowModal("终端错误: 消息解析失败");
+            }
+        });
+
+        // 订阅SFTP响应（统一路由）
+        stompClient.subscribe('/user/queue/sftp', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                const messageType = data.type;
+                console.log('收到SFTP消息，类型:', messageType, '数据:', data);
+                
+                // 根据消息类型分发到不同的处理器
+                switch (messageType) {
+                    case 'sftp_list_response':
+                        handleSftpListResponse(data);
+                        break;
+                    case 'sftp_download_response':
+                        handleSftpDownloadResponse(data);
+                        break;
+                    // 彻底禁用旧的WebSocket上传消息处理，避免与新流式上传冲突
+                    case 'sftp_remote_progress':
+                    case 'sftp_upload_final_success':
+                    case 'upload_completed':
+                    case 'upload_cancelled':
+                    case 'upload_failed':
+                        console.log('忽略旧的上传相关STOMP消息:', messageType, '- 现已使用HTTP流式传输');
+                        break;
+                    case 'sftp_error':
+                        handleSftpError(data);
+                        break;
+                    default:
+                        console.warn('未知的SFTP消息类型:', messageType);
+                        break;
+                }
+            } catch (e) {
+                console.error('Error processing SFTP message:', e);
+                onShowModal('处理SFTP响应出错: ' + e.message);
+            }
+        });
+
+        // 订阅上传进度数据（实时后端传输进度）
+        console.log('🔔 正在订阅STOMP上传进度消息: /user/queue/upload/progress');
+        console.log('🔔 STOMP客户端详情:', {
+            connected: stompClient.connected,
+            active: stompClient.active,
+            subscriptions: stompClient.subscriptions,
+            webSocketUrl: stompClient.webSocket?.url,
+            webSocketReadyState: stompClient.webSocket?.readyState
+        });
+        
+        const uploadProgressSub = stompClient.subscribe('/user/queue/upload/progress', (message) => {
+            try {
+                console.log('📨 🎉 STOMP进度消息收到!!! - 原始message:', message);
+                console.log('📨 🎉 STOMP进度消息收到!!! - message.body:', message.body);
+                console.log('📨 🎉 STOMP进度消息收到!!! - headers:', message.headers);
+                
+                const progressData = JSON.parse(message.body);
+                console.log('🎯 🎉 收到后端实时上传进度:', progressData);
+                
+                // 通知StreamingFileService更新进度
+                if (window.streamingProgressCallback) {
+                    console.log('📞 🎉 调用streamingProgressCallback');
+                    window.streamingProgressCallback(progressData);
+                } else {
+                    console.warn('⚠️  streamingProgressCallback未设置');
+                }
+            } catch (e) {
+                console.error('❌ 处理上传进度消息失败:', e, 'message:', message);
+            }
+        });
+        console.log('✅ 上传进度订阅完成:', uploadProgressSub);
+        console.log('✅ 订阅对象详情:', {
+            id: uploadProgressSub?.id,
+            destination: uploadProgressSub?.destination,
+            callback: typeof uploadProgressSub?.callback
+        });
+        console.log('✅ 当前所有订阅:', Object.keys(stompClient.subscriptions || {}));
+        console.log('✅ STOMP客户端状态:', stompClient.connected);
+
+        // 订阅监控数据
+        stompClient.subscribe('/user/queue/monitor', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                handleMonitorUpdate(data);
+            } catch (e) {
+                console.error('Error processing monitor data:', e);
+            }
+        });
+
+        // 订阅全局错误
+        stompClient.subscribe('/user/queue/errors', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                onShowModal("错误: " + data.payload);
+            } catch (e) {
+                console.error('Error processing global error:', e);
+            }
+        });
+    };
+    
     // 若外部提供了 STOMP 客户端获取方法，尝试复用并在连接后订阅
-    const tryAttachExternalClient = () => {
+    tryAttachExternalClient = () => {
         if (!getExternalClient) return;
         const client = getExternalClient();
+        console.log('🔍 tryAttachExternalClient - 外部客户端:', client);
         if (!client) return;
         if (client !== stompClient) {
+            console.log('🔍 使用外部STOMP客户端，替换当前客户端');
             stompClient = client;
             usingExternalClient = true;
             subscriptionsReady = false;
+            
+            // 🔧 调试：暴露外部客户端到window对象
+            window.stompClient = stompClient;
+            window.testStompSubscription = testStompSubscription;
+            window.subscribeToQueues = subscribeToQueues;
+            window.forceResubscribe = forceResubscribe;
+            console.log('🔧 已暴露外部STOMP客户端到window');
         }
         if (stompClient && stompClient.connected && !subscriptionsReady) {
+            console.log('🔍 外部客户端已连接，开始订阅...');
             subscribeToQueues();
             startTerminalOutputForwarding();
             
@@ -83,7 +325,7 @@ export function useTerminal(options = {}) {
         }
     };
 
-    const scheduleExternalAttach = () => {
+    scheduleExternalAttach = () => {
         if (!getExternalClient) return;
         // 立即尝试一次并短暂轮询等待外部连接就绪
         tryAttachExternalClient();
@@ -156,22 +398,33 @@ export function useTerminal(options = {}) {
 
             // 连接成功处理
             stompClient.onConnect = (frame) => {
-                console.log('STOMP Connected: ' + frame);
-                console.log('STOMP Frame details:', frame);
-                console.log('WebSocket URL:', stompClient.webSocket.url);
+                console.log('🎉 STOMP Connected: ' + frame);
+                console.log('🎉 STOMP Frame details:', frame);
+                console.log('🎉 WebSocket URL:', stompClient.webSocket.url);
+                console.log('🎉 STOMP Client ID:', stompClient.webSocket.protocol);
+                console.log('🎉 当前时间:', new Date().toISOString());
                 
                 // 会话ID将由后端通过消息发送，这里先不设置
-                console.log('等待后端发送STOMP会话ID...');
+                console.log('⏳ 等待后端发送STOMP会话ID...');
                 
                 isConnecting.value = false;
                 isConnected.value = true;
 
                 // 订阅消息队列
+                console.log('📋 准备订阅所有队列...');
                 subscribeToQueues();
+                
+                // 🔧 调试：暴露STOMP客户端到window对象
+                window.stompClient = stompClient;
+                window.stompSessionId = stompSessionId;
+                window.testStompSubscription = testStompSubscription;
+                window.subscribeToQueues = subscribeToQueues;
+                window.forceResubscribe = forceResubscribe;
+                console.log('🔧 已暴露调试对象到window: stompClient, stompSessionId, testStompSubscription, subscribeToQueues, forceResubscribe');
                 
                 // 测试：请求会话信息
                 setTimeout(() => {
-                    console.log('发送会话信息请求...');
+                    console.log('📤 发送会话信息请求...');
                     if (stompClient && stompClient.connected) {
                         stompClient.publish({
                             destination: '/app/session/info',
@@ -262,146 +515,6 @@ export function useTerminal(options = {}) {
                 body: JSON.stringify({})
             });
         }
-    };
-
-    const subscribeToQueues = () => {
-        console.log('Starting to subscribe to queues...');
-        
-        // 首先订阅会话信息（最重要）
-        stompClient.subscribe('/user/queue/session', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                console.log('📨 收到会话消息:', data);
-                if (data.type === 'session_established' && data.sessionId) {
-                    stompSessionId = data.sessionId;
-                    console.log('✅ 收到后端发送的STOMP会话ID:', stompSessionId);
-                    console.log('🔗 当前streamingFileService的sessionIdProvider将返回:', stompSessionId);
-                }
-            } catch (e) {
-                console.error('Error processing session message:', e);
-            }
-        });
-        
-        // 订阅终端输出
-        const terminalSub = stompClient.subscribe('/user/queue/terminal', (message) => {
-            console.log('Received terminal output message:', message);
-            try {
-                const data = JSON.parse(message.body);
-                console.log('Parsed terminal data:', data);
-                if (term && data.payload) {
-                    // 使用缓冲区和requestAnimationFrame优化输出
-                    bufferTerminalOutput(data.payload);
-                } else {
-                    console.warn('Cannot write to terminal:', { term: !!term, payload: !!data.payload });
-                }
-            } catch (e) {
-                console.error('Error processing terminal output:', e, 'Message body:', message.body);
-            }
-        });
-        console.log('Subscribed to terminal output:', terminalSub);
-
-        // 订阅终端错误
-        const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                console.log('收到错误消息:', data);
-                
-                // 提取错误信息，支持多种格式
-                let errorMessage = '未知错误';
-                if (data.payload) {
-                    errorMessage = data.payload;
-                } else if (data.message) {
-                    errorMessage = data.message;
-                } else if (data.error) {
-                    errorMessage = data.error;
-                } else if (typeof data === 'string') {
-                    errorMessage = data;
-                } else {
-                    errorMessage = JSON.stringify(data);
-                }
-                
-                onShowModal("终端错误: " + errorMessage);
-            } catch (e) {
-                console.error('Error processing terminal error:', e);
-                onShowModal("终端错误: 消息解析失败");
-            }
-        });
-
-        // 订阅SFTP响应（统一路由）
-        stompClient.subscribe('/user/queue/sftp', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                const messageType = data.type;
-                console.log('收到SFTP消息，类型:', messageType, '数据:', data);
-                
-                // 根据消息类型分发到不同的处理器
-                switch (messageType) {
-                    case 'sftp_list_response':
-                        handleSftpListResponse(data);
-                        break;
-                    case 'sftp_download_response':
-                        handleSftpDownloadResponse(data);
-                        break;
-                    // 彻底禁用旧的WebSocket上传消息处理，避免与新流式上传冲突
-                    case 'sftp_remote_progress':
-                    case 'sftp_upload_final_success':
-                    case 'upload_completed':
-                    case 'upload_cancelled':
-                    case 'upload_failed':
-                        console.log('忽略旧的上传相关STOMP消息:', messageType, '- 现已使用HTTP流式传输');
-                        break;
-                    case 'sftp_error':
-                        handleSftpError(data);
-                        break;
-                    default:
-                        console.warn('未知的SFTP消息类型:', messageType);
-                        break;
-                }
-            } catch (e) {
-                console.error('Error processing SFTP message:', e);
-                onShowModal('处理SFTP响应出错: ' + e.message);
-            }
-        });
-
-        // 订阅上传进度数据（实时后端传输进度）
-        console.log('🔔 正在订阅STOMP上传进度消息: /user/queue/upload/progress');
-        const uploadProgressSub = stompClient.subscribe('/user/queue/upload/progress', (message) => {
-            try {
-                const progressData = JSON.parse(message.body);
-                console.log('🎯 收到后端实时上传进度:', progressData);
-                
-                // 通知StreamingFileService更新进度
-                if (window.streamingProgressCallback) {
-                    console.log('📞 调用streamingProgressCallback');
-                    window.streamingProgressCallback(progressData);
-                } else {
-                    console.warn('⚠️  streamingProgressCallback未设置');
-                }
-            } catch (e) {
-                console.error('❌ 处理上传进度消息失败:', e);
-            }
-        });
-        console.log('✅ 上传进度订阅完成:', uploadProgressSub);
-
-        // 订阅监控数据
-        stompClient.subscribe('/user/queue/monitor', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                handleMonitorUpdate(data);
-            } catch (e) {
-                console.error('Error processing monitor data:', e);
-            }
-        });
-
-        // 订阅全局错误
-        stompClient.subscribe('/user/queue/errors', (message) => {
-            try {
-                const data = JSON.parse(message.body);
-                onShowModal("错误: " + data.payload);
-            } catch (e) {
-                console.error('Error processing global error:', e);
-            }
-        });
     };
 
     // 如果由外部连接管理器提供 STOMP 客户端，则开始轮询等待其就绪并订阅
@@ -839,5 +952,7 @@ export function useTerminal(options = {}) {
         downloadSftpFiles,
         uploadSftpFile,
         toggleMonitorPanel,
+        testStompSubscription, // 添加测试函数
+        forceResubscribe, // 添加强制重新订阅函数
     };
 }
