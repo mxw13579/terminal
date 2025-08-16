@@ -261,6 +261,39 @@ export function useTerminal(options = {}) {
         console.log('✅ 当前所有订阅:', Object.keys(stompClient.subscriptions || {}));
         console.log('✅ STOMP客户端状态:', stompClient.connected);
 
+        // 🔧 添加通用消息监听器来捕获所有可能的进度消息
+        console.log('🔧 添加通用进度消息监听器...');
+        
+        // 尝试订阅可能的进度队列变体
+        const progressVariants = [
+            '/user/queue/upload/progress',
+            '/queue/upload/progress', 
+            '/user/queue/progress',
+            '/topic/upload/progress'
+        ];
+        
+        progressVariants.forEach(destination => {
+            try {
+                stompClient.subscribe(destination, (message) => {
+                    console.log(`🔍 收到${destination}的消息:`, message.body);
+                    try {
+                        const data = JSON.parse(message.body);
+                        if (data.filename || data.uploadId || data.percentage !== undefined) {
+                            console.log('🎯 这看起来像进度消息:', data);
+                            if (window.streamingProgressCallback) {
+                                window.streamingProgressCallback(data);
+                            }
+                        }
+                    } catch (e) {
+                        console.log('无法解析为JSON:', e);
+                    }
+                });
+                console.log(`✅ 已订阅变体: ${destination}`);
+            } catch (e) {
+                console.log(`❌ 订阅${destination}失败:`, e.message);
+            }
+        });
+
         // 订阅监控数据
         stompClient.subscribe('/user/queue/monitor', (message) => {
             try {
@@ -287,6 +320,7 @@ export function useTerminal(options = {}) {
         if (!getExternalClient) return;
         const client = getExternalClient();
         console.log('🔍 tryAttachExternalClient - 外部客户端:', client);
+        console.log('🔍 外部客户端连接状态:', client?.connected);
         if (!client) return;
         if (client !== stompClient) {
             console.log('🔍 使用外部STOMP客户端，替换当前客户端');
@@ -301,23 +335,33 @@ export function useTerminal(options = {}) {
             window.forceResubscribe = forceResubscribe;
             console.log('🔧 已暴露外部STOMP客户端到window');
         }
-        if (stompClient && stompClient.connected && !subscriptionsReady) {
-            console.log('🔍 外部客户端已连接，开始订阅...');
-            subscribeToQueues();
-            startTerminalOutputForwarding();
+        
+        // 🔧 强制检查并订阅
+        if (stompClient && stompClient.connected) {
+            console.log('🔍 外部客户端已连接，当前订阅状态:', subscriptionsReady);
+            console.log('🔍 当前订阅数量:', Object.keys(stompClient.subscriptions || {}).length);
             
-            // 对于外部客户端，也请求会话信息
-            setTimeout(() => {
-                console.log('外部客户端：发送会话信息请求...');
-                if (stompClient && stompClient.connected) {
-                    stompClient.publish({
-                        destination: '/app/session/info',
-                        body: JSON.stringify({ request: 'sessionInfo' })
-                    });
-                }
-            }, 500);
+            if (!subscriptionsReady || Object.keys(stompClient.subscriptions || {}).length === 0) {
+                console.log('🔍 开始订阅队列...');
+                subscribeToQueues();
+                startTerminalOutputForwarding();
+                
+                // 对于外部客户端，也请求会话信息
+                setTimeout(() => {
+                    console.log('外部客户端：发送会话信息请求...');
+                    if (stompClient && stompClient.connected) {
+                        stompClient.publish({
+                            destination: '/app/session/info',
+                            body: JSON.stringify({ request: 'sessionInfo' })
+                        });
+                    }
+                }, 500);
+                
+                subscriptionsReady = true;
+            } else {
+                console.log('🔍 订阅已完成，跳过重复订阅');
+            }
             
-            subscriptionsReady = true;
             if (externalAttachTimer) {
                 clearInterval(externalAttachTimer);
                 externalAttachTimer = null;
@@ -521,6 +565,18 @@ export function useTerminal(options = {}) {
     if (getExternalClient) {
         scheduleExternalAttach();
     }
+
+    // 🔧 添加强制检查机制 - 确保订阅正常工作
+    setTimeout(() => {
+        console.log('🔧 延迟检查STOMP订阅状态...');
+        console.log('🔧 STOMP客户端:', window.stompClient?.connected);
+        console.log('🔧 订阅数量:', Object.keys(window.stompClient?.subscriptions || {}).length);
+        
+        if (window.stompClient?.connected && Object.keys(window.stompClient?.subscriptions || {}).length === 0) {
+            console.log('🔧 检测到STOMP客户端已连接但无订阅，强制执行订阅...');
+            window.subscribeToQueues?.();
+        }
+    }, 2000); // 2秒后检查
 
     const disconnect = () => {
         if (stompClient && !usingExternalClient) {

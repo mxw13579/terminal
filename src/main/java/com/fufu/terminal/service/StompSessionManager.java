@@ -256,7 +256,7 @@ public class StompSessionManager {
     public void sendToSession(String sessionId, String destination, Object message) {
         try {
             messagingTemplate.convertAndSendToUser(sessionId, destination, message);
-            log.debug("消息已发送到会话 {} 的队列 {}", sessionId, destination);
+            log.debug("消息已发送到会话 {} 的队列 {} 消息 {}", sessionId, destination,message);
         } catch (Exception e) {
             log.error("发送消息到会话 {} 失败: {}", sessionId, e.getMessage(), e);
         }

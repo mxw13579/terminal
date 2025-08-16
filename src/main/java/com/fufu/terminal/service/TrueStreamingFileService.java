@@ -186,19 +186,19 @@ public class TrueStreamingFileService {
         try {
             // 获取SFTP通道
             sftpChannel = connection.getOrCreateSftpChannel();
-            
+
             // 🔧 重新启用ProgressTrackingInputStream，但使用修复版本
             log.info("开始带进度跟踪的流式上传到: {}", tempRemotePath);
-            
+
             // 发送开始进度
             progress.setStatus("uploading");
             sendProgressUpdate(progress);
-            
+
             // 使用修复版本的ProgressTrackingInputStream进行精准进度跟踪
             try (ProgressTrackingInputStream progressStream = new ProgressTrackingInputStream(inputStream, progress)) {
                 sftpChannel.put(progressStream, tempRemotePath);
             }
-            
+
             // 🔧 详细调试：验证SFTP写入结果
             try {
                 com.jcraft.jsch.SftpATTRS attrs = sftpChannel.stat(tempRemotePath);
@@ -207,7 +207,7 @@ public class TrueStreamingFileService {
                 log.info("  - SFTP文件大小: {} bytes", sftpFileSize);
                 log.info("  - 预期文件大小: {} bytes", progress.getTotalBytes());
                 log.info("  - 大小是否一致: {}", (sftpFileSize == progress.getTotalBytes() ? "✅" : "❌"));
-                
+
                 // 🔧 添加：上传完成后更新进度到100%
                 if (progress.getTotalBytes() > 0) {
                     progress.getTransferredBytes().set(progress.getTotalBytes());
@@ -223,7 +223,7 @@ public class TrueStreamingFileService {
                     sendProgressUpdate(progress);
                 }
             }
-            
+
             // 重命名到最终位置
             sftpChannel.rename(tempRemotePath, fullRemotePath);
 
@@ -391,7 +391,7 @@ public class TrueStreamingFileService {
         try {
             String progressJson = getUploadProgress(progress.getUploadId());
             if (progressJson != null) {
-                sessionManager.sendToSession(progress.getSessionId(), "/user/queue/upload/progress", progressJson);
+                sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/progress", progressJson);
             }
         } catch (Exception e) {
             log.warn("发送进度更新失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage());
@@ -495,7 +495,7 @@ public class TrueStreamingFileService {
             if (currentTime - lastReportTime > 500) { // 🔧 调试：改为每500ms发送一次进度更新，更频繁
                 sendProgressUpdate(progress);
                 lastReportTime = currentTime;
-                
+
                 // 🔧 调试：添加小延迟以便观察进度
                 try {
                     Thread.sleep(50); // 50ms延迟，让进度更容易观察
