@@ -21,7 +21,7 @@ export default defineConfig({
   },
   server: {
     // 端口自适应：如果5173被占用，Vite会自动选择下一个可用端口
-    port: 5173,
+    port: 5174,
     strictPort: false, // 允许端口自动调整
     host: '0.0.0.0', // 允许外部访问
     proxy: {

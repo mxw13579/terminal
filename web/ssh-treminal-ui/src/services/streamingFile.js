@@ -320,13 +320,21 @@ export class StreamingFileService {
                 let usingBackendProgress = false; // 标记是否已切换到后端进度
                 let backendCompleted = false; // 标记后端是否已完成
                 
-                // 设置全局回调来接收STOMP实时进度
-                console.log('🎯 设置streamingProgressCallback, uploadId:', uploadId);
-                console.log('🎯 当前window对象:', window);
+                // 提前设置全局回调来接收STOMP实时进度，避免时间竞争
+                console.log('🎯 提前设置streamingProgressCallback, uploadId:', uploadId);
+                const progressBuffer = []; // 缓存早期到达的进度消息
+                
                 window.streamingProgressCallback = (progressData) => {
                     console.log('📩 streamingProgressCallback被调用:', progressData);
                     console.log('📩 当前usingBackendProgress状态:', usingBackendProgress);
                     console.log('📩 文件名匹配检查:', progressData.filename, '===', file.name);
+                    
+                    // 如果还没有后端uploadId，先缓存进度消息
+                    if (!realUploadId && progressData.uploadId) {
+                        progressBuffer.push(progressData);
+                        console.log('📦 缓存进度消息，等待后端uploadId确认');
+                        return;
+                    }
                     
                     // 简化逻辑：如果收到了后端进度数据，直接使用，不做严格的ID匹配
                     // 因为在上传期间，前端uploadId和后端uploadId不同是正常的
@@ -466,9 +474,34 @@ export class StreamingFileService {
                         try {
                             const response = JSON.parse(xhr.responseText);
                             const backendUploadId = response.uploadId || uploadId;
+                            realUploadId = backendUploadId; // 设置真实的后端uploadId
                             
                             console.log(`✅ 上传HTTP请求完成，获得后端uploadId: ${backendUploadId}`);
                             console.log('📋 后端响应详情:', response);
+                            
+                            // 处理缓存的进度消息
+                            if (progressBuffer.length > 0) {
+                                console.log(`📦 处理${progressBuffer.length}个缓存的进度消息`);
+                                for (const bufferedProgress of progressBuffer) {
+                                    if (bufferedProgress.uploadId === backendUploadId) {
+                                        console.log('🎯 处理缓存的进度消息:', bufferedProgress);
+                                        // 直接处理缓存的消息
+                                        if (bufferedProgress.filename === file.name) {
+                                            usingBackendProgress = true;
+                                            if (onProgress) {
+                                                onProgress({
+                                                    loaded: bufferedProgress.transferredBytes || 0,
+                                                    total: bufferedProgress.totalBytes || file.size,
+                                                    percentage: Math.round(bufferedProgress.percentage || 0),
+                                                    speed: bufferedProgress.speed || 0,
+                                                    status: bufferedProgress.status === 'completed' ? 'completed' : 'streaming'
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                                progressBuffer.length = 0; // 清空缓存
+                            }
                             
                             // 检查是否已经完成（新的CompletableFuture接口可能直接返回completed状态）
                             if (response.status === 'completed') {

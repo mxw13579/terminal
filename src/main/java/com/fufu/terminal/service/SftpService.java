@@ -74,6 +74,32 @@ public class SftpService {
      * @throws IOException   发送消息失败时抛出
      */
     public void handleSftpList(final WebSocketSession session, final SshConnection sshConnection, String path) throws IOException {
+        // 添加重试机制，避免与文件上传操作冲突
+        int maxRetries = 3;
+        int retryDelay = 1000; // 1秒
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                performSftpList(session, sshConnection, path);
+                return; // 成功则退出
+            } catch (Exception e) {
+                if (attempt < maxRetries) {
+                    log.warn("SFTP目录列表操作失败（第{}次尝试），{}ms后重试: {}", attempt, retryDelay, e.getMessage());
+                    try {
+                        Thread.sleep(retryDelay);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("SFTP目录列表操作被中断", ie);
+                    }
+                } else {
+                    log.error("SFTP目录列表操作失败，已达最大重试次数", e);
+                    throw new IOException("无法访问任何有效目录", e);
+                }
+            }
+        }
+    }
+    
+    private void performSftpList(final WebSocketSession session, final SshConnection sshConnection, String path) throws IOException {
         try {
             ChannelSftp channelSftp = sshConnection.getOrCreateSftpChannel();
             
@@ -204,6 +230,7 @@ public class SftpService {
         } catch (JSchException | SftpException e) {
             log.error("SFTP目录列表失败: {}", e.getMessage(), e);
             sendSftpError(session, "SFTP操作失败: " + e.getMessage());
+            throw new IOException("SFTP目录列表失败", e);
         }
     }
 

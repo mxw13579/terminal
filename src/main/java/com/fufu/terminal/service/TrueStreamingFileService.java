@@ -156,6 +156,60 @@ public class TrueStreamingFileService {
     }
 
     /**
+     * [!! 新增辅助方法 !!]
+     * 在开始上传前执行一系列的诊断检查，以验证目标目录的有效性和权限。
+     *
+     * @param sftpChannel SFTP通道
+     * @param remotePath  远程目录
+     * @throws SftpException 如果任何检查失败
+     */
+    private void performPreUploadChecks(ChannelSftp sftpChannel, String remotePath) throws SftpException {
+        log.info("====== [诊断] 开始上传前预检 ======");
+        try {
+            // 检查1: 确认远程目录是否存在且可访问
+            log.info("[诊断] 检查目录 '{}' 的属性...", remotePath);
+            com.jcraft.jsch.SftpATTRS attrs = sftpChannel.stat(remotePath);
+            log.info("[诊断] 目录 '{}' 存在。权限: {}", remotePath, attrs.getPermissionsString());
+            if (!attrs.isDir()) {
+                throw new SftpException(ChannelSftp.SSH_FX_FAILURE, "远程路径 '" + remotePath + "' 不是一个目录。");
+            }
+            // 检查2: 尝试在目录中创建一个测试文件并重命名
+            String testFileName = "upload_test_" + System.currentTimeMillis() + ".tmp";
+            String testFileFullPath = remotePath.endsWith("/") ? remotePath + testFileName : remotePath + "/" + testFileName;
+            String renamedTestFileFullPath = testFileFullPath + ".renamed";
+            log.info("[诊断] 尝试在 '{}' 中创建并重命名测试文件...", remotePath);
+            try {
+                // 创建一个空文件
+                sftpChannel.put(new java.io.ByteArrayInputStream(new byte[0]), testFileFullPath);
+                log.info("[诊断] -> 测试文件 '{}' 创建成功。", testFileFullPath);
+                // 尝试重命名
+                sftpChannel.rename(testFileFullPath, renamedTestFileFullPath);
+                log.info("[诊断] -> 测试文件重命名为 '{}' 成功。", renamedTestFileFullPath);
+            } finally {
+                // 清理测试文件
+                try {
+                    sftpChannel.rm(renamedTestFileFullPath);
+                    log.info("[诊断] -> 重命名的测试文件清理成功。");
+                } catch (SftpException e) {
+                    // 如果重命名后的文件删除失败，尝试删除原始文件
+                    try {
+                        sftpChannel.rm(testFileFullPath);
+                        log.info("[诊断] -> 原始测试文件清理成功。");
+                    } catch (SftpException e2) {
+                        log.warn("[诊断] 清理测试文件失败，请手动清理: '{}' 或 '{}'", testFileFullPath, renamedTestFileFullPath);
+                    }
+                }
+            }
+            log.info("[诊断] 目录写入和重命名权限检查通过。");
+        } catch (SftpException e) {
+            log.error("====== [诊断] 上传前预检失败! 根本原因很可能在此处。 ======", e);
+            throw e; // 抛出异常，中断上传流程
+        }
+        log.info("====== [诊断] 预检完成，一切正常 ======");
+    }
+
+    /**
+     * [!! 修改后的核心方法 !!]
      * 处理直接流式上传的核心逻辑。此方法在后台线程中执行。
      *
      * @param connection  SSH连接对象
@@ -175,40 +229,32 @@ public class TrueStreamingFileService {
         }
         fullRemotePath = fullRemotePath.replace('\\', '/');
         String tempRemotePath = fullRemotePath + ".tmp";
-
         progress.setStatus("uploading");
         progress.setRemotePath(fullRemotePath);
         log.info("开始流式上传 [ID: {}]: 文件 {} -> {}, 预期大小: {} bytes",
                 progress.getUploadId(), filename, fullRemotePath,
                 progress.getTotalBytes() > 0 ? progress.getTotalBytes() : "未知");
-
         ChannelSftp sftpChannel = null;
         try {
             // 获取SFTP通道
             sftpChannel = connection.getOrCreateSftpChannel();
-
-            // 🔧 重新启用ProgressTrackingInputStream，但使用修复版本
-            log.info("开始带进度跟踪的流式上传到: {}", tempRemotePath);
-
-            // 发送开始进度
+            // [!! 新增 !!] 执行上传前预检，提前发现问题
+            performPreUploadChecks(sftpChannel, remotePath);
+            // 使用修复版本的ProgressTrackingInputStream进行精准进度跟踪
+            log.info("开始带进度跟踪的流式上传到临时文件: {}", tempRemotePath);
             progress.setStatus("uploading");
             sendProgressUpdate(progress);
-
-            // 使用修复版本的ProgressTrackingInputStream进行精准进度跟踪
             try (ProgressTrackingInputStream progressStream = new ProgressTrackingInputStream(inputStream, progress)) {
                 sftpChannel.put(progressStream, tempRemotePath);
             }
-
-            // 🔧 详细调试：验证SFTP写入结果
+            log.info("文件内容已成功写入临时文件: {}", tempRemotePath);
+            // 详细调试：验证SFTP写入结果
             try {
                 com.jcraft.jsch.SftpATTRS attrs = sftpChannel.stat(tempRemotePath);
                 long sftpFileSize = attrs.getSize();
-                log.info("📊 SFTP写入验证:");
-                log.info("  - SFTP文件大小: {} bytes", sftpFileSize);
-                log.info("  - 预期文件大小: {} bytes", progress.getTotalBytes());
-                log.info("  - 大小是否一致: {}", (sftpFileSize == progress.getTotalBytes() ? "✅" : "❌"));
-
-                // 🔧 添加：上传完成后更新进度到100%
+                log.info("📊 SFTP写入验证: SFTP文件大小: {} bytes, 预期大小: {} bytes, 一致性: {}",
+                        sftpFileSize, progress.getTotalBytes(), (sftpFileSize == progress.getTotalBytes() ? "✅" : "❌"));
+                // 上传完成后更新进度到100%
                 if (progress.getTotalBytes() > 0) {
                     progress.getTransferredBytes().set(progress.getTotalBytes());
                     progress.setStatus("finalizing");
@@ -216,28 +262,77 @@ public class TrueStreamingFileService {
                 }
             } catch (Exception e) {
                 log.warn("无法获取SFTP文件属性: {}", e.getMessage());
-                // 仍然标记为完成，因为put操作成功了
-                if (progress.getTotalBytes() > 0) {
-                    progress.getTransferredBytes().set(progress.getTotalBytes());
-                    progress.setStatus("finalizing");
-                    sendProgressUpdate(progress);
+            }
+            // [!! 修改 !!] 增强的重命名逻辑与备用方案
+            log.info("准备将临时文件 '{}' 重命名为 '{}'", tempRemotePath, fullRemotePath);
+            try {
+                sftpChannel.rename(tempRemotePath, fullRemotePath);
+                log.info("✅ 重命名操作成功!");
+            } catch (SftpException renameException) {
+                // 获取更详细的错误信息
+                String errorMsg = renameException.getMessage();
+                int errorCode = renameException.id;
+                log.error("❌ 'rename' 操作失败: 错误码={}, 错误信息='{}'. 尝试使用 '复制+删除' 作为备用方案。", 
+                    errorCode, errorMsg != null ? errorMsg : "无错误信息", renameException);
+                
+                // 检查临时文件是否还存在
+                try {
+                    sftpChannel.lstat(tempRemotePath);
+                    log.info("临时文件 '{}' 仍然存在", tempRemotePath);
+                } catch (SftpException tempCheckEx) {
+                    log.warn("无法检查临时文件状态: {}", tempCheckEx.getMessage());
+                }
+                
+                // 检查目标文件是否已经存在（可能重命名实际上成功了）
+                try {
+                    sftpChannel.lstat(fullRemotePath);
+                    log.warn("⚠️ 目标文件 '{}' 已存在！重命名可能实际上已经成功了", fullRemotePath);
+                    // 如果目标文件存在，尝试删除临时文件
+                    try {
+                        sftpChannel.rm(tempRemotePath);
+                        log.info("✅ 已清理临时文件，重命名实际成功");
+                        // 重命名实际成功，直接返回，不执行备用方案
+                        progress.setStatus("completed");
+                        log.info("✅ 文件上传和重命名操作全部完成（通过检测确认）: {}", fullRemotePath);
+                        sendProgressUpdate(progress);
+                        logUploadCompletion(progress);
+                        return;
+                    } catch (SftpException rmEx) {
+                        log.warn("无法删除临时文件: {}", rmEx.getMessage());
+                    }
+                } catch (SftpException targetCheckEx) {
+                    log.info("目标文件不存在，需要执行备用方案");
+                }
+                
+                try {
+                    log.info("[备用方案] 尝试将 '{}' 复制到 '{}'", tempRemotePath, fullRemotePath);
+                    // 使用正确的方式复制文件：先读取到内存，再写入目标位置
+                    try (InputStream tempFileStream = sftpChannel.get(tempRemotePath)) {
+                        sftpChannel.put(tempFileStream, fullRemotePath);
+                    }
+                    log.info("[备用方案] -> 复制成功。");
+                    log.info("[备用方案] 尝试删除临时文件 '{}'", tempRemotePath);
+                    sftpChannel.rm(tempRemotePath);
+                    log.info("[备用方案] -> 临时文件删除成功。备用方案执行完毕。");
+                } catch (Exception fallbackException) {
+                    log.error("❌ 备用方案 ('复制+删除') 也失败了: {}", fallbackException.getMessage(), fallbackException);
+                    // 如果备用方案失败，检查是否是权限问题，并提供更详细的错误信息
+                    String errorDetails = String.format("重命名失败原因: %s, 备用方案失败原因: %s", 
+                        renameException.getMessage(), fallbackException.getMessage());
+                    log.error("完整错误信息: {}", errorDetails);
+                    throw new RuntimeException(errorDetails, renameException);
                 }
             }
-
-            // 重命名到最终位置
-            sftpChannel.rename(tempRemotePath, fullRemotePath);
-
+            // 重命名成功后，确保进度更新
             progress.setStatus("completed");
+            log.info("✅ 文件上传和重命名操作全部完成: {}", fullRemotePath);
             sendProgressUpdate(progress);
             logUploadCompletion(progress);
-
         } catch (Exception e) {
             progress.setStatus(progress.isCancelled() ? "cancelled" : "failed");
             progress.setErrorMessage(e.getMessage());
             log.error("流式上传失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage(), e);
-
             sendProgressUpdate(progress);
-
             if (sftpChannel != null && sftpChannel.isConnected()) {
                 cleanupTemporaryFile(sftpChannel, tempRemotePath);
             } else {

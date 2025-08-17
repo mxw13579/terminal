@@ -287,11 +287,12 @@ export const useSftpStore = defineStore('sftp', () => {
           status: 'completed'
         })
         
-        // Refresh file list
+        // Refresh file list with delay to ensure backend rename operation is completed
+        // The backend needs time to complete the file rename from .tmp to final name
         setTimeout(() => {
           fetchFileList(currentPath.value)
           activeUploads.value.delete(uploadId)
-        }, 2000)
+        }, 3000)
       }
 
       const onError = (error: Error) => {
