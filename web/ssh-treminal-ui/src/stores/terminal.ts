@@ -111,17 +111,12 @@ export const useTerminalStore = defineStore('terminal', () => {
   const subscribeToQueues = () => {
     if (!stompClient) return
 
-    // Terminal output subscription
-    stompClient.subscribe('/user/queue/terminal/output', (message) => {
-      try {
-        const data = JSON.parse(message.body) as StompMessage
-        if (terminalInstance.value && data.data) {
-          bufferTerminalOutput(data.data as string)
-        }
-      } catch (e) {
-        console.error('Error processing terminal output:', e)
-      }
-    })
+    // Skip terminal output subscription - handled by useTerminal composable to avoid duplication
+    // Terminal output subscription moved to useTerminal.js to prevent duplicate subscriptions
+    console.log('Terminal store: Skipping terminal output subscription to prevent duplication')
+    
+    // Note: Terminal output is now handled exclusively by useTerminal.js composable
+    // to prevent the "lllsss" duplication issue when typing "ls"
 
     // Terminal error subscription
     stompClient.subscribe('/user/queue/terminal/error', (message) => {

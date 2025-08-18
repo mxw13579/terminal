@@ -143,18 +143,18 @@ export function useTerminal(options = {}) {
         
         // 订阅终端输出
         const terminalSub = stompClient.subscribe('/user/queue/terminal', (message) => {
-            console.log('Received terminal output message:', message);
+            console.log('收到终端输出消息:', message);
             try {
                 const data = JSON.parse(message.body);
-                console.log('Parsed terminal data:', data);
+                console.log('解析终端数据:', data);
                 if (term && data.payload) {
                     // 使用缓冲区和requestAnimationFrame优化输出
                     bufferTerminalOutput(data.payload);
                 } else {
-                    console.warn('Cannot write to terminal:', { term: !!term, payload: !!data.payload });
+                    console.warn('无法写入终端:', { term: !!term, payload: !!data.payload });
                 }
             } catch (e) {
-                console.error('Error processing terminal output:', e, 'Message body:', message.body);
+                console.error('处理终端输出错误:', e, '消息体:', message.body);
             }
         });
         console.log('Subscribed to terminal output:', terminalSub);
@@ -268,7 +268,6 @@ export function useTerminal(options = {}) {
                             }
                         }
                     }, 5000);
-                    }
                 }
             } catch (e) {
                 console.error('❌ 处理上传进度消息失败:', e, 'message:', message);
@@ -618,6 +617,8 @@ export function useTerminal(options = {}) {
 
     // --- Terminal Output Buffering ---
     const bufferTerminalOutput = (data) => {
+        // 添加调试日志来检查是否有重复数据
+        console.log('缓冲终端输出:', data);
         terminalOutputBuffer.push(data);
         
         // 如果没有定时器运行，启动一个
@@ -955,8 +956,9 @@ export function useTerminal(options = {}) {
             // 错误回调
             const onError = (error) => {
                 console.error('上传失败:', error);
-                sftpError.value = `上传失败: ${error.message}`;
-                onShowModal(`上传失败: ${error.message}`);
+                const errorMessage = error?.message || error || '上传过程中发生未知错误';
+                sftpError.value = `上传失败: ${errorMessage}`;
+                onShowModal(`上传失败: ${errorMessage}`);
             };
 
             // 启动真正的流式上传 (使用新的流式传输架构)
