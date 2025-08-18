@@ -254,12 +254,6 @@ public class TrueStreamingFileService {
                 long sftpFileSize = attrs.getSize();
                 log.info("📊 SFTP写入验证: SFTP文件大小: {} bytes, 预期大小: {} bytes, 一致性: {}",
                         sftpFileSize, progress.getTotalBytes(), (sftpFileSize == progress.getTotalBytes() ? "✅" : "❌"));
-                // 上传完成后更新进度到100%
-                if (progress.getTotalBytes() > 0) {
-                    progress.getTransferredBytes().set(progress.getTotalBytes());
-                    progress.setStatus("finalizing");
-                    sendProgressUpdate(progress);
-                }
             } catch (Exception e) {
                 log.warn("无法获取SFTP文件属性: {}", e.getMessage());
             }
@@ -268,13 +262,19 @@ public class TrueStreamingFileService {
             try {
                 sftpChannel.rename(tempRemotePath, fullRemotePath);
                 log.info("✅ 重命名操作成功!");
+                // 上传完成后更新进度到100%
+                if (progress.getTotalBytes() > 0) {
+                    progress.getTransferredBytes().set(progress.getTotalBytes());
+                    progress.setStatus("finalizing");
+                    sendProgressUpdate(progress);
+                }
             } catch (SftpException renameException) {
                 // 获取更详细的错误信息
                 String errorMsg = renameException.getMessage();
                 int errorCode = renameException.id;
-                log.error("❌ 'rename' 操作失败: 错误码={}, 错误信息='{}'. 尝试使用 '复制+删除' 作为备用方案。", 
+                log.error("❌ 'rename' 操作失败: 错误码={}, 错误信息='{}'. 尝试使用 '复制+删除' 作为备用方案。",
                     errorCode, errorMsg != null ? errorMsg : "无错误信息", renameException);
-                
+
                 // 检查临时文件是否还存在
                 try {
                     sftpChannel.lstat(tempRemotePath);
@@ -282,7 +282,7 @@ public class TrueStreamingFileService {
                 } catch (SftpException tempCheckEx) {
                     log.warn("无法检查临时文件状态: {}", tempCheckEx.getMessage());
                 }
-                
+
                 // 检查目标文件是否已经存在（可能重命名实际上成功了）
                 try {
                     sftpChannel.lstat(fullRemotePath);
@@ -303,7 +303,7 @@ public class TrueStreamingFileService {
                 } catch (SftpException targetCheckEx) {
                     log.info("目标文件不存在，需要执行备用方案");
                 }
-                
+
                 try {
                     log.info("[备用方案] 尝试将 '{}' 复制到 '{}'", tempRemotePath, fullRemotePath);
                     // 使用正确的方式复制文件：先读取到内存，再写入目标位置
@@ -317,7 +317,7 @@ public class TrueStreamingFileService {
                 } catch (Exception fallbackException) {
                     log.error("❌ 备用方案 ('复制+删除') 也失败了: {}", fallbackException.getMessage(), fallbackException);
                     // 如果备用方案失败，检查是否是权限问题，并提供更详细的错误信息
-                    String errorDetails = String.format("重命名失败原因: %s, 备用方案失败原因: %s", 
+                    String errorDetails = String.format("重命名失败原因: %s, 备用方案失败原因: %s",
                         renameException.getMessage(), fallbackException.getMessage());
                     log.error("完整错误信息: {}", errorDetails);
                     throw new RuntimeException(errorDetails, renameException);
@@ -333,31 +333,31 @@ public class TrueStreamingFileService {
             progress.setStatus(errorStatus);
             progress.setErrorMessage(e.getMessage());
             log.error("流式上传失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage(), e);
-            
+
             // 确保错误状态同步到前端
             try {
                 sendProgressUpdate(progress);
-                
+
                 // 发送详细错误信息
                 String detailedErrorMessage = String.format(
                     "{\"type\":\"upload_error\",\"uploadId\":\"%s\",\"filename\":\"%s\",\"status\":\"%s\",\"error\":\"%s\",\"errorType\":\"%s\",\"timestamp\":%d}",
-                    progress.getUploadId(), progress.getFilename(), errorStatus, 
+                    progress.getUploadId(), progress.getFilename(), errorStatus,
                     e.getMessage(), e.getClass().getSimpleName(), System.currentTimeMillis()
                 );
                 sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/error", detailedErrorMessage);
-                
+
                 log.info("已发送错误状态同步到前端 [ID: {}]", progress.getUploadId());
             } catch (Exception syncError) {
                 log.error("发送错误状态同步失败 [ID: {}]: {}", progress.getUploadId(), syncError.getMessage());
             }
-            
+
             // 清理临时文件
             if (sftpChannel != null && sftpChannel.isConnected()) {
                 cleanupTemporaryFile(sftpChannel, tempRemotePath);
             } else {
                 cleanupTemporaryFile(connection, tempRemotePath);
             }
-            
+
             throw new RuntimeException("Upload failed for " + progress.getFilename(), e);
         }
     }
@@ -508,14 +508,14 @@ public class TrueStreamingFileService {
             if (progressJson != null) {
                 // 同时发送到进度队列和状态同步队列
                 sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/progress", progressJson);
-                
+
                 // 额外发送状态同步消息，确保前端状态一致性
                 String statusSyncMessage = String.format(
                     "{\"type\":\"status_sync\",\"uploadId\":\"%s\",\"filename\":\"%s\",\"status\":\"%s\",\"timestamp\":%d}",
                     progress.getUploadId(), progress.getFilename(), progress.getStatus(), System.currentTimeMillis()
                 );
                 sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/sync", statusSyncMessage);
-                
+
                 log.debug("已发送进度更新和状态同步 [ID: {}]", progress.getUploadId());
             }
         } catch (Exception e) {
