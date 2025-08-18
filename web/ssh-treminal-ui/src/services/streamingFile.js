@@ -1,6 +1,362 @@
 import { AuthService } from './auth.js';
 
 /**
+ * 上传进度状态管理器
+ * 统一管理HTTP和STOMP的上传状态，解决冲突和时序问题
+ */
+class ProgressStateManager {
+    constructor() {
+        this.uploads = new Map();
+        this.messageBuffer = new Map(); // 存储早到的STOMP消息
+        this.pendingTimeouts = new Map(); // 管理超时清理
+        this.filenameLookup = new Map(); // 文件名到uploadId的映射，解决竞争条件
+        
+        // 启动定期清理
+        this.startPeriodicCleanup();
+    }
+    
+    /**
+     * 启动定期清理任务
+     */
+    startPeriodicCleanup() {
+        // 每30秒清理一次过期的缓冲消息
+        setInterval(() => {
+            this.cleanupExpiredBuffers();
+        }, 30000);
+    }
+    
+    /**
+     * 清理过期的缓冲消息
+     */
+    cleanupExpiredBuffers() {
+        const now = Date.now();
+        const maxAge = 5 * 60 * 1000; // 5分钟
+        
+        for (const [filename, messages] of this.messageBuffer.entries()) {
+            const validMessages = messages.filter(msg => {
+                const age = now - (msg.timestamp || 0);
+                return age < maxAge;
+            });
+            
+            if (validMessages.length !== messages.length) {
+                console.log(`清理过期缓冲消息: ${filename}, 清理 ${messages.length - validMessages.length} 条`);
+                if (validMessages.length > 0) {
+                    this.messageBuffer.set(filename, validMessages);
+                } else {
+                    this.messageBuffer.delete(filename);
+                }
+            }
+        }
+        
+        console.log(`完成定期清理，当前缓冲数量: ${this.messageBuffer.size}`);
+    }
+
+    /**
+     * 创建新的上传状态跟踪
+     */
+    createUpload(uploadId, file, callbacks = {}) {
+        const uploadState = {
+            uploadId,
+            filename: file.name,
+            fileSize: file.size,
+            status: 'starting',
+            progress: {
+                loaded: 0,
+                total: file.size,
+                percentage: 0,
+                speed: 0
+            },
+            callbacks: {
+                onProgress: callbacks.onProgress || (() => {}),
+                onComplete: callbacks.onComplete || (() => {}),
+                onError: callbacks.onError || (() => {})
+            },
+            backendUploadId: null,
+            usingBackendProgress: false,
+            httpCompleted: false,
+            backendCompleted: false,
+            startTime: Date.now(),
+            lastProgressTime: Date.now(),
+            lastProgressLoaded: 0,
+            // 增加唯一标识符用于精确匹配
+            uniqueKey: `${file.name}_${file.size}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        };
+
+        this.uploads.set(uploadId, uploadState);
+        
+        // 更新文件名映射，使用唯一键避免竞争条件
+        this.filenameLookup.set(uploadState.uniqueKey, uploadId);
+        
+        // 检查是否有缓冲的消息
+        this.processBufferedMessages(uploadState);
+        
+        console.log('📋 创建上传状态跟踪:', uploadId, uploadState);
+        return uploadState;
+    }
+
+    /**
+     * 处理缓冲的STOMP消息
+     */
+    processBufferedMessages(uploadState) {
+        // 先查找精确匹配的唯一键
+        const exactMessages = this.messageBuffer.get(uploadState.uniqueKey) || [];
+        
+        // 再查找文件名匹配的消息（兼容旧版本）
+        const filenameMessages = this.messageBuffer.get(uploadState.filename) || [];
+        
+        const allMessages = [...exactMessages, ...filenameMessages];
+        
+        console.log(`🔍 检查${uploadState.filename}的缓冲消息:`, allMessages.length);
+        
+        allMessages.forEach(message => {
+            console.log('🔄 处理缓冲的STOMP消息:', message);
+            this.handleStompProgress(message);
+        });
+
+        // 清理已处理的消息
+        this.messageBuffer.delete(uploadState.uniqueKey);
+        this.messageBuffer.delete(uploadState.filename);
+    }
+
+    /**
+     * 更新HTTP进度
+     */
+    updateHttpProgress(uploadId, progressData) {
+        const uploadState = this.uploads.get(uploadId);
+        if (!uploadState) return;
+
+        // 只有在没有使用后端进度时才更新HTTP进度
+        if (!uploadState.usingBackendProgress) {
+            uploadState.progress = {
+                loaded: progressData.loaded || 0,
+                total: progressData.total || uploadState.fileSize,
+                percentage: Math.round(progressData.percentage || 0),
+                speed: progressData.speed || 0
+            };
+            uploadState.status = 'uploading';
+
+            console.log(`📊 HTTP进度更新 (${uploadId}):`, uploadState.progress);
+            uploadState.callbacks.onProgress(uploadState.progress);
+        }
+    }
+
+    /**
+     * 处理STOMP进度消息
+     */
+    handleStompProgress(progressData) {
+        console.log('📨 处理STOMP进度消息:', progressData);
+        
+        // 增加时间戳
+        if (!progressData.timestamp) {
+            progressData.timestamp = Date.now();
+        }
+        
+        // 查找对应的上传状态 - 优化查找逻辑
+        let uploadState = this.findUploadByProgressData(progressData);
+
+        if (!uploadState) {
+            // 如果找不到对应的上传状态，缓存这个消息
+            console.log(`🔍 未找到${progressData.filename}的上传状态，缓存消息`);
+            
+            // 使用多种键缓存，提高匹配概率
+            const keys = [
+                progressData.filename,
+                progressData.uploadId,
+                `${progressData.filename}_${progressData.totalBytes}`
+            ].filter(Boolean);
+            
+            keys.forEach(key => {
+                if (!this.messageBuffer.has(key)) {
+                    this.messageBuffer.set(key, []);
+                }
+                this.messageBuffer.get(key).push(progressData);
+            });
+            
+            // 设置超时清理
+            setTimeout(() => {
+                keys.forEach(key => {
+                    const messages = this.messageBuffer.get(key) || [];
+                    const filtered = messages.filter(msg => msg !== progressData);
+                    if (filtered.length > 0) {
+                        this.messageBuffer.set(key, filtered);
+                    } else {
+                        this.messageBuffer.delete(key);
+                    }
+                });
+            }, 60000); // 1分钟后清理
+            
+            return;
+        }
+
+        // 切换到后端进度模式
+        if (!uploadState.usingBackendProgress) {
+            console.log('✅ 切换到后端进度模式:', progressData.filename);
+            uploadState.usingBackendProgress = true;
+        }
+
+        // 更新后端uploadId
+        if (progressData.uploadId && !uploadState.backendUploadId) {
+            uploadState.backendUploadId = progressData.uploadId;
+            console.log('🔗 设置后端uploadId:', progressData.uploadId);
+        }
+
+        // 更新进度
+        uploadState.progress = {
+            loaded: progressData.transferredBytes || 0,
+            total: progressData.totalBytes || uploadState.fileSize,
+            percentage: Math.round(progressData.percentage || 0),
+            speed: progressData.speed || 0
+        };
+        uploadState.status = progressData.status === 'completed' ? 'completed' : 'uploading';
+
+        console.log(`🎯 STOMP进度更新 (${uploadState.uploadId}):`, uploadState.progress);
+        uploadState.callbacks.onProgress(uploadState.progress);
+
+        // 检查是否完成
+        if (progressData.status === 'completed' || progressData.percentage >= 100) {
+            this.completeUpload(uploadState.uploadId, 'backend');
+        }
+    }
+
+    /**
+     * 通过进度数据查找上传状态（精确匹配）
+     */
+    findUploadByProgressData(progressData) {
+        // 1. 优先通过uploadId查找
+        if (progressData.uploadId) {
+            for (const state of this.uploads.values()) {
+                if (state.backendUploadId === progressData.uploadId) {
+                    return state;
+                }
+            }
+        }
+        
+        // 2. 通过文件名+大小匹配
+        if (progressData.filename && progressData.totalBytes) {
+            for (const state of this.uploads.values()) {
+                if (state.filename === progressData.filename && 
+                    state.fileSize === progressData.totalBytes) {
+                    return state;
+                }
+            }
+        }
+        
+        // 3. 只通过文件名匹配（兼容旧版本）
+        if (progressData.filename) {
+            for (const state of this.uploads.values()) {
+                if (state.filename === progressData.filename) {
+                    return state;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * HTTP完成处理
+     */
+    completeHttpUpload(uploadId, response) {
+        const uploadState = this.uploads.get(uploadId);
+        if (!uploadState) return;
+
+        uploadState.httpCompleted = true;
+        
+        // 更新后端uploadId
+        if (response.uploadId) {
+            uploadState.backendUploadId = response.uploadId;
+        }
+
+        console.log(`✅ HTTP完成 (${uploadId}):`, response);
+
+        // 如果后端直接返回完成状态
+        if (response.status === 'completed') {
+            this.completeUpload(uploadId, 'http');
+        }
+        // 否则等待STOMP进度消息
+    }
+
+    /**
+     * 完成上传
+     */
+    completeUpload(uploadId, source = 'unknown') {
+        const uploadState = this.uploads.get(uploadId);
+        if (!uploadState) return;
+
+        if (uploadState.backendCompleted) {
+            console.log(`🔄 上传${uploadId}已完成，跳过重复处理`);
+            return;
+        }
+
+        uploadState.backendCompleted = true;
+        uploadState.status = 'completed';
+        uploadState.progress.percentage = 100;
+        uploadState.progress.loaded = uploadState.fileSize;
+
+        console.log(`🏁 上传完成 (${uploadId}, 来源: ${source}):`, uploadState);
+
+        uploadState.callbacks.onComplete({
+            uploadId: uploadState.backendUploadId || uploadId,
+            status: 'completed',
+            message: '文件上传完成！'
+        });
+
+        // 延迟清理，避免重复完成事件
+        setTimeout(() => {
+            this.uploads.delete(uploadId);
+        }, 1000);
+    }
+
+    /**
+     * 处理上传错误
+     */
+    handleUploadError(uploadId, error, source = 'unknown') {
+        const uploadState = this.uploads.get(uploadId);
+        if (!uploadState) return;
+
+        // 如果已经完成，忽略后续错误
+        if (uploadState.backendCompleted) {
+            console.log(`✅ 上传${uploadId}已完成，忽略${source}错误:`, error.message);
+            return;
+        }
+
+        uploadState.status = 'error';
+        console.log(`❌ 上传错误 (${uploadId}, 来源: ${source}):`, error.message);
+
+        uploadState.callbacks.onError(error);
+        this.uploads.delete(uploadId);
+    }
+
+    /**
+     * 获取上传状态
+     */
+    getUploadState(uploadId) {
+        return this.uploads.get(uploadId);
+    }
+
+    /**
+     * 清理上传状态
+     */
+    cleanup(uploadId) {
+        const uploadState = this.uploads.get(uploadId);
+        if (uploadState) {
+            // 清理文件名映射
+            this.filenameLookup.delete(uploadState.uniqueKey);
+            
+            // 清理超时定时器
+            const timeoutId = this.pendingTimeouts.get(uploadId);
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                this.pendingTimeouts.delete(uploadId);
+            }
+        }
+        
+        this.uploads.delete(uploadId);
+        console.log(`🗑️ 清理上传状态:`, uploadId);
+    }
+}
+
+/**
  * HTTP流式文件传输服务
  * 替代基于WebSocket的base64传输，提供更高效的文件上传下载
  */
@@ -9,10 +365,37 @@ export class StreamingFileService {
         this.activeUploads = new Map();
         this.activeDownloads = new Map();
         this.sessionIdProvider = sessionIdProvider;
+        this.progressManager = new ProgressStateManager();
+        this.callbackInstanceId = null; // 用于跟踪回调实例
         
         // 自动检测后端地址
         this.backendBaseUrl = this.detectBackendUrl();
         console.log('自动检测到后端地址:', this.backendBaseUrl);
+        
+        // 注册清理回调
+        this.setupCleanupHandlers();
+    }
+    
+    /**
+     * 设置清理回调
+     */
+    setupCleanupHandlers() {
+        // 页面卸载时清理回调
+        if (typeof window !== 'undefined') {
+            window.addEventListener('beforeunload', () => {
+                this.cleanupGlobalStompCallback();
+            });
+            
+            // 可见性变化时清理（如切换标签页）
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    // 不在这里清理，只是暂停
+                    console.log('🔇 页面隐藏，保持回调注册');
+                } else if (document.visibilityState === 'visible') {
+                    console.log('🔆 页面可见，恢复回调注册');
+                }
+            });
+        }
     }
     
     /**
@@ -256,7 +639,7 @@ export class StreamingFileService {
     }
 
     /**
-     * 真正的流式上传文件 - 适配新的阻塞式后端API
+     * 真正的流式上传文件 - 使用ProgressStateManager统一管理
      * @param {File} file - 单个文件
      * @param {string} remotePath - 远程路径
      * @param {Function} onProgress - 进度回调
@@ -279,7 +662,19 @@ export class StreamingFileService {
                 throw new Error('未找到有效的会话ID，请确保SSH连接已建立');
             }
 
-            // 构建流式上传URL - 使用原始的upload接口
+            const uploadId = this.generateUploadId();
+            
+            // 创建进度状态管理
+            const uploadState = this.progressManager.createUpload(uploadId, file, {
+                onProgress,
+                onComplete,
+                onError
+            });
+
+            // 设置全局STOMP回调
+            this.setupGlobalStompCallback();
+
+            // 构建流式上传URL
             const uploadPath = '/api/streaming/upload';
             const params = new URLSearchParams({
                 sessionId,
@@ -288,402 +683,88 @@ export class StreamingFileService {
             });
             const finalUrl = this.getApiUrl(`${uploadPath}?${params.toString()}`);
 
-            // 创建XMLHttpRequest用于进度追踪
-            const xhr = new XMLHttpRequest();
-            const uploadId = this.generateUploadId();
-            
-            console.log('流式上传配置:', {
-                uploadPath,
-                finalUrl,
+            console.log('🚀 开始流式上传:', {
                 uploadId,
+                filename: file.name,
                 fileSize: file.size,
-                currentHost: window.location.host,
-                sessionId: sessionId.substring(0, 8) + '...'
+                finalUrl
             });
+
+            // 创建XMLHttpRequest
+            const xhr = new XMLHttpRequest();
             
             // 存储上传信息
             this.activeUploads.set(uploadId, {
                 xhr,
                 files: [file.name],
                 startTime: Date.now(),
-                lastProgressTime: Date.now(),
-                lastProgressLoaded: 0,
-                totalSize: file.size,
-                // 添加速度平滑处理
-                speedHistory: [], // 保存最近5次的速度记录
-                maxSpeedHistory: 5
+                progressManager: this.progressManager
             });
 
             return new Promise((resolve, reject) => {
-                let realProgressTimer = null;
-                let realUploadId = null; // 存储后端返回的真实uploadId
-                let usingBackendProgress = false; // 标记是否已切换到后端进度
-                let backendCompleted = false; // 标记后端是否已完成
-                
-                // 提前设置全局回调来接收STOMP实时进度，避免时间竞争
-                console.log('🎯 提前设置streamingProgressCallback, uploadId:', uploadId);
-                const progressBuffer = []; // 缓存早期到达的进度消息
-                
-                window.streamingProgressCallback = (progressData) => {
-                    console.log('📩 streamingProgressCallback被调用:', progressData);
-                    console.log('📩 当前usingBackendProgress状态:', usingBackendProgress);
-                    console.log('📩 文件名匹配检查:', progressData.filename, '===', file.name);
-                    
-                    // 如果还没有后端uploadId，先缓存进度消息
-                    if (!realUploadId && progressData.uploadId) {
-                        progressBuffer.push(progressData);
-                        console.log('📦 缓存进度消息，等待后端uploadId确认');
-                        return;
-                    }
-                    
-                    // 简化逻辑：如果收到了后端进度数据，直接使用，不做严格的ID匹配
-                    // 因为在上传期间，前端uploadId和后端uploadId不同是正常的
-                    if (progressData.filename === file.name) {
-                        console.log('✅ 文件名匹配，使用后端进度数据');
-                        usingBackendProgress = true;
-                        
-                        // 更新realUploadId以便后续使用
-                        if (!realUploadId && progressData.uploadId) {
-                            realUploadId = progressData.uploadId;
-                            console.log('🔗 设置realUploadId:', realUploadId);
-                        }
-                    } else {
-                        console.log(`⚠️  跳过：文件名不匹配 (期望:${file.name}, 收到:${progressData.filename})`);
-                        return;
-                    }
-                    
-                    console.log(`🎯 使用后端实时进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes) - 速度: ${this.formatSpeed(progressData.speed || 0)}`);
-                    
-                    if (onProgress) {
-                        onProgress({
-                            uploadId: progressData.uploadId || uploadId,
-                            loaded: progressData.transferredBytes || 0,
-                            total: progressData.totalBytes || file.size,
-                            percentage: Math.round(progressData.percentage || 0),
-                            speed: progressData.speed || 0,
-                            status: progressData.status === 'completed' ? 'completed' : 'streaming'
-                        });
-                    }
-                    
-                    // 如果后端显示完成，清理回调并resolve Promise
-                    if (progressData.status === 'completed' || progressData.percentage >= 100) {
-                        console.log('🏁 后端进度完成，清理回调');
-                        window.streamingProgressCallback = null;
-                        backendCompleted = true; // 标记后端已完成
-                        
-                        // 🔥 关键修复：后端完成时直接resolve Promise
-                        console.log('✅ 后端确认上传完成，自动resolve Promise');
-                        if (onComplete) {
-                            onComplete({
-                                uploadId: progressData.uploadId,
-                                status: 'completed',
-                                message: '文件上传完成！'
-                            });
-                        }
-                        // 直接resolve，不等待XMLHttpRequest
-                        resolve(progressData.uploadId);
-                    }
-                };
-                
-                // 🔧 测试：立即检查全局回调是否设置成功
-                console.log('🔧 验证streamingProgressCallback设置:', typeof window.streamingProgressCallback);
-                console.log('🔧 验证回调函数:', window.streamingProgressCallback?.toString().substring(0, 100));
-                
-                // 开始真实进度查询的函数 - 强制使用HTTP轮询进行调试
-                const startRealProgressTracking = (backendUploadId) => {
-                    realUploadId = backendUploadId;
-                    console.log(`💡 开始HTTP轮询后端进度: ${backendUploadId}`);
-                    
-                    // 🔧 调试：立即开始HTTP轮询，不等待STOMP
-                    realProgressTimer = setInterval(async () => {
-                        try {
-                            const sessionId = this.getSessionId();
-                            if (!sessionId || !realUploadId) {
-                                console.warn('⚠️ sessionId或uploadId缺失，停止轮询');
-                                return;
-                            }
-                            
-                            const progressUrl = this.getApiUrl(`/api/streaming/upload/${realUploadId}/progress`);
-                            console.log(`📡 查询进度URL: ${progressUrl}?sessionId=${sessionId}`);
-                            
-                            const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
-                            
-                            if (response.ok) {
-                                const progressData = await response.json();
-                                console.log(`📊 HTTP轮询进度响应:`, progressData);
-                                
-                                if (progressData && progressData.percentage !== undefined) {
-                                    console.log(`📈 更新进度: ${progressData.percentage}% (${progressData.transferredBytes}/${progressData.totalBytes} bytes)`);
-                                    
-                                    if (onProgress) {
-                                        onProgress({
-                                            uploadId: realUploadId,
-                                            loaded: progressData.transferredBytes || 0,
-                                            total: progressData.totalBytes || file.size,
-                                            percentage: Math.round(progressData.percentage),
-                                            speed: progressData.speed || 0,
-                                            status: progressData.status === 'completed' ? 'completed' : 'streaming'
-                                        });
-                                    }
-                                    
-                                    // 如果后端显示完成，停止进度查询
-                                    if (progressData.status === 'completed' || progressData.percentage >= 100) {
-                                        console.log('✅ 后端进度显示完成，停止轮询');
-                                        clearInterval(realProgressTimer);
-                                        realProgressTimer = null;
-                                        
-                                        if (onComplete) {
-                                            onComplete({
-                                                uploadId: realUploadId,
-                                                status: 'completed',
-                                                message: '文件上传完成！'
-                                            });
-                                        }
-                                        resolve(realUploadId);
-                                    }
-                                } else {
-                                    console.log('📊 后端进度数据为空或无效');
-                                }
-                            } else {
-                                console.warn(`❌ 进度查询失败: ${response.status} ${response.statusText}`);
-                                if (response.status === 404) {
-                                    console.log('📊 进度查询404，可能已完成，停止轮询');
-                                    clearInterval(realProgressTimer);
-                                    realProgressTimer = null;
-                                }
-                            }
-                        } catch (error) {
-                            console.warn('🚨 查询真实上传进度失败:', error.message);
-                        }
-                    }, 1000); // 每秒查询一次
-                };
-                
-                // 使用浏览器原生进度事件作为初始进度显示（仅在后端数据不可用时）
+                // HTTP进度处理
                 xhr.upload.onprogress = (event) => {
-                    // 🔧 修复：完全禁用浏览器进度，强制等待后端进度
-                    console.log('⚠️  浏览器上传进度已禁用，等待后端进度接管...');
-                    // 不调用onProgress，强制等待后端真实进度
+                    if (event.lengthComputable) {
+                        const progressData = {
+                            loaded: event.loaded,
+                            total: event.total,
+                            percentage: Math.round((event.loaded / event.total) * 100),
+                            speed: this.calculateSpeed(uploadState, event.loaded)
+                        };
+                        this.progressManager.updateHttpProgress(uploadId, progressData);
+                    }
                 };
 
-                // 上传完成处理 - 适配新的CompletableFuture接口
+                // HTTP完成处理
                 xhr.onload = () => {
-                    console.log('🎯 xhr.onload 被调用! status:', xhr.status, 'responseText:', xhr.responseText);
                     this.activeUploads.delete(uploadId);
                     
                     if (xhr.status >= 200 && xhr.status < 300) {
                         try {
                             const response = JSON.parse(xhr.responseText);
-                            const backendUploadId = response.uploadId || uploadId;
-                            realUploadId = backendUploadId; // 设置真实的后端uploadId
+                            console.log('✅ HTTP请求完成:', response);
                             
-                            console.log(`✅ 上传HTTP请求完成，获得后端uploadId: ${backendUploadId}`);
-                            console.log('📋 后端响应详情:', response);
+                            this.progressManager.completeHttpUpload(uploadId, response);
                             
-                            // 处理缓存的进度消息
-                            if (progressBuffer.length > 0) {
-                                console.log(`📦 处理${progressBuffer.length}个缓存的进度消息`);
-                                for (const bufferedProgress of progressBuffer) {
-                                    if (bufferedProgress.uploadId === backendUploadId) {
-                                        console.log('🎯 处理缓存的进度消息:', bufferedProgress);
-                                        // 直接处理缓存的消息
-                                        if (bufferedProgress.filename === file.name) {
-                                            usingBackendProgress = true;
-                                            if (onProgress) {
-                                                onProgress({
-                                                    loaded: bufferedProgress.transferredBytes || 0,
-                                                    total: bufferedProgress.totalBytes || file.size,
-                                                    percentage: Math.round(bufferedProgress.percentage || 0),
-                                                    speed: bufferedProgress.speed || 0,
-                                                    status: bufferedProgress.status === 'completed' ? 'completed' : 'streaming'
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                                progressBuffer.length = 0; // 清空缓存
-                            }
-                            
-                            // 检查是否已经完成（新的CompletableFuture接口可能直接返回completed状态）
+                            // 如果后端直接完成，resolve
                             if (response.status === 'completed') {
-                                console.log('🏁 后端已完成上传，直接标记为完成');
-                                
-                                // 🔧 模拟进度更新过程，让用户能看到100%的进度
-                                if (onProgress) {
-                                    // 先显示开始进度
-                                    onProgress({
-                                        uploadId: backendUploadId,
-                                        loaded: 0,
-                                        total: file.size,
-                                        percentage: 0,
-                                        speed: 0,
-                                        status: 'uploading'
-                                    });
-                                    
-                                    // 延迟一点显示完成进度
-                                    setTimeout(() => {
-                                        onProgress({
-                                            uploadId: backendUploadId,
-                                            loaded: file.size,
-                                            total: file.size,
-                                            percentage: 100,
-                                            speed: 0,
-                                            status: 'completed'
-                                        });
-                                    }, 100);
-                                }
-                                
-                                if (onComplete) {
-                                    setTimeout(() => {
-                                        onComplete({
-                                            uploadId: backendUploadId,
-                                            status: 'completed',
-                                            message: '文件上传完成！'
-                                        });
-                                    }, 200);
-                                }
-                                resolve(backendUploadId);
+                                resolve(response.uploadId || uploadId);
                             } else {
-                                // 如果还在处理中，开始轮询进度
-                                console.log('🔄 后端还在处理中，启动进度轮询:', backendUploadId);
-                                startRealProgressTracking(backendUploadId);
+                                // 等待STOMP进度消息或轮询
+                                this.waitForCompletion(uploadId, response.uploadId || uploadId)
+                                    .then(resolve)
+                                    .catch(reject);
                             }
                             
                         } catch (e) {
                             const error = new Error('解析响应失败: ' + e.message);
-                            if (onError) onError(error);
+                            this.progressManager.handleUploadError(uploadId, error, 'http');
                             reject(error);
                         }
                     } else {
-                        let errorMessage = `流式上传失败: ${xhr.status} ${xhr.statusText}`;
-                        
-                        // 尝试解析错误响应
-                        try {
-                            if (xhr.responseText) {
-                                const errorResponse = JSON.parse(xhr.responseText);
-                                if (errorResponse.error) {
-                                    errorMessage = `流式上传失败: ${errorResponse.error}`;
-                                }
-                            }
-                        } catch (parseError) {
-                            // 如果无法解析响应，显示原始响应文本
-                            if (xhr.responseText && xhr.responseText.length < 200) {
-                                errorMessage += ` - 响应: ${xhr.responseText}`;
-                            }
-                        }
-                        
-                        console.error('流式上传HTTP错误详情:', {
-                            status: xhr.status,
-                            statusText: xhr.statusText,
-                            responseText: xhr.responseText,
-                            responseHeaders: xhr.getAllResponseHeaders(),
-                            uploadId,
-                            filename: file.name,
-                            finalUrl,
-                            contentLength: file.size
-                        });
-                        
-                        const error = new Error(errorMessage);
-                        if (onError) onError(error);
+                        const error = new Error(`流式上传失败: ${xhr.status} ${xhr.statusText}`);
+                        this.progressManager.handleUploadError(uploadId, error, 'http');
                         reject(error);
                     }
                 };
 
-                // 网络错误处理 - 改进错误处理逻辑
+                // HTTP错误处理
                 xhr.onerror = () => {
-                    // 如果后端已完成，不要报错
-                    if (backendCompleted) {
-                        console.log('✅ 后端已完成上传，忽略XMLHttpRequest错误');
-                        return;
-                    }
-                    
-                    // 清理资源
-                    if (realProgressTimer) {
-                        clearInterval(realProgressTimer);
-                        realProgressTimer = null;
-                    }
-                    window.streamingProgressCallback = null;
-                    
-                    this.activeUploads.delete(uploadId);
-                    
-                    // 改进错误消息 - 区分不同的错误情况
-                    let errorMessage = '流式上传网络错误：连接失败';
-                    
-                    if (xhr.readyState === 4 && xhr.status === 0) {
-                        // 这种情况可能是连接意外断开，但文件可能已经传输完成
-                        errorMessage = '连接意外断开，但文件可能已经传输完成。请检查后端日志确认上传状态。';
-                        console.warn('XMLHttpRequest异常断开，可能是大文件上传过程中的正常现象');
-                    } else if (xhr.readyState === 0) {
-                        errorMessage = '无法建立连接到服务器，请检查网络状态';
-                    }
-                    
-                    const error = new Error(errorMessage);
-                    console.error('流式上传网络错误详细信息:', {
-                        readyState: xhr.readyState,
-                        status: xhr.status,
-                        statusText: xhr.statusText,
-                        filename: file.name,
-                        uploadId,
-                        responseText: xhr.responseText,
-                        currentTime: new Date().toISOString()
-                    });
-                    
-                    // 对于可能已完成的上传，不要立即报错，而是等待一会儿看后端是否完成
-                    if (xhr.readyState === 4 && xhr.status === 0) {
-                        console.log('等待5秒检查后端是否完成上传...');
-                        setTimeout(() => {
-                            // 再次检查后端是否已完成
-                            if (backendCompleted) {
-                                console.log('✅ 5秒后检查：后端已完成，不报错');
-                                return;
-                            }
-                            // 如果5秒后还没有后端确认，则报错
-                            if (onError) onError(error);
-                            reject(error);
-                        }, 5000);
-                    } else {
-                        if (onError) onError(error);
-                        reject(error);
-                    }
-                };
-
-                // 上传中止处理
-                xhr.onabort = () => {
-                    // 清理资源
-                    if (realProgressTimer) {
-                        clearInterval(realProgressTimer);
-                        realProgressTimer = null;
-                    }
-                    window.streamingProgressCallback = null;
-                    
-                    this.activeUploads.delete(uploadId);
-                    const error = new Error('流式上传已取消');
-                    if (onError) onError(error);
+                    const error = new Error('流式上传网络错误：连接失败');
+                    this.handleUploadError(uploadId, error, 'http_network');
                     reject(error);
                 };
 
-                // 发送流式请求
-                console.log('开始流式传输:', {
-                    url: finalUrl,
-                    filename: file.name,
-                    size: file.size,
-                    type: file.type,
-                    contentType: 'application/octet-stream'
-                });
-                
+                // 发送请求
                 xhr.open('POST', finalUrl);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
                 
-                // 🔧 修复：完全按照成功测试页面的方式处理，但保留进度跟踪
                 file.arrayBuffer().then(arrayBuffer => {
                     xhr.setRequestHeader('Content-Length', arrayBuffer.byteLength.toString());
                     xhr.send(arrayBuffer);
-                    
-                    // 不要在这里立即查询进度，等待xhr.onload获得真实的uploadId
-                    console.log('📤 数据已发送，等待后端返回uploadId...');
                 }).catch(error => {
-                    console.error('文件读取失败:', error);
                     const err = new Error('文件读取失败');
-                    if (onError) onError(err);
+                    this.progressManager.handleUploadError(uploadId, err, 'file');
                     reject(err);
                 });
             });
@@ -692,6 +773,179 @@ export class StreamingFileService {
             if (onError) onError(error);
             throw error;
         }
+    }
+
+    /**
+     * 设置全局STOMP回调 - 解决并发竞争条件
+     */
+    setupGlobalStompCallback() {
+        // 使用唯一标识符防止重复设置
+        const callbackId = 'streamingProgressCallback_' + this.constructor.name;
+        
+        if (!window[callbackId]) {
+            // 创建一个中介对象来管理多个实例的回调
+            if (!window.streamingCallbackManager) {
+                window.streamingCallbackManager = {
+                    callbacks: new Map(),
+                    register: (instanceId, callback) => {
+                        window.streamingCallbackManager.callbacks.set(instanceId, callback);
+                        console.log(`🔧 注册回调实例: ${instanceId}`);
+                    },
+                    unregister: (instanceId) => {
+                        window.streamingCallbackManager.callbacks.delete(instanceId);
+                        console.log(`🗑️ 注销回调实例: ${instanceId}`);
+                    },
+                    handleProgress: (progressData) => {
+                        console.log('📨 全局STOMP进度回调:', progressData);
+                        
+                        // 将消息发送给所有注册的回调
+                        let handled = false;
+                        for (const [instanceId, callback] of window.streamingCallbackManager.callbacks.entries()) {
+                            try {
+                                const result = callback(progressData);
+                                if (result !== false) { // 如果回调返回false，表示未处理
+                                    handled = true;
+                                }
+                            } catch (error) {
+                                console.warn(`回调实例 ${instanceId} 处理失败:`, error);
+                            }
+                        }
+                        
+                        if (!handled && !window.cachedStompMessages) {
+                            console.log('📋 所有回调都未处理，缓存消息');
+                            window.cachedStompMessages = [];
+                        }
+                        
+                        if (!handled && window.cachedStompMessages) {
+                            window.cachedStompMessages.push(progressData);
+                        }
+                    }
+                };
+                
+                // 设置全局回调
+                window.streamingProgressCallback = window.streamingCallbackManager.handleProgress;
+            }
+            
+            // 注册当前实例的回调
+            const instanceId = `instance_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            this.callbackInstanceId = instanceId;
+            
+            window.streamingCallbackManager.register(instanceId, (progressData) => {
+                return this.progressManager.handleStompProgress(progressData);
+            });
+            
+            // 记录回调ID
+            window[callbackId] = instanceId;
+            
+            console.log('🔧 设置全局STOMP进度回调，实例ID:', instanceId);
+            
+            // 处理可能缓存的STOMP消息
+            if (window.cachedStompMessages && window.cachedStompMessages.length > 0) {
+                console.log('🔄 处理缓存的STOMP消息:', window.cachedStompMessages.length);
+                const messages = [...window.cachedStompMessages];
+                window.cachedStompMessages = [];
+                
+                messages.forEach(message => {
+                    console.log('🔄 处理缓存消息:', message);
+                    this.progressManager.handleStompProgress(message);
+                });
+            }
+        }
+    }
+    
+    /**
+     * 清理全局回调
+     */
+    cleanupGlobalStompCallback() {
+        if (this.callbackInstanceId && window.streamingCallbackManager) {
+            window.streamingCallbackManager.unregister(this.callbackInstanceId);
+            this.callbackInstanceId = null;
+        }
+    }
+
+    /**
+     * 等待上传完成
+     */
+    async waitForCompletion(uploadId, backendUploadId) {
+        return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 30; // 30秒超时
+            
+            const checkCompletion = () => {
+                const uploadState = this.progressManager.getUploadState(uploadId);
+                
+                if (!uploadState) {
+                    resolve(backendUploadId);
+                    return;
+                }
+                
+                if (uploadState.backendCompleted) {
+                    resolve(uploadState.backendUploadId || backendUploadId);
+                    return;
+                }
+                
+                attempts++;
+                if (attempts >= maxAttempts) {
+                    const error = new Error('上传超时');
+                    this.progressManager.handleUploadError(uploadId, error, 'timeout');
+                    reject(error);
+                    return;
+                }
+                
+                // 尝试HTTP轮询获取进度
+                this.pollProgress(backendUploadId).catch(console.warn);
+                
+                setTimeout(checkCompletion, 1000);
+            };
+            
+            checkCompletion();
+        });
+    }
+
+    /**
+     * HTTP轮询获取进度
+     */
+    async pollProgress(backendUploadId) {
+        try {
+            const sessionId = this.getSessionId();
+            if (!sessionId || !backendUploadId) return;
+            
+            const progressUrl = this.getApiUrl(`/api/streaming/upload/${backendUploadId}/progress`);
+            const response = await fetch(`${progressUrl}?sessionId=${encodeURIComponent(sessionId)}`);
+            
+            if (response.ok) {
+                const progressData = await response.json();
+                if (progressData && progressData.percentage !== undefined) {
+                    console.log('📊 HTTP轮询获取进度:', progressData);
+                    this.progressManager.handleStompProgress({
+                        ...progressData,
+                        uploadId: backendUploadId
+                    });
+                }
+            }
+        } catch (error) {
+            console.warn('HTTP轮询进度失败:', error);
+        }
+    }
+
+    /**
+     * 计算传输速度
+     */
+    calculateSpeed(uploadState, currentLoaded) {
+        const currentTime = Date.now();
+        const timeDiff = currentTime - uploadState.lastProgressTime;
+        const bytesDiff = currentLoaded - uploadState.lastProgressLoaded;
+        
+        let speed = 0;
+        if (timeDiff > 0) {
+            speed = (bytesDiff / timeDiff) * 1000; // bytes/sec
+        }
+        
+        // 更新状态
+        uploadState.lastProgressTime = currentTime;
+        uploadState.lastProgressLoaded = currentLoaded;
+        
+        return speed;
     }
 
     /**
@@ -907,7 +1161,6 @@ export class StreamingFileService {
 
                 // 错误处理
                 xhr.onerror = () => {
-                    this.activeUploads.delete(uploadId);
                     console.error('上传网络错误:', {
                         url: uploadUrl,
                         readyState: xhr.readyState,
@@ -931,7 +1184,7 @@ export class StreamingFileService {
                     }
                     
                     const error = new Error(errorMessage);
-                    if (onError) onError(error);
+                    this.handleUploadError(uploadId, error, 'formdata_network');
                     reject(error);
                 };
 
@@ -1118,6 +1371,13 @@ export class StreamingFileService {
     }
 
     /**
+     * 获取进度管理器（用于外部访问）
+     */
+    getProgressManager() {
+        return this.progressManager;
+    }
+
+    /**
      * 格式化速度显示
      * @param {number} bytesPerSecond - 每秒字节数
      * @returns {string}
@@ -1147,5 +1407,54 @@ export class StreamingFileService {
         } else {
             return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
         }
+    }
+    
+    /**
+     * 处理上传错误，添加完善的错误处理
+     */
+    handleUploadError(uploadId, error, context = 'unknown') {
+        console.error(`😱 上传错误 (${context}):`, error);
+        
+        // 清理活动上传
+        this.activeUploads.delete(uploadId);
+        
+        // 通过ProgressManager处理错误
+        this.progressManager.handleUploadError(uploadId, error, context);
+        
+        // 记录错误统计
+        this.logErrorStatistics(error, context);
+    }
+    
+    /**
+     * 记录错误统计
+     */
+    logErrorStatistics(error, context) {
+        if (!window.uploadErrorStats) {
+            window.uploadErrorStats = {
+                total: 0,
+                byContext: {},
+                byType: {},
+                recent: []
+            };
+        }
+        
+        const stats = window.uploadErrorStats;
+        stats.total++;
+        stats.byContext[context] = (stats.byContext[context] || 0) + 1;
+        stats.byType[error.name || 'Unknown'] = (stats.byType[error.name || 'Unknown'] || 0) + 1;
+        
+        // 保留最近10个错误
+        stats.recent.unshift({
+            time: new Date().toISOString(),
+            context,
+            error: error.message,
+            type: error.name || 'Unknown'
+        });
+        
+        if (stats.recent.length > 10) {
+            stats.recent = stats.recent.slice(0, 10);
+        }
+        
+        console.log('📈 错误统计已更新:', stats);
     }
 }

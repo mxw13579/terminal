@@ -329,15 +329,35 @@ public class TrueStreamingFileService {
             sendProgressUpdate(progress);
             logUploadCompletion(progress);
         } catch (Exception e) {
-            progress.setStatus(progress.isCancelled() ? "cancelled" : "failed");
+            String errorStatus = progress.isCancelled() ? "cancelled" : "failed";
+            progress.setStatus(errorStatus);
             progress.setErrorMessage(e.getMessage());
             log.error("流式上传失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage(), e);
-            sendProgressUpdate(progress);
+            
+            // 确保错误状态同步到前端
+            try {
+                sendProgressUpdate(progress);
+                
+                // 发送详细错误信息
+                String detailedErrorMessage = String.format(
+                    "{\"type\":\"upload_error\",\"uploadId\":\"%s\",\"filename\":\"%s\",\"status\":\"%s\",\"error\":\"%s\",\"errorType\":\"%s\",\"timestamp\":%d}",
+                    progress.getUploadId(), progress.getFilename(), errorStatus, 
+                    e.getMessage(), e.getClass().getSimpleName(), System.currentTimeMillis()
+                );
+                sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/error", detailedErrorMessage);
+                
+                log.info("已发送错误状态同步到前端 [ID: {}]", progress.getUploadId());
+            } catch (Exception syncError) {
+                log.error("发送错误状态同步失败 [ID: {}]: {}", progress.getUploadId(), syncError.getMessage());
+            }
+            
+            // 清理临时文件
             if (sftpChannel != null && sftpChannel.isConnected()) {
                 cleanupTemporaryFile(sftpChannel, tempRemotePath);
             } else {
                 cleanupTemporaryFile(connection, tempRemotePath);
             }
+            
             throw new RuntimeException("Upload failed for " + progress.getFilename(), e);
         }
     }
@@ -478,7 +498,7 @@ public class TrueStreamingFileService {
     }
 
     /**
-     * 发送进度更新到前端。
+     * 发送进度更新到前端，确保HTTP和STOMP状态同步。
      *
      * @param progress 上传进度对象
      */
@@ -486,10 +506,30 @@ public class TrueStreamingFileService {
         try {
             String progressJson = getUploadProgress(progress.getUploadId());
             if (progressJson != null) {
+                // 同时发送到进度队列和状态同步队列
                 sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/progress", progressJson);
+                
+                // 额外发送状态同步消息，确保前端状态一致性
+                String statusSyncMessage = String.format(
+                    "{\"type\":\"status_sync\",\"uploadId\":\"%s\",\"filename\":\"%s\",\"status\":\"%s\",\"timestamp\":%d}",
+                    progress.getUploadId(), progress.getFilename(), progress.getStatus(), System.currentTimeMillis()
+                );
+                sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/sync", statusSyncMessage);
+                
+                log.debug("已发送进度更新和状态同步 [ID: {}]", progress.getUploadId());
             }
         } catch (Exception e) {
             log.warn("发送进度更新失败 [ID: {}]: {}", progress.getUploadId(), e.getMessage());
+            // 尝试发送错误状态同步
+            try {
+                String errorSyncMessage = String.format(
+                    "{\"type\":\"error_sync\",\"uploadId\":\"%s\",\"filename\":\"%s\",\"error\":\"%s\",\"timestamp\":%d}",
+                    progress.getUploadId(), progress.getFilename(), e.getMessage(), System.currentTimeMillis()
+                );
+                sessionManager.sendToSession(progress.getSessionId(), "/queue/upload/sync", errorSyncMessage);
+            } catch (Exception syncError) {
+                log.error("发送错误状态同步也失败 [ID: {}]: {}", progress.getUploadId(), syncError.getMessage());
+            }
         }
     }
 

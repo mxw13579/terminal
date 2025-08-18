@@ -241,12 +241,34 @@ export function useTerminal(options = {}) {
                 const progressData = JSON.parse(message.body);
                 console.log('🎯 🎉 收到后端实时上传进度:', progressData);
                 
-                // 通知StreamingFileService更新进度
-                if (window.streamingProgressCallback) {
-                    console.log('📞 🎉 调用streamingProgressCallback');
+                // 优先使用新的回调管理器
+                if (window.streamingCallbackManager) {
+                    console.log('📞 🎉 使用回调管理器处理STOMP进度');
+                    window.streamingCallbackManager.handleProgress(progressData);
+                } else if (streamingFileService && streamingFileService.progressManager) {
+                    console.log('📞 🎉 使用ProgressStateManager处理STOMP进度');
+                    streamingFileService.progressManager.handleStompProgress(progressData);
+                } else if (window.streamingProgressCallback) {
+                    console.log('📞 🎉 使用全局回调处理STOMP进度');
                     window.streamingProgressCallback(progressData);
                 } else {
-                    console.warn('⚠️  streamingProgressCallback未设置');
+                    console.warn('⚠️  所有进度处理机制都未设置，缓存STOMP消息');
+                    // 缓存消息，等待回调设置
+                    if (!window.cachedStompMessages) {
+                        window.cachedStompMessages = [];
+                    }
+                    window.cachedStompMessages.push(progressData);
+                    
+                    // 5秒后清理缓存，避免内存泄漏
+                    setTimeout(() => {
+                        if (window.cachedStompMessages) {
+                            const index = window.cachedStompMessages.indexOf(progressData);
+                            if (index > -1) {
+                                window.cachedStompMessages.splice(index, 1);
+                            }
+                        }
+                    }, 5000);
+                    }
                 }
             } catch (e) {
                 console.error('❌ 处理上传进度消息失败:', e, 'message:', message);
