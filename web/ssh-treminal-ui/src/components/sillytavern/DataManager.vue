@@ -33,7 +33,7 @@
               <span class="progress-percentage">{{ Math.round(exportProgress) }}%</span>
             </div>
             <div class="progress-bar-container">
-              <div 
+              <div
                 class="progress-bar export-progress"
                 :style="{ width: exportProgress + '%' }"
               ></div>
@@ -51,8 +51,8 @@
                 <span class="file-name">{{ exportResult.fileName }}</span>
                 <span class="file-size">{{ formatFileSize(exportResult.sizeBytes) }}</span>
               </div>
-              <a 
-                :href="getDownloadUrl" 
+              <a
+                :href="getDownloadUrl"
                 class="download-btn"
                 download
               >
@@ -109,7 +109,7 @@
                 </div>
               </label>
             </div>
-            
+
             <div v-if="uploadError" class="error-message">
               <i class="fas fa-exclamation-circle"></i>
               {{ uploadError }}
@@ -125,7 +125,7 @@
               <div class="file-name">{{ selectedFile.name }}</div>
               <div class="file-size">{{ formatFileSize(selectedFile.size) }}</div>
             </div>
-            <button 
+            <button
               class="remove-file-btn"
               @click="clearSelection"
               :disabled="importing || exporting || uploadProgress > 0"
@@ -145,11 +145,11 @@
                 当前：{{ currentStepName }}
               </p>
             </div>
-            
+
             <!-- 步骤列表 -->
             <div class="steps-list">
-              <div 
-                v-for="(step, index) in importSteps" 
+              <div
+                v-for="(step, index) in importSteps"
                 :key="step.id"
                 class="step-item"
                 :class="{
@@ -167,12 +167,12 @@
                   <i v-else-if="step.status === 'error'" class="fas fa-times" style="color: white;"></i>
                   <span v-else style="color: white;">{{ step.id }}</span>
                 </div>
-                
+
                 <!-- 步骤名称 -->
                 <div class="step-name" style="flex: 1; font-weight: 500;">
                   {{ step.name }}
                 </div>
-                
+
                 <!-- 步骤状态 -->
                 <div class="step-status" style="font-size: 12px; margin-left: 8px;">
                   <span v-if="step.status === 'completed'" style="color: #28a745;">✓ 完成</span>
@@ -182,11 +182,11 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- 当前步骤进度条 -->
             <div v-if="currentStep >= 0 && importSteps[currentStep]?.status === 'active'" class="current-step-progress" style="margin-top: 15px;">
               <div class="progress-bar-container" style="background: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden;">
-                <div 
+                <div
                   class="progress-bar"
                   style="background: linear-gradient(90deg, #007bff, #0056b3); height: 100%; transition: width 0.3s ease;"
                   :style="{ width: importSteps[currentStep].progress + '%' }"
@@ -197,7 +197,7 @@
               </div>
             </div>
           </div>
-          
+
           <!-- 原来的进度条保持作为备用（隐藏） -->
           <div v-if="false" class="progress-section" style="background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; padding: 15px;">
             <div class="progress-header" style="margin-bottom: 10px;">
@@ -209,7 +209,7 @@
               </span>
             </div>
             <div class="progress-bar-container" style="background: #bbdefb; border-radius: 10px; height: 20px; overflow: hidden;">
-              <div 
+              <div
                 class="progress-bar"
                 style="background: linear-gradient(90deg, #2196f3, #1976d2); height: 100%; transition: width 0.3s ease;"
                 :style="{ width: (uploadProgress < 100 ? uploadProgress : importProgress) + '%' }"
@@ -219,7 +219,7 @@
               阶段: {{ uploadProgress < 100 ? '文件上传' : '数据导入' }}
             </div>
           </div>
-          
+
           <div class="action-section">
             <button
               class="action-btn import-btn"
@@ -257,25 +257,25 @@ export default {
   name: 'DataManager',
   setup() {
     const connectionManager = useConnectionManager()
-    
+
     const isConnected = computed(() => connectionManager.connectionState?.isConnected ?? false)
     const stompClient = computed(() => connectionManager.getStompClient())
-    
+
     // Initialize StreamingFileService with session provider
     const streamingFileService = new StreamingFileService(() => {
       const client = stompClient.value
-      
+
       console.log('🔍 获取真实session ID:')
-      
+
       // 方法1: 从connectionManager获取（最可靠）
       const managedSessionId = connectionManager.connectionState?.currentSessionId
       console.log('- connectionManager sessionId:', managedSessionId)
-      
+
       if (managedSessionId && managedSessionId !== 'default' && !managedSessionId.startsWith('invalid_')) {
         console.log('✅ 使用connectionManager的真实sessionId:', managedSessionId)
         return managedSessionId
       }
-      
+
       // 方法2: 从STOMP客户端直接获取
       console.log('- client存在:', !!client)
       if (client) {
@@ -283,29 +283,29 @@ export default {
         if (client.ws) {
           console.log('- client.ws._websocket存在:', !!client.ws._websocket)
           console.log('- client.ws._transport存在:', !!client.ws._transport)
-          
+
           // 尝试从_websocket获取
           if (client.ws._websocket) {
             const wsUrl = client.ws._websocket.url || ''
             console.log('- WebSocket URL:', wsUrl)
-            
+
             const sockJSMatch = wsUrl.match(/\/ws\/[^/]+\/([^/]+)\/websocket/)
             console.log('- URL匹配结果:', sockJSMatch)
-            
+
             if (sockJSMatch && sockJSMatch[1] && sockJSMatch[1] !== 'websocket') {
               console.log('✅ 从WebSocket URL提取sessionId:', sockJSMatch[1])
               return sockJSMatch[1]
             }
           }
-          
+
           // 尝试从_transport获取
           if (client.ws._transport && client.ws._transport.url) {
             const transportUrl = client.ws._transport.url || ''
             console.log('- Transport URL:', transportUrl)
-            
+
             const transportMatch = transportUrl.match(/\/ws\/[^/]+\/([^/]+)\/websocket/)
             console.log('- Transport URL匹配结果:', transportMatch)
-            
+
             if (transportMatch && transportMatch[1] && transportMatch[1] !== 'websocket') {
               console.log('✅ 从Transport URL提取sessionId:', transportMatch[1])
               return transportMatch[1]
@@ -313,10 +313,10 @@ export default {
           }
         }
       }
-      
+
       // 方法3: 从连接头获取
       if (client?.connectedHeaders) {
-        const headerSessionId = client.connectedHeaders.session || 
+        const headerSessionId = client.connectedHeaders.session ||
                                client.connectedHeaders['session-id'] ||
                                client.connectedHeaders.sessionId
         if (headerSessionId && headerSessionId !== 'default') {
@@ -324,25 +324,25 @@ export default {
           return headerSessionId
         }
       }
-      
+
       // 如果真的获取不到，这表明STOMP连接有问题
       console.error('🚨 无法获取真实session ID，STOMP连接可能有问题')
       console.log('- 当前连接状态:', connectionManager.connectionState)
       console.log('- STOMP客户端状态:', client)
-      
+
       throw new Error('无法验证用户会话，请重新连接SSH后再试')
     })
-    
+
     const exporting = ref(false)
     const importing = ref(false)
     const selectedFile = ref(null)
     const uploadProgress = ref(0)
     const uploadError = ref('')
-    
+
     const exportProgress = ref(0)
     const exportStatus = ref('')
     const exportResult = ref(null)
-    
+
     // 重新设计的多步骤进度系统
     const importSteps = ref([
       { id: 1, name: '上传文件', status: 'pending', progress: 0 },
@@ -360,19 +360,19 @@ export default {
       }
       return ''
     })
-    
+
     // 更新步骤状态的函数
     const updateStepStatus = (stepIndex, status, progress = 0) => {
       if (stepIndex >= 0 && stepIndex < importSteps.value.length) {
         importSteps.value[stepIndex].status = status
         importSteps.value[stepIndex].progress = progress
-        
+
         if (status === 'active') {
           currentStep.value = stepIndex
         }
       }
     }
-    
+
     // 重置所有步骤
     const resetSteps = () => {
       importSteps.value.forEach(step => {
@@ -381,23 +381,23 @@ export default {
       })
       currentStep.value = 0
     }
-    
+
     const importProgress = ref(0)
     const importStatus = ref('')
-    
+
     const successMessage = ref('')
     const errorMessage = ref('')
-    
+
     const fileInput = ref(null)
-    
+
     // Subscriptions for WebSocket responses
     let exportSubscription = null
     let importSubscription = null
     let exportProgressSubscription = null
     let importProgressSubscription = null
-    
+
     const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
-    
+
     const formatFileSize = (bytes) => {
       if (bytes === 0) return '0 字节'
       const k = 1024
@@ -405,43 +405,43 @@ export default {
       const i = Math.floor(Math.log(bytes) / Math.log(k))
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
     }
-    
+
     const formatDate = (dateString) => {
       return new Date(dateString).toLocaleString('zh-CN')
     }
-    
+
     const handleFileSelect = (event) => {
       const file = event.target.files[0]
       uploadError.value = ''
-      
+
       if (!file) {
         selectedFile.value = null
         return
       }
-      
+
       // 验证文件类型
       const fileName = file.name.toLowerCase();
-      const isValidFormat = fileName.endsWith('.zip') || 
-                           fileName.endsWith('.tar.gz') || 
+      const isValidFormat = fileName.endsWith('.zip') ||
+                           fileName.endsWith('.tar.gz') ||
                            fileName.endsWith('.tgz');
-      
+
       if (!isValidFormat) {
         uploadError.value = '仅支持 ZIP、TAR.GZ、TGZ 格式文件'
         event.target.value = ''
         return
       }
-      
+
       // 验证文件大小
       if (file.size > MAX_FILE_SIZE) {
         uploadError.value = `文件过大，最大支持 ${formatFileSize(MAX_FILE_SIZE)}`
         event.target.value = ''
         return
       }
-      
+
       selectedFile.value = file
       console.log('文件选择成功:', file.name, `(${formatFileSize(file.size)})`)
     }
-    
+
     const clearSelection = () => {
       selectedFile.value = null
       uploadProgress.value = 0
@@ -450,96 +450,102 @@ export default {
         fileInput.value.value = ''
       }
     }
-    
+
     const startExport = () => {
       if (!isConnected.value) {
         errorMessage.value = 'WebSocket 连接未建立'
         return
       }
-      
+
       exporting.value = true
       exportProgress.value = 0
       exportStatus.value = '开始导出...'
       exportResult.value = null
-      
+
       const client = stompClient.value
       client.publish({
         destination: '/app/sillytavern/export-data',
         body: JSON.stringify({})
       })
     }
-    
+
     const startImport = async () => {
       if (!selectedFile.value) {
         uploadError.value = '请选择要导入的文件'
         return
       }
-      
+
       if (!isConnected.value) {
         errorMessage.value = 'WebSocket 连接未建立'
         return
       }
-      
+
       console.log('🚀 开始数据导入流程...')
-      
+
       // 立即设置初始状态，确保UI能响应
       importing.value = true
       importProgress.value = 1  // 设置为1确保进度条显示
-      uploadProgress.value = 1  // 设置为1确保进度条显示  
+      uploadProgress.value = 1  // 设置为1确保进度条显示
       importStatus.value = '🔄 初始化导入流程...'
       successMessage.value = ''
       errorMessage.value = ''
-      
+
       // 重置步骤状态
       resetSteps()
-      
+
+      // 启动保活机制以防止长时间操作时连接断开
+      console.log('🔄 启动保活机制以维持连接...')
+      connectionManager.startKeepAlive()
+
       console.log('✅ 状态已设置:', {
         importing: importing.value,
         importProgress: importProgress.value,
         uploadProgress: uploadProgress.value,
         importStatus: importStatus.value
       })
-      
+
       try {
         // 第一阶段：上传文件
         updateStepStatus(0, 'active', 0) // 开始上传文件
         importStatus.value = '📤 正在上传文件到服务器...'
         console.log('阶段1: 开始上传文件')
-        
+
         const uploadedFileName = await uploadFile(selectedFile.value)
         console.log('阶段1: 文件上传完成，文件名:', uploadedFileName)
         updateStepStatus(0, 'completed', 100) // 上传文件完成
-        
+
         // 第二阶段：开始导入流程
         updateStepStatus(1, 'active', 0) // 开始验证文件
         importStatus.value = '📨 正在发送导入请求...'
         // 不要重置上传进度，保持显示
         importProgress.value = 5   // 开始导入进度
         console.log('阶段2: 开始导入流程')
-        
+
         const client = stompClient.value
         if (!client) {
           throw new Error('STOMP 客户端不可用')
         }
-        
+
         console.log('发送导入请求到STOMP:', {
           destination: '/app/sillytavern/import-data',
           uploadedFileName: uploadedFileName
         })
-        
+
         client.publish({
           destination: '/app/sillytavern/import-data',
           body: JSON.stringify({
             uploadedFileName: uploadedFileName
           })
         })
-        
+
         importStatus.value = '⏳ 已发送导入请求，等待服务器响应...'
         importProgress.value = 10
         console.log('阶段2: 导入请求已发送，等待后端处理')
-        
+
       } catch (error) {
         console.error('❌ 导入流程失败:', error)
+        // 停止保活机制
+        connectionManager.stopKeepAlive()
         // 设置当前步骤为错误状态
         if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
           updateStepStatus(currentStep.value, 'error', 0)
@@ -551,20 +557,21 @@ export default {
         errorMessage.value = '导入失败：' + error.message
       }
     }
-    
+
     const uploadFile = (file) => {
       return new Promise(async (resolve, reject) => {
         console.log('开始使用StreamingFileService上传文件:', file.name, `(${formatFileSize(file.size)})`)
-        
+
         try {
-          const remotePath = `/tmp/${file.name}`
-          
+          // const remotePath = `/tmp/${file.name}`
+          const remotePath = `/tmp/`
+
           console.log('🔍 开始上传文件诊断信息:')
           console.log('- 文件名:', file.name)
           console.log('- 文件大小:', file.size, 'bytes (', formatFileSize(file.size), ')')
           console.log('- 文件类型:', file.type)
           console.log('- 最后修改时间:', new Date(file.lastModified).toISOString())
-          
+
           const uploadId = await streamingFileService.streamUploadFile(
             file,
             remotePath,
@@ -573,15 +580,15 @@ export default {
               uploadProgress.value = progressData.percentage || 0
               updateStepStatus(0, 'active', progressData.percentage || 0) // 更新第一步进度
               importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}%`
-              
+
               if (progressData.speed > 0) {
                 const speedText = streamingFileService.formatSpeed(progressData.speed)
                 importStatus.value += ` (${speedText})`
               }
-              
+
               console.log(`⬆️ 上传进度: ${Math.round(progressData.percentage || 0)}%`)
             },
-            // onComplete callback  
+            // onComplete callback
             (completionData) => {
               console.log('文件上传完成:', completionData)
               uploadProgress.value = 100
@@ -593,18 +600,18 @@ export default {
               reject(error)
             }
           )
-          
+
           console.log('StreamingFileService上传完成，uploadId:', uploadId)
           // 返回文件名，供导入流程使用
           resolve(file.name)
-          
+
         } catch (error) {
           console.error('StreamingFileService上传失败:', error)
           reject(error)
         }
       })
     }
-    
+
     const handleExportResponse = (message) => {
       try {
         // 注意：导出响应的下载处理由useSillyTavern.js负责
@@ -612,7 +619,7 @@ export default {
         const response = JSON.parse(message.body)
         exporting.value = false
         exportProgress.value = 100
-        
+
         if (response.success) {
           exportResult.value = response
           exportStatus.value = 'Export completed successfully'
@@ -626,14 +633,14 @@ export default {
         exporting.value = false
       }
     }
-    
+
     const handleImportResponse = (message) => {
       try {
         console.log('收到导入响应消息:', message.body)
         const response = JSON.parse(message.body)
-        
+
         importing.value = false
-        
+
         if (response.success) {
           // 确保所有步骤都标记为完成
           importSteps.value.forEach((step, index) => {
@@ -641,17 +648,17 @@ export default {
               updateStepStatus(index, 'completed', 100)
             }
           })
-          
+
           importProgress.value = 100
           importStatus.value = '导入完成'
           successMessage.value = response.message || '数据导入成功'
-          
+
           if (response.requiresRestart) {
             successMessage.value += ' 建议重启容器以应用更改。'
           }
-          
+
           console.log('导入成功完成')
-          
+
           // 清除选中的文件
           clearSelection()
         } else {
@@ -659,14 +666,14 @@ export default {
           if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
             updateStepStatus(currentStep.value, 'error', 0)
           }
-          
+
           importStatus.value = '导入失败'
           errorMessage.value = response.message || '数据导入失败'
-          
+
           if (response.error) {
             errorMessage.value += ': ' + response.error
           }
-          
+
           console.error('导入失败:', response)
         }
       } catch (error) {
@@ -680,7 +687,7 @@ export default {
         importStatus.value = '导入失败'
       }
     }
-    
+
     const handleExportProgress = (message) => {
       try {
         const progress = JSON.parse(message.body)
@@ -693,21 +700,21 @@ export default {
         console.error('Error handling export progress:', error)
       }
     }
-    
+
     const handleImportProgress = (message) => {
       try {
         console.log('收到导入进度消息:', message.body)
         const progress = JSON.parse(message.body)
-        
+
         // 更新状态信息
         if (progress.message) {
           importStatus.value = progress.message
         }
-        
+
         // 根据消息内容更新对应步骤状态
         if (progress.message) {
           const msg = progress.message.toLowerCase()
-          
+
           if (msg.includes('验证') || msg.includes('verify')) {
             // 步骤2：验证文件
             updateStepStatus(1, 'active', 50)
@@ -738,22 +745,22 @@ export default {
             importProgress.value = 100
           }
         }
-        
+
         console.log('导入进度更新:', {
           status: importStatus.value,
           progress: importProgress.value,
           currentStep: currentStep.value + 1,
           totalSteps: totalSteps.value
         })
-        
+
       } catch (error) {
         console.error('处理导入进度消息时出错:', error)
       }
     }
-    
+
     onMounted(() => {
       console.log('DataManager 组件已挂载')
-      
+
       // 设置全局流式上传进度回调，用于接收STOMP进度消息
       if (!window.streamingProgressCallback) {
         console.log('设置全局streamingProgressCallback')
@@ -771,40 +778,40 @@ export default {
           }
         }
       }
-      
+
       if (isConnected.value && stompClient.value) {
         try {
           // 使用正确的方式获取真实sessionId
           const realSessionId = connectionManager.connectionState?.currentSessionId
-          
+
           if (!realSessionId || realSessionId === 'default' || realSessionId.startsWith('invalid_')) {
             console.error('无法获取有效的session ID，当前值:', realSessionId)
             console.error('STOMP订阅设置失败 - 需要有效的session ID')
             return
           }
-          
+
           console.log('✅ 使用真实sessionId设置STOMP订阅:', realSessionId)
-          
+
           exportSubscription = stompClient.value.subscribe(
             `/queue/sillytavern/export-user${realSessionId}`,
             handleExportResponse
           )
-          
+
           importSubscription = stompClient.value.subscribe(
             `/queue/sillytavern/import-user${realSessionId}`,
             handleImportResponse
           )
-          
+
           exportProgressSubscription = stompClient.value.subscribe(
             `/queue/sillytavern/export-progress-user${realSessionId}`,
             handleExportProgress
           )
-          
+
           importProgressSubscription = stompClient.value.subscribe(
             `/queue/sillytavern/import-progress-user${realSessionId}`,
             handleImportProgress
           )
-          
+
           console.log('✅ STOMP订阅设置完成，订阅队列:', {
             export: `/queue/sillytavern/export-user${realSessionId}`,
             import: `/queue/sillytavern/import-user${realSessionId}`,
@@ -816,61 +823,61 @@ export default {
         }
       }
     })
-    
+
     // 监控 selectedFile 变化
     watch(selectedFile, (newValue, oldValue) => {
       if (newValue !== oldValue) {
         console.log('文件选择状态变更:', newValue ? newValue.name : '未选择')
       }
     }, { immediate: true })
-    
+
     onUnmounted(() => {
       if (exportSubscription) exportSubscription.unsubscribe()
       if (importSubscription) importSubscription.unsubscribe()
       if (exportProgressSubscription) exportProgressSubscription.unsubscribe()
       if (importProgressSubscription) importProgressSubscription.unsubscribe()
-      
+
       // 清理全局回调
       if (window.streamingProgressCallback) {
         console.log('清理全局streamingProgressCallback')
         window.streamingProgressCallback = null
       }
     })
-    
+
     const getDownloadUrl = computed(() => {
       if (!exportResult.value || !exportResult.value.downloadUrl) {
         return '#'
       }
-      
+
       // 使用真实的session ID
       const realSessionId = connectionManager.connectionState?.currentSessionId
-      
+
       if (!realSessionId || realSessionId === 'default' || realSessionId.startsWith('invalid_')) {
         console.warn('无法获取有效的session ID用于下载URL，当前值:', realSessionId)
         return '#'
       }
-      
+
       console.log('✅ 使用真实sessionId构建下载URL:', realSessionId)
-      
+
       const separator = exportResult.value.downloadUrl.includes('?') ? '&' : '?';
-      
+
       // 确保使用后端API服务器的URL（端口8080），而不是前端开发服务器（端口5173）
       const baseUrl = exportResult.value.downloadUrl;
-      const backendUrl = baseUrl.startsWith('/') 
+      const backendUrl = baseUrl.startsWith('/')
         ? `${window.location.protocol}//${window.location.hostname}:8080${baseUrl}`
         : baseUrl;
       const fullUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(realSessionId)}`;
-      
+
       console.log('DataManager构建下载URL详细信息:', {
         baseUrl: exportResult.value.downloadUrl,
         backendUrl: backendUrl,
         sessionId: realSessionId,
         fullUrl: fullUrl
       });
-      
+
       return fullUrl;
     })
-    
+
     return {
       exporting,
       importing,

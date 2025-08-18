@@ -22,6 +22,37 @@ const connectionState = reactive({
 
 // STOMP client instance
 let stompClient = null
+let keepAliveInterval = null
+
+// Keep-alive mechanism for long-running operations
+const startKeepAlive = () => {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval)
+  }
+  
+  // Send a keep-alive ping every 20 seconds during long operations
+  keepAliveInterval = setInterval(() => {
+    if (stompClient && connectionState.isConnected) {
+      try {
+        console.log('[KeepAlive] Sending keep-alive ping...')
+        stompClient.publish({
+          destination: '/app/keep-alive',
+          body: JSON.stringify({ timestamp: Date.now() })
+        })
+      } catch (error) {
+        console.warn('[KeepAlive] Failed to send keep-alive ping:', error)
+      }
+    }
+  }, 20000) // 20 seconds interval
+}
+
+const stopKeepAlive = () => {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval)
+    keepAliveInterval = null
+    console.log('[KeepAlive] Keep-alive mechanism stopped')
+  }
+}
 
 // Connection configuration
 export function useConnectionManager() {
@@ -110,9 +141,9 @@ export function useConnectionManager() {
         debug: (str) => {
           console.log('[STOMP Debug]', str)
         },
-        reconnectDelay: 0, // Disable auto-reconnect
-        heartbeatIncoming: 0, // Disable heartbeat
-        heartbeatOutgoing: 0 // Disable heartbeat
+        reconnectDelay: 5000, // Enable auto-reconnect with 5 second delay
+        heartbeatIncoming: 25000, // Expect heartbeat from server every 25 seconds (matches backend config)
+        heartbeatOutgoing: 25000 // Send heartbeat to server every 25 seconds (matches backend config)
       })
 
       // Connection success handler
@@ -389,6 +420,10 @@ export function useConnectionManager() {
 
     // STOMP client access
     getStompClient: () => stompClient,
+    
+    // Keep-alive mechanism for long-running operations
+    startKeepAlive,
+    stopKeepAlive,
     
     // Terminal handler registration for direct forwarding
     registerTerminalHandler: (handler) => {

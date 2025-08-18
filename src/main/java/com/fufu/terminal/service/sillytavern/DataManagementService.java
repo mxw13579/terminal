@@ -85,12 +85,12 @@ public class DataManagementService {
             String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
             String exportFileName = generateExportFileName(containerName, timestamp);
             String remoteZipPath = String.format("/tmp/sillytavern_export_%s.tar.gz", timestamp);
-            
+
             try {
                 progressCallback.accept("正在获取docker-compose路径...");
                 String dockerComposePath = findDockerComposePath(connection, containerName);
                 String hostDataPath = dockerComposePath + "/data";
-                
+
                 progressCallback.accept("正在检查数据目录大小...");
                 long dataSizeBytes = getHostDataDirectorySize(connection, hostDataPath);
                 if (dataSizeBytes > maxExportSizeBytes) {
@@ -98,16 +98,16 @@ public class DataManagementService {
                             "数据目录过大: %,d bytes (最大: %,d bytes)",
                             dataSizeBytes, maxExportSizeBytes));
                 }
-                
+
                 progressCallback.accept("正在打包数据目录...");
                 // 使用tar命令打包data目录，tar在所有Linux系统上都有
                 // 为路径添加引号以防特殊字符
                 executeCommand(connection, String.format(
                         "cd '%s' && tar -czf '%s' data/", dockerComposePath, remoteZipPath));
-                
+
                 progressCallback.accept("正在准备流式下载...");
                 long zipFileSize = getRemoteFileSize(connection, remoteZipPath);
-                
+
                 DataExportDto exportDto = new DataExportDto();
                 exportDto.setFileName(exportFileName);
                 exportDto.setRemotePath(remoteZipPath);
@@ -115,10 +115,10 @@ public class DataManagementService {
                 exportDto.setSizeBytes(zipFileSize);
                 exportDto.setCreatedAt(LocalDateTime.now());
                 exportDto.setExpiresAt(LocalDateTime.now().plusHours(1));
-                
+
                 // 安排远程文件清理
                 scheduleRemoteCleanup(connection, remoteZipPath, 1);
-                
+
                 progressCallback.accept("导出完成，准备下载");
                 log.info("数据导出完成: {} ({} bytes)", exportFileName, zipFileSize);
                 return exportDto;
@@ -169,25 +169,25 @@ public class DataManagementService {
             String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
             String remoteUploadedPath = "/tmp/" + uploadedFileName;
             String extractTempPath = String.format("/tmp/sillytavern_extract_%s", timestamp);
-            
+
             try {
                 progressCallback.accept("正在验证上传文件...");
-                
+
                 // 调试：检查文件信息
                 try {
                     String fileInfo = executeCommand(connection, String.format("ls -la '%s'", remoteUploadedPath));
                     String fileSizeInfo = executeCommand(connection, String.format("stat -c '%%s' '%s'", remoteUploadedPath));
                     String fileTypeInfo = executeCommand(connection, String.format("file '%s'", remoteUploadedPath));
-                    
+
                     log.info("上传文件详细信息:");
                     log.info("文件列表: {}", fileInfo);
                     log.info("文件大小: {} bytes", fileSizeInfo.trim());
                     log.info("文件类型: {}", fileTypeInfo);
-                    
+
                     // 检查文件大小是否为0或异常小
                     long actualFileSize = Long.parseLong(fileSizeInfo.trim());
                     log.info("实际文件大小: {} bytes", actualFileSize);
-                    
+
                     if (actualFileSize < 1000) {
                         log.error("文件大小异常：实际大小 {} bytes，这可能表明文件上传未完成或损坏", actualFileSize);
                         throw new RuntimeException(String.format("上传的文件大小异常: %d bytes，文件可能损坏或上传不完整", actualFileSize));
@@ -195,24 +195,24 @@ public class DataManagementService {
                 } catch (Exception e) {
                     log.warn("获取文件信息失败: {}", e.getMessage());
                 }
-                
+
                 // 1. 直接在远程验证文件
                 if (!isValidRemoteArchive(connection, remoteUploadedPath)) {
                     throw new RuntimeException("数据归档文件格式无效或包含不安全内容");
                 }
-                
+
                 progressCallback.accept("正在获取docker-compose路径...");
                 String dockerComposePath = findDockerComposePath(connection, containerName);
                 String hostDataPath = dockerComposePath + "/data";
-                
+
                 progressCallback.accept("正在创建数据备份...");
                 String backupPath = createDataBackup(connection, hostDataPath, timestamp);
-                
+
                 try {
                     progressCallback.accept("正在临时目录解压...");
                     // 创建临时解压目录
                     executeCommand(connection, String.format("mkdir -p '%s'", extractTempPath));
-                    
+
                     // 在解压前验证文件完整性
                     progressCallback.accept("正在验证文件完整性...");
                     try {
@@ -229,7 +229,7 @@ public class DataManagementService {
                         log.error("文件完整性验证失败: {}", remoteUploadedPath, e);
                         throw new RuntimeException("上传的文件已损坏，无法解压。请重新上传文件。");
                     }
-                    
+
                     // 检测文件类型并使用相应的解压命令
                     if (uploadedFileName.toLowerCase().endsWith(".zip")) {
                         // ZIP文件：使用unzip命令（如果可用）或Python解压
@@ -239,7 +239,7 @@ public class DataManagementService {
                             if (e.getMessage().contains("unzip: command not found")) {
                                 // unzip不可用，使用python解压
                                 executeCommand(connection, String.format(
-                                    "cd '%s' && python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('.')\"", 
+                                    "cd '%s' && python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('.')\"",
                                     extractTempPath, remoteUploadedPath));
                             } else {
                                 throw e;
@@ -249,37 +249,37 @@ public class DataManagementService {
                         // TAR.GZ文件：使用tar命令
                         executeCommand(connection, String.format("cd '%s' && tar -xzf '%s'", extractTempPath, remoteUploadedPath));
                     }
-                    
+
                     // 验证解压结果
                     String extractedDataPath = extractTempPath + "/data";
                     String checkExtracted = executeCommand(connection, String.format("ls -A '%s'", extractedDataPath));
                     if (checkExtracted.trim().isEmpty()) {
                         throw new RuntimeException("解压失败：未找到data目录");
                     }
-                    
+
                     progressCallback.accept("正在备份现有数据...");
                     // 先删除现有data目录内容
                     executeCommand(connection, String.format("rm -rf '%s'/*", hostDataPath));
-                    
+
                     progressCallback.accept("正在导入新数据...");
                     // 将解压的data目录内容拷贝到挂载目录
                     executeCommand(connection, String.format("cp -r '%s'/* '%s'/", extractedDataPath, hostDataPath));
-                    
+
                     // 设置正确的权限
                     executeCommand(connection, String.format("chown -R 1000:1000 '%s'", hostDataPath));
-                    
+
                     progressCallback.accept("正在重启SillyTavern容器...");
                     restartSillyTavernContainer(connection, dockerComposePath);
-                    
+
                     progressCallback.accept("导入完成");
                     return true;
-                    
+
                 } catch (Exception e) {
                     progressCallback.accept("导入失败，正在回滚...");
                     performDataRollback(connection, backupPath, hostDataPath);
                     throw e;
                 }
-                
+
             } catch (Exception e) {
                 log.error("数据导入失败: {}", containerName, e);
                 throw new RuntimeException("数据导入失败: " + e.getMessage(), e);
@@ -290,7 +290,7 @@ public class DataManagementService {
             }
         });
     }
-    
+
     /**
      * 从远程SSH服务器下载上传的文件到本地临时目录
      */
@@ -300,12 +300,12 @@ public class DataManagementService {
         if (!Files.exists(tempDir)) {
             Files.createDirectories(tempDir);
         }
-        
+
         String localFilePath = Paths.get(tempDirectory, uploadedFileName).toString();
-        
+
         log.info("从远程下载文件: {} -> {}", remoteUploadedPath, localFilePath);
         downloadFileFromRemote(connection, remoteUploadedPath, localFilePath);
-        
+
         return localFilePath;
     }
     /**
@@ -343,23 +343,23 @@ public class DataManagementService {
                 log.warn("远程归档文件不存在: {}", remotePath);
                 return false;
             }
-            
+
             long fileSize = Long.parseLong(fileInfo.trim());
             if (fileSize > maxExportSizeBytes) {
                 log.warn("远程归档文件过大: {} bytes (限制: {} bytes)", fileSize, maxExportSizeBytes);
                 return false;
             }
-            
+
             // 2. 检查文件扩展名和格式
             String fileName = remotePath.toLowerCase();
             boolean isZip = fileName.endsWith(".zip");
             boolean isTarGz = fileName.endsWith(".tar.gz") || fileName.endsWith(".tgz");
-            
+
             if (!isZip && !isTarGz) {
                 log.warn("不支持的远程归档文件格式: {}", remotePath);
                 return false;
             }
-            
+
             // 3. 使用相应的命令进行基本格式验证
             if (isZip) {
                 // 验证ZIP文件头和基本结构
@@ -390,7 +390,7 @@ public class DataManagementService {
                         log.warn("TAR.GZ文件内容为空: {}", remotePath);
                         return false;
                     }
-                    
+
                     // 检查是否包含data/目录
                     if (!tarTest.contains("data/")) {
                         log.warn("TAR.GZ文件不包含data/目录: {}", remotePath);
@@ -401,28 +401,28 @@ public class DataManagementService {
                     return false;
                 }
             }
-            
+
             // 4. 检查文件内容是否包含可疑路径
             try {
-                String listCommand = isZip ? 
+                String listCommand = isZip ?
                     String.format("unzip -l '%s' | head -20", remotePath) :
                     String.format("tar -tzf '%s' | head -20", remotePath);
-                
+
                 String fileList = executeCommand(connection, listCommand);
-                
+
                 // 检查路径遍历攻击
                 if (fileList.contains("../") || fileList.contains("..\\")) {
                     log.warn("归档文件包含潜在的路径遍历攻击: {}", remotePath);
                     return false;
                 }
-                
+
                 // 检查是否所有文件都在data/目录下
                 String[] lines = fileList.split("\n");
                 for (String line : lines) {
                     if (line.trim().isEmpty() || line.contains("Archive:") || line.contains("Length") || line.contains("---")) {
                         continue;
                     }
-                    
+
                     // 提取文件路径部分（处理不同格式的列表输出）
                     String filePath = "";
                     if (isZip) {
@@ -435,7 +435,7 @@ public class DataManagementService {
                         // tar -tzf输出格式处理
                         filePath = line.trim();
                     }
-                    
+
                     if (!filePath.isEmpty() && !filePath.equals("data/") && !filePath.startsWith("data/")) {
                         log.warn("归档文件包含data/目录外的文件: {} in {}", filePath, remotePath);
                         return false;
@@ -445,10 +445,10 @@ public class DataManagementService {
                 log.warn("检查归档文件内容时出错: {} - {}", remotePath, e.getMessage());
                 // 这里不直接返回false，允许基本验证通过的文件继续处理
             }
-            
+
             log.info("远程归档文件验证通过: {}", remotePath);
             return true;
-            
+
         } catch (NumberFormatException e) {
             log.warn("解析远程文件大小失败: {}", remotePath);
             return false;
@@ -468,16 +468,16 @@ public class DataManagementService {
     private boolean isValidDataArchive(Path archivePath) {
         final Set<String> requiredDirs = Set.of("data/", "data/characters/", "data/chats/");
         final Set<String> suspiciousExtensions = Set.of(".exe", ".bat", ".sh", ".cmd", ".scr", ".vbs", ".jar");
-        
+
         try {
             // 1. 检查文件大小
             if (Files.size(archivePath) > maxExportSizeBytes) {
                 log.warn("归档文件过大: {} bytes (限制: {} bytes)", Files.size(archivePath), maxExportSizeBytes);
                 return false;
             }
-            
+
             String fileName = archivePath.getFileName().toString().toLowerCase();
-            
+
             // 2. 根据文件扩展名选择相应的验证方法
             if (fileName.endsWith(".zip")) {
                 return validateZipArchive(archivePath, requiredDirs, suspiciousExtensions);
@@ -487,13 +487,13 @@ public class DataManagementService {
                 log.warn("不支持的归档文件格式: {}", fileName);
                 return false;
             }
-            
+
         } catch (IOException e) {
             log.error("验证归档文件时发生IO错误: {}", archivePath, e);
             return false;
         }
     }
-    
+
     /**
      * 验证ZIP归档文件
      */
@@ -502,9 +502,9 @@ public class DataManagementService {
             Set<String> entryNames = zf.stream()
                     .map(java.util.zip.ZipEntry::getName)
                     .collect(Collectors.toSet());
-            
+
             return validateArchiveEntries(entryNames, requiredDirs, suspiciousExtensions, "ZIP");
-            
+
         } catch (ZipException e) {
             log.warn("ZIP文件完整性检查失败 (文件可能已损坏): {}", zipPath, e);
             return false;
@@ -513,7 +513,7 @@ public class DataManagementService {
             return false;
         }
     }
-    
+
     /**
      * 验证TAR.GZ归档文件
      * 注意：这是简化的验证，只检查基本的文件结构，不做完整的tar解析
@@ -523,7 +523,7 @@ public class DataManagementService {
             // 基本的GZIP格式验证 - 检查文件头
             try (FileInputStream fis = new FileInputStream(tarGzPath.toFile());
                  GZIPInputStream gzis = new GZIPInputStream(fis)) {
-                
+
                 // 尝试读取前几个字节以验证GZIP格式
                 byte[] buffer = new byte[1024];
                 int bytesRead = gzis.read(buffer);
@@ -531,10 +531,10 @@ public class DataManagementService {
                     log.warn("TAR.GZ文件为空或格式无效: {}", tarGzPath);
                     return false;
                 }
-                
+
                 // 简单的内容检查 - 查找关键的目录路径标识
                 String content = new String(buffer, 0, Math.min(bytesRead, 1024), StandardCharsets.UTF_8);
-                
+
                 // 检查是否包含data/目录结构
                 boolean hasDataDir = content.contains("data/") || content.contains("data\\");
                 if (!hasDataDir) {
@@ -547,12 +547,12 @@ public class DataManagementService {
                         hasDataDir = largerContent.contains("data/") || largerContent.contains("data\\");
                     }
                 }
-                
+
                 if (!hasDataDir) {
                     log.warn("TAR.GZ文件未包含data/目录结构: {}", tarGzPath);
                     return false;
                 }
-                
+
                 // 检查可疑内容
                 String fullContent = content + (bytesRead < 8192 ? "" : new String(buffer, 0, bytesRead, StandardCharsets.UTF_8));
                 for (String ext : suspiciousExtensions) {
@@ -561,13 +561,13 @@ public class DataManagementService {
                         return false;
                     }
                 }
-                
+
                 // 检查路径遍历攻击
                 if (fullContent.contains("../") || fullContent.contains("..\\")) {
                     log.warn("TAR.GZ文件包含潜在的路径遍历攻击: {}", tarGzPath);
                     return false;
                 }
-                
+
                 log.info("TAR.GZ文件基本验证通过: {}", tarGzPath);
                 return true;
             }
@@ -576,28 +576,28 @@ public class DataManagementService {
             return false;
         }
     }
-    
+
     /**
      * 验证归档文件条目的通用方法
      */
-    private boolean validateArchiveEntries(Set<String> entryNames, Set<String> requiredDirs, 
+    private boolean validateArchiveEntries(Set<String> entryNames, Set<String> requiredDirs,
                                          Set<String> suspiciousExtensions, String archiveType) {
         // 3. 关键验证：确保压缩包根目录必须是data文件夹
         boolean hasDataAsRoot = entryNames.contains("data/");
         boolean allEntriesUnderData = entryNames.stream()
                 .filter(name -> !name.equals("data/"))
                 .allMatch(name -> name.startsWith("data/"));
-        
+
         if (!hasDataAsRoot) {
             log.warn("{}文件根目录必须包含data/文件夹", archiveType);
             return false;
         }
-        
+
         if (!allEntriesUnderData) {
             log.warn("{}文件中存在data/目录外的文件，压缩包根目录必须只有data文件夹", archiveType);
             return false;
         }
-        
+
         // 4. 检查必需的目录结构
         for (String requiredDir : requiredDirs) {
             if (entryNames.stream().noneMatch(name -> name.startsWith(requiredDir))) {
@@ -605,17 +605,17 @@ public class DataManagementService {
                 return false;
             }
         }
-        
+
         // 5. 检查是否包含可疑文件（基于扩展名和路径遍历攻击）
         for (String entryName : entryNames) {
             String lowerCaseName = entryName.toLowerCase();
-            
+
             // 检查路径遍历
             if (lowerCaseName.contains("../") || lowerCaseName.contains("..\\")) {
                 log.warn("{}文件包含潜在的路径遍历攻击: {}", archiveType, entryName);
                 return false;
             }
-            
+
             // 检查可疑扩展名
             for (String ext : suspiciousExtensions) {
                 if (lowerCaseName.endsWith(ext)) {
@@ -624,7 +624,7 @@ public class DataManagementService {
                 }
             }
         }
-        
+
         log.info("{}文件验证通过", archiveType);
         return true;
     }
@@ -639,36 +639,36 @@ public class DataManagementService {
     private boolean isValidDataZip(Path zipPath) {
         final Set<String> requiredDirs = Set.of("data/", "data/characters/", "data/chats/");
         final Set<String> suspiciousExtensions = Set.of(".exe", ".bat", ".sh", ".cmd", ".scr", ".vbs", ".jar");
-        
+
         try {
             // 1. 检查文件大小
             if (Files.size(zipPath) > maxExportSizeBytes) {
                 log.warn("ZIP文件过大: {} bytes (限制: {} bytes)", Files.size(zipPath), maxExportSizeBytes);
                 return false;
             }
-            
+
             // 2. 使用ZipFile API进行验证，可同时检查完整性
             try (ZipFile zf = new ZipFile(zipPath.toFile())) {
                 Set<String> entryNames = zf.stream()
                         .map(java.util.zip.ZipEntry::getName)
                         .collect(Collectors.toSet());
-                
+
                 // 3. 关键验证：确保压缩包根目录必须是data文件夹
                 boolean hasDataAsRoot = entryNames.contains("data/");
                 boolean allEntriesUnderData = entryNames.stream()
                         .filter(name -> !name.equals("data/"))
                         .allMatch(name -> name.startsWith("data/"));
-                
+
                 if (!hasDataAsRoot) {
                     log.warn("ZIP文件根目录必须包含data/文件夹");
                     return false;
                 }
-                
+
                 if (!allEntriesUnderData) {
                     log.warn("ZIP文件中存在data/目录外的文件，压缩包根目录必须只有data文件夹");
                     return false;
                 }
-                
+
                 // 4. 检查必需的目录结构
                 for (String requiredDir : requiredDirs) {
                     if (entryNames.stream().noneMatch(name -> name.startsWith(requiredDir))) {
@@ -676,17 +676,17 @@ public class DataManagementService {
                         return false;
                     }
                 }
-                
+
                 // 5. 检查是否包含可疑文件（基于扩展名和路径遍历攻击）
                 for (String entryName : entryNames) {
                     String lowerCaseName = entryName.toLowerCase();
-                    
+
                     // 检查路径遍历
                     if (lowerCaseName.contains("../") || lowerCaseName.contains("..\\")) {
                         log.warn("ZIP文件包含潜在的路径遍历攻击: {}", entryName);
                         return false;
                     }
-                    
+
                     // 检查可疑扩展名
                     for (String ext : suspiciousExtensions) {
                         if (lowerCaseName.endsWith(ext)) {
@@ -696,7 +696,7 @@ public class DataManagementService {
                     }
                 }
             }
-            
+
             log.info("ZIP文件验证通过: {}", zipPath);
             return true;
         } catch (ZipException e) {
@@ -1010,16 +1010,16 @@ public class DataManagementService {
      * 查找docker-compose.yaml所在目录（通过容器挂载信息）
      */
     private String findDockerComposePath(SshConnection connection, String containerName) throws Exception {
-        String inspectOutput = executeCommand(connection, 
+        String inspectOutput = executeCommand(connection,
             String.format("docker inspect %s --format='{{range .Mounts}}{{if eq .Destination \"/home/node/app/data\"}}{{.Source}}{{end}}{{end}}'", containerName));
-        
+
         if (inspectOutput.trim().isEmpty()) {
             throw new RuntimeException("未找到data目录挂载路径");
         }
-        
+
         String mountedDataPath = inspectOutput.trim();
         log.info("发现挂载路径: {}", mountedDataPath);
-        
+
         // 挂载路径是 /path/to/compose/data，父目录就是docker-compose.yaml所在目录
         // 直接使用字符串操作而不是Paths.get，避免Windows路径分隔符问题
         String dockerComposePath;
@@ -1034,7 +1034,7 @@ public class DataManagementService {
                 throw new RuntimeException("无法解析docker-compose路径，挂载路径格式异常: " + mountedDataPath);
             }
         }
-        
+
         log.info("解析的docker-compose路径: {}", dockerComposePath);
         return dockerComposePath;
     }
@@ -1105,25 +1105,25 @@ public class DataManagementService {
     }
 
     /**
-     * 重启SillyTavern容器
+     * 重启容器
      */
     private void restartSillyTavernContainer(SshConnection connection, String dockerComposePath) throws Exception {
         // 停止容器
-        executeCommand(connection, String.format("cd '%s' && docker-compose stop sillytavern", dockerComposePath));
-        
+        executeCommand(connection, String.format("cd '%s' && docker compose stop", dockerComposePath));
+
         // 等待2秒确保完全停止
         Thread.sleep(2000);
-        
+
         // 启动容器
-        executeCommand(connection, String.format("cd '%s' && docker-compose up -d sillytavern", dockerComposePath));
-        
+        executeCommand(connection, String.format("cd '%s' && docker compose up -d", dockerComposePath));
+
         log.info("SillyTavern容器重启完成");
     }
 
     /**
      * 清理导入临时文件
      */
-    private void cleanupImportTempFiles(SshConnection connection, String remoteUploadedPath, String remoteZipPath, 
+    private void cleanupImportTempFiles(SshConnection connection, String remoteUploadedPath, String remoteZipPath,
                                        String extractTempPath, String localZipPath) {
         // 清理被控服务器临时文件
         try {
@@ -1140,7 +1140,7 @@ public class DataManagementService {
         } catch (Exception e) {
             log.warn("清理被控服务器临时文件失败: {}", e.getMessage());
         }
-        
+
         // 清理Server端临时文件
         if (localZipPath != null) {
             try {
