@@ -48,6 +48,27 @@ export function useTerminal(options = {}) {
     let usingExternalClient = false;
     let subscriptionsReady = false;
     let externalAttachTimer = null;
+    // Prevent duplicate backend forwarding start requests
+    let forwardingStartedOnce = false;
+
+    const ensureForwardingStarted = () => {
+        if (!stompClient || !stompClient.connected) return;
+        if (forwardingStartedOnce) return;
+        forwardingStartedOnce = true;
+        try {
+            // Delegate to existing publisher
+            if (typeof startTerminalOutputForwarding === 'function') {
+                startTerminalOutputForwarding();
+            } else {
+                // Fallback: publish directly if helper not yet defined in scope
+                stompClient.publish({ destination: '/app/terminal/start-forwarding', body: JSON.stringify({}) });
+            }
+        } catch (e) {
+            // Allow retry if it failed before helper exists
+            forwardingStartedOnce = false;
+            console.warn('start-forwarding failed, will allow retry:', e);
+        }
+    };
     const streamingFileService = new StreamingFileService(() => stompSessionId);
 
     // 声明函数变量，稍后定义
@@ -141,23 +162,23 @@ export function useTerminal(options = {}) {
         });
         console.log('✅ 会话订阅完成:', sessionSub);
         
-        // 订阅终端输出
-        const terminalSub = stompClient.subscribe('/user/queue/terminal', (message) => {
-            console.log('收到终端输出消息:', message);
-            try {
-                const data = JSON.parse(message.body);
-                console.log('解析终端数据:', data);
-                if (term && data.payload) {
-                    // 使用缓冲区和requestAnimationFrame优化输出
-                    bufferTerminalOutput(data.payload);
-                } else {
-                    console.warn('无法写入终端:', { term: !!term, payload: !!data.payload });
-                }
-            } catch (e) {
-                console.error('处理终端输出错误:', e, '消息体:', message.body);
+        // 🚫 禁用终端输出订阅以避免重复
+        // useConnectionManager已经处理终端输出，避免重复订阅造成"lllsss"问题
+        console.log('⏭️ useTerminal: 跳过终端输出订阅，防止重复');
+        
+        // 注册terminal处理器，让连接管理器转发消息
+        if (!window.terminalHandlers) {
+            window.terminalHandlers = [];
+        }
+        
+        const terminalHandler = (payload) => {
+            if (term && payload) {
+                bufferTerminalOutput(payload);
             }
-        });
-        console.log('Subscribed to terminal output:', terminalSub);
+        };
+        
+        window.terminalHandlers.push(terminalHandler);
+        console.log('✅ 已注册终端处理器');
 
         // 订阅终端错误
         const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
@@ -365,7 +386,7 @@ export function useTerminal(options = {}) {
             if (!subscriptionsReady || Object.keys(stompClient.subscriptions || {}).length === 0) {
                 console.log('🔍 开始订阅队列...');
                 subscribeToQueues();
-                startTerminalOutputForwarding();
+                ensureForwardingStarted();
                 
                 // 对于外部客户端，也请求会话信息
                 setTimeout(() => {
@@ -499,8 +520,8 @@ export function useTerminal(options = {}) {
                 }, 1000); // 延迟1秒确保订阅完成
                 
                 // SSH连接由StompAuthenticationInterceptor在CONNECT时建立
-                // 启动终端输出转发
-                startTerminalOutputForwarding();
+            // 启动终端输出转发（仅一次）
+            ensureForwardingStarted();
             };
 
             // STOMP错误处理
@@ -612,13 +633,14 @@ export function useTerminal(options = {}) {
         currentCredentials = null;
         stompSessionId = null;
         
+        // Allow forwarding to be started again on next connect
+        forwardingStartedOnce = false;
         resetState();
     };
 
     // --- Terminal Output Buffering ---
     const bufferTerminalOutput = (data) => {
-        // 添加调试日志来检查是否有重复数据
-        console.log('缓冲终端输出:', data);
+        // Terminal output buffering
         terminalOutputBuffer.push(data);
         
         // 如果没有定时器运行，启动一个
@@ -805,6 +827,9 @@ export function useTerminal(options = {}) {
         isLoading.value = false;
         systemStats.value = null;
         dockerContainers.value = [];
+
+        // Reset forwarding start guard
+        forwardingStartedOnce = false;
     };
 
     // --- Public API Methods ---

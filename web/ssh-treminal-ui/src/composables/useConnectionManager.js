@@ -171,6 +171,39 @@ export function useConnectionManager() {
           console.log('Stored connectedHeaders:', stompClient.connectedHeaders)
         }
 
+        // Subscribe to terminal output in connection manager to prevent duplicates
+        console.log('📡 Connection Manager: Setting up terminal subscriptions...')
+        
+        // Subscribe to terminal output - this will be the single source of truth
+        stompClient.subscribe('/user/queue/terminal', (message) => {
+          try {
+            const data = JSON.parse(message.body)
+            console.log('📨 Connection Manager: Terminal output received:', data)
+            
+            // Forward to all registered terminal handlers
+            if (window.terminalHandlers) {
+              window.terminalHandlers.forEach(handler => {
+                if (typeof handler === 'function') {
+                  handler(data.payload)
+                }
+              })
+            }
+          } catch (e) {
+            console.error('Connection Manager: Error processing terminal output:', e)
+          }
+        })
+
+        // Start terminal forwarding
+        setTimeout(() => {
+          if (stompClient && stompClient.connected) {
+            console.log('📡 Starting terminal output forwarding...')
+            stompClient.publish({
+              destination: '/app/terminal/start-forwarding',
+              body: JSON.stringify({})
+            })
+          }
+        }, 500)
+
         // Save successful connection
         saveConnection(connectionInfo)
       }
