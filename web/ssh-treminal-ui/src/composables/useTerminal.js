@@ -150,6 +150,11 @@ function getTerminalEventManager() {
 
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
 export function useTerminal(options = {}) {
+    const composableId = `useTerminal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log('🎯🎯🎯 useTerminal composable 被创建 - ID:', composableId);
+    console.log('🎯 创建时间:', new Date().toISOString());
+    console.log('🎯 创建栈:', new Error().stack.split('\n').slice(1, 5).join('\n'));
+    
     const { onShowModal = () => {}, getStompClient: getExternalClient } = options;
 
     // --- State ---
@@ -281,7 +286,9 @@ export function useTerminal(options = {}) {
 
     // 订阅所有队列
     subscribeToQueues = () => {
-        console.log('🚀 开始订阅所有STOMP队列...');
+        const callId = `subscribeCall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log('🚀🚀🚀 subscribeToQueues 被调用 - ID:', callId);
+        console.log('🚀 调用栈:', new Error().stack.split('\n').slice(1, 4).join(' -> '));
         console.log('🚀 当前STOMP客户端状态:', stompClient?.connected);
         console.log('🚀 当前subscriptionsReady状态:', subscriptionsReady);
         console.log('🚀 STOMP客户端对象:', stompClient);
@@ -311,31 +318,45 @@ export function useTerminal(options = {}) {
         // useConnectionManager已经处理终端输出，使用直接处理器注册
         console.log('⏭️ useTerminal: 使用直接处理器注册，防止重复');
         
-        // 定义终端输出处理函数（带名称）
+        // 定义终端输出处理函数（带名称和唯一标识）
+        const handlerId = `terminalHandler_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const terminalOutputHandler = function terminalOutputHandler(payload) {
             if (term && payload) {
                 bufferTerminalOutput(payload);
             }
         };
+        // 添加唯一ID到处理器
+        terminalOutputHandler.handlerId = handlerId;
+        terminalOutputHandler.createdAt = new Date().toISOString();
+        terminalOutputHandler.createdBy = 'useTerminal.js';
+        
+        console.log('🔧 创建终端处理器:', handlerId);
+        console.log('🔧 创建时间:', terminalOutputHandler.createdAt);
+        console.log('🔧 调用栈:', new Error().stack.split('\n').slice(1, 5).join('\n'));
         
         // 直接注册到连接管理器的处理器集合
         if (getExternalClient) {
             // 使用外部客户端时，通过连接管理器注册
             const client = getExternalClient();
             if (client && client.terminalHandlers) {
-                // 防重复：先检查是否已经有同名处理器
+                // 检查是否已经有处理器，但要确保至少有一个工作的处理器
                 const existingHandlers = Array.from(client.terminalHandlers);
-                const isDuplicate = existingHandlers.some(handler => 
-                    handler.name === 'terminalOutputHandler' || 
-                    handler.name === 'terminalOutputHandler2'
+                console.log('🔍 现有处理器数量:', existingHandlers.length);
+                console.log('🔍 现有处理器:', existingHandlers.map(h => h.name || 'anonymous'));
+                
+                // 如果没有处理器，或者现有处理器无效，则注册新的
+                const hasValidHandler = existingHandlers.length > 0 && existingHandlers.some(handler => 
+                    typeof handler === 'function'
                 );
                 
-                if (isDuplicate) {
-                    console.warn('⚠️ 终端处理器已存在，跳过重复注册');
-                } else {
+                if (!hasValidHandler) {
                     client.terminalHandlers.add(terminalOutputHandler);
-                    console.log('✅ 已直接注册终端处理器到外部客户端，总数:', client.terminalHandlers.size);
+                    console.log('✅ 已注册终端处理器到外部客户端，总数:', client.terminalHandlers.size);
                     // 存储处理器引用用于清理
+                    currentTerminalHandler = { handler: terminalOutputHandler, client };
+                } else {
+                    console.log('⏭️ 已存在有效的终端处理器，跳过注册');
+                    // 即使跳过注册，也要存储引用以便后续清理
                     currentTerminalHandler = { handler: terminalOutputHandler, client };
                 }
             } else {
@@ -813,12 +834,29 @@ export function useTerminal(options = {}) {
 
     // --- Terminal Output Buffering ---
     const bufferTerminalOutput = (data) => {
+        console.log('📝 bufferTerminalOutput 被调用');
+        console.log('📝 数据:', data);
+        console.log('📝 term实例状态:', !!term);
+        console.log('📝 数据长度:', data?.length);
+        
+        if (!term) {
+            console.error('❌ term实例未设置，无法缓冲输出');
+            return;
+        }
+        
+        if (!data) {
+            console.warn('⚠️ 空数据，跳过缓冲');
+            return;
+        }
+        
         // Terminal output buffering
         terminalOutputBuffer.push(data);
+        console.log('📝 缓冲区长度:', terminalOutputBuffer.length);
         
         // 如果没有定时器运行，启动一个
         if (!terminalOutputTimer) {
             terminalOutputTimer = requestAnimationFrame(flushTerminalOutput);
+            console.log('📝 启动刷新定时器');
         }
     };
 
@@ -1016,7 +1054,15 @@ export function useTerminal(options = {}) {
     };
 
     // --- Public API Methods ---
-    const setTerminalInstance = (instance) => { term = instance; };
+    const setTerminalInstance = (instance) => { 
+        console.log('🖥️ 设置终端实例:', !!instance);
+        if (instance) {
+            console.log('🖥️ 终端实例类型:', instance.constructor.name);
+            console.log('🖥️  终端实例方法:', Object.getOwnPropertyNames(instance).filter(name => typeof instance[name] === 'function'));
+        }
+        term = instance;
+        console.log('🖥️ 当前term变量状态:', !!term);
+    };
     
     const sendTerminalData = (data) => {
         if (stompClient && stompClient.connected) {
