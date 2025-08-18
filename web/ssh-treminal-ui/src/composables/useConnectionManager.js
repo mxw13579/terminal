@@ -175,18 +175,33 @@ export function useConnectionManager() {
         console.log('📡 Connection Manager: Setting up terminal subscriptions...')
         
         // Subscribe to terminal output - this will be the single source of truth
+        // Simple direct forwarding to avoid duplication
+        const terminalHandlers = new Set()
+        
+        // Store handler registry on connection manager
+        stompClient.terminalHandlers = terminalHandlers
+        
         stompClient.subscribe('/user/queue/terminal', (message) => {
           try {
             const data = JSON.parse(message.body)
             console.log('📨 Connection Manager: Terminal output received:', data)
             
-            // Forward to all registered terminal handlers
-            if (window.terminalHandlers) {
-              window.terminalHandlers.forEach(handler => {
-                if (typeof handler === 'function') {
-                  handler(data.payload)
+            // Direct forwarding to registered handlers - simple and efficient
+            if (terminalHandlers.size > 0) {
+              const payload = data.payload
+              console.log('📤 Forwarding to', terminalHandlers.size, 'direct handlers')
+              
+              for (const handler of terminalHandlers) {
+                try {
+                  if (typeof handler === 'function') {
+                    handler(payload)
+                  }
+                } catch (error) {
+                  console.error('Terminal handler error:', error)
                 }
-              })
+              }
+            } else {
+              console.warn('📤 No terminal handlers registered, output will be lost:', data.payload)
             }
           } catch (e) {
             console.error('Connection Manager: Error processing terminal output:', e)
@@ -299,6 +314,12 @@ export function useConnectionManager() {
       }
     }
 
+    // Clear terminal handlers
+    if (stompClient && stompClient.terminalHandlers) {
+      console.log('🗑️ Connection Manager: Clearing', stompClient.terminalHandlers.size, 'terminal handlers')
+      stompClient.terminalHandlers.clear()
+    }
+
     connectionState.isConnected = false
     connectionState.connectionInfo = null
     connectionState.currentSessionId = null
@@ -367,7 +388,64 @@ export function useConnectionManager() {
     removeConnection,
 
     // STOMP client access
-    getStompClient: () => stompClient
+    getStompClient: () => stompClient,
+    
+    // Terminal handler registration for direct forwarding
+    registerTerminalHandler: (handler) => {
+      if (stompClient && stompClient.terminalHandlers && typeof handler === 'function') {
+        // 添加调试信息
+        const handlerName = handler.name || 'anonymous';
+        const stackTrace = new Error().stack.split('\n').slice(1, 4).map(line => line.trim()).join(' -> ');
+        
+        stompClient.terminalHandlers.add(handler)
+        console.log('✅ Registered terminal handler:', handlerName)
+        console.log('📍 Registration stack:', stackTrace)
+        console.log('📊 Total handlers:', stompClient.terminalHandlers.size)
+        
+        // 列出所有handler的名称
+        const handlerNames = Array.from(stompClient.terminalHandlers).map(h => h.name || 'anonymous');
+        console.log('📋 All handlers:', handlerNames)
+        
+        return true
+      }
+      console.error('❌ Failed to register terminal handler - missing client or invalid handler')
+      return false
+    },
+    
+    // 清理重复处理器的方法
+    cleanupDuplicateHandlers: () => {
+      if (stompClient && stompClient.terminalHandlers) {
+        const handlersArray = Array.from(stompClient.terminalHandlers);
+        const uniqueHandlers = new Set();
+        
+        // 清除所有处理器
+        stompClient.terminalHandlers.clear();
+        
+        // 只保留一个处理器（通过函数名去重）
+        const seenNames = new Set();
+        for (const handler of handlersArray) {
+          const handlerName = handler.name || 'anonymous';
+          if (!seenNames.has(handlerName)) {
+            stompClient.terminalHandlers.add(handler);
+            seenNames.add(handlerName);
+            uniqueHandlers.add(handler);
+          }
+        }
+        
+        console.log('🧹 Cleaned duplicate handlers. Before:', handlersArray.length, 'After:', stompClient.terminalHandlers.size);
+        return stompClient.terminalHandlers.size;
+      }
+      return 0;
+    },
+    
+    unregisterTerminalHandler: (handler) => {
+      if (stompClient && stompClient.terminalHandlers) {
+        const removed = stompClient.terminalHandlers.delete(handler)
+        console.log('🗑️ Unregistered terminal handler, remaining:', stompClient.terminalHandlers.size)
+        return removed
+      }
+      return false
+    }
   }
 }
 

@@ -5,6 +5,149 @@ import SockJS from 'sockjs-client';
 import { AuthService } from '../services/auth.js';
 import { StreamingFileService } from '../services/streamingFile.js';
 
+// 终端事件管理器 - 替代全局状态的改进解决方案
+class TerminalEventManager {
+    constructor() {
+        this.handlers = new Map();
+        this.isDestroyed = false;
+    }
+
+    // 注册处理器
+    register(handler) {
+        if (this.isDestroyed) {
+            console.warn('Cannot register handler on destroyed event manager');
+            return false;
+        }
+
+        // 验证处理器
+        if (!handler || typeof handler !== 'object') {
+            console.error('Invalid handler: must be an object');
+            return false;
+        }
+
+        if (!handler.id || typeof handler.id !== 'string') {
+            console.error('Invalid handler: must have a unique string id');
+            return false;
+        }
+
+        if (!handler.handle || typeof handler.handle !== 'function') {
+            console.error('Invalid handler: must have a handle function');
+            return false;
+        }
+
+        // 检查重复ID
+        if (this.handlers.has(handler.id)) {
+            console.warn(`Handler with id ${handler.id} already exists, replacing`);
+        }
+
+        this.handlers.set(handler.id, {
+            ...handler,
+            registeredAt: Date.now()
+        });
+
+        console.log(`Terminal handler registered: ${handler.id}`);
+        return true;
+    }
+
+    // 注销处理器
+    unregister(handlerId) {
+        if (!handlerId) {
+            console.error('Handler ID is required for unregistration');
+            return false;
+        }
+
+        const removed = this.handlers.delete(handlerId);
+        if (removed) {
+            console.log(`Terminal handler unregistered: ${handlerId}`);
+        } else {
+            console.warn(`Handler not found for unregistration: ${handlerId}`);
+        }
+        return removed;
+    }
+
+    // 分发消息到所有处理器
+    dispatch(payload) {
+        if (this.isDestroyed) {
+            console.warn('Cannot dispatch on destroyed event manager');
+            return;
+        }
+
+        if (!payload) {
+            console.warn('Empty payload for terminal event dispatch');
+            return;
+        }
+
+        const handlersArray = Array.from(this.handlers.values());
+        
+        if (handlersArray.length === 0) {
+            console.warn('No handlers registered for terminal event dispatch');
+            return;
+        }
+
+        console.log(`Dispatching terminal payload to ${handlersArray.length} handlers`);
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const handler of handlersArray) {
+            try {
+                // 额外的安全检查
+                if (!handler.handle || typeof handler.handle !== 'function') {
+                    console.error(`Invalid handler function for ${handler.id}, skipping`);
+                    errorCount++;
+                    continue;
+                }
+
+                handler.handle(payload);
+                successCount++;
+            } catch (error) {
+                errorCount++;
+                console.error(`Handler ${handler.id} failed:`, error);
+                
+                // 调用错误处理器（如果存在）
+                if (typeof handler.onError === 'function') {
+                    try {
+                        handler.onError(error);
+                    } catch (errorHandlerError) {
+                        console.error(`Error handler for ${handler.id} also failed:`, errorHandlerError);
+                    }
+                }
+            }
+        }
+
+        if (errorCount > 0) {
+            console.warn(`Terminal dispatch completed with ${successCount} successes and ${errorCount} errors`);
+        }
+    }
+
+    // 获取状态信息
+    getStatus() {
+        return {
+            handlerCount: this.handlers.size,
+            handlers: Array.from(this.handlers.keys()),
+            isDestroyed: this.isDestroyed
+        };
+    }
+
+    // 销毁管理器
+    destroy() {
+        console.log('Destroying terminal event manager with', this.handlers.size, 'handlers');
+        this.handlers.clear();
+        this.isDestroyed = true;
+    }
+}
+
+// 单例终端事件管理器
+let terminalEventManager = null;
+
+function getTerminalEventManager() {
+    if (!terminalEventManager || terminalEventManager.isDestroyed) {
+        terminalEventManager = new TerminalEventManager();
+        console.log('Created new terminal event manager');
+    }
+    return terminalEventManager;
+}
+
 // Composable函数接收一个配置对象，用于与外部通信（如显示Modal）
 export function useTerminal(options = {}) {
     const { onShowModal = () => {}, getStompClient: getExternalClient } = options;
@@ -50,6 +193,8 @@ export function useTerminal(options = {}) {
     let externalAttachTimer = null;
     // Prevent duplicate backend forwarding start requests
     let forwardingStartedOnce = false;
+    // 终端处理器引用
+    let currentTerminalHandler = null;
 
     const ensureForwardingStarted = () => {
         if (!stompClient || !stompClient.connected) return;
@@ -163,22 +308,40 @@ export function useTerminal(options = {}) {
         console.log('✅ 会话订阅完成:', sessionSub);
         
         // 🚫 禁用终端输出订阅以避免重复
-        // useConnectionManager已经处理终端输出，避免重复订阅造成"lllsss"问题
-        console.log('⏭️ useTerminal: 跳过终端输出订阅，防止重复');
+        // useConnectionManager已经处理终端输出，使用直接处理器注册
+        console.log('⏭️ useTerminal: 使用直接处理器注册，防止重复');
         
-        // 注册terminal处理器，让连接管理器转发消息
-        if (!window.terminalHandlers) {
-            window.terminalHandlers = [];
-        }
-        
-        const terminalHandler = (payload) => {
+        // 定义终端输出处理函数（带名称）
+        const terminalOutputHandler = function terminalOutputHandler(payload) {
             if (term && payload) {
                 bufferTerminalOutput(payload);
             }
         };
         
-        window.terminalHandlers.push(terminalHandler);
-        console.log('✅ 已注册终端处理器');
+        // 直接注册到连接管理器的处理器集合
+        if (getExternalClient) {
+            // 使用外部客户端时，通过连接管理器注册
+            const client = getExternalClient();
+            if (client && client.terminalHandlers) {
+                // 防重复：先检查是否已经有同名处理器
+                const existingHandlers = Array.from(client.terminalHandlers);
+                const isDuplicate = existingHandlers.some(handler => 
+                    handler.name === 'terminalOutputHandler' || 
+                    handler.name === 'terminalOutputHandler2'
+                );
+                
+                if (isDuplicate) {
+                    console.warn('⚠️ 终端处理器已存在，跳过重复注册');
+                } else {
+                    client.terminalHandlers.add(terminalOutputHandler);
+                    console.log('✅ 已直接注册终端处理器到外部客户端，总数:', client.terminalHandlers.size);
+                    // 存储处理器引用用于清理
+                    currentTerminalHandler = { handler: terminalOutputHandler, client };
+                }
+            } else {
+                console.warn('❌ 外部客户端未准备好或缺少处理器集合');
+            }
+        }
 
         // 订阅终端错误
         const errorSub = stompClient.subscribe('/user/queue/errors', (message) => {
@@ -628,6 +791,16 @@ export function useTerminal(options = {}) {
             term.write('\r\n🔌 连接已由用户关闭。\r\n');
         }
         
+        // 清理终端处理器，防止内存泄漏
+        if (currentTerminalHandler) {
+            if (currentTerminalHandler.client && currentTerminalHandler.client.terminalHandlers) {
+                // 直接处理器清理
+                currentTerminalHandler.client.terminalHandlers.delete(currentTerminalHandler.handler);
+                console.log('🗑️ 断开连接时清理直接终端处理器');
+            }
+            currentTerminalHandler = null;
+        }
+        
         // 清理认证状态
         AuthService.clearToken();
         currentCredentials = null;
@@ -790,6 +963,16 @@ export function useTerminal(options = {}) {
         if (resizeTimeout) {
             clearTimeout(resizeTimeout);
             resizeTimeout = null;
+        }
+        
+        // 清理终端处理器，防止内存泄漏
+        if (currentTerminalHandler) {
+            if (currentTerminalHandler.client && currentTerminalHandler.client.terminalHandlers) {
+                // 直接处理器清理
+                currentTerminalHandler.client.terminalHandlers.delete(currentTerminalHandler.handler);
+                console.log('🗑️ 清理直接终端处理器');
+            }
+            currentTerminalHandler = null;
         }
         
         // 清理认证状态
@@ -1059,5 +1242,27 @@ export function useTerminal(options = {}) {
         toggleMonitorPanel,
         testStompSubscription, // 添加测试函数
         forceResubscribe, // 添加强制重新订阅函数
+        
+        // 添加清理方法用于组件卸载时调用
+        cleanup: () => {
+            if (currentTerminalHandler) {
+                if (currentTerminalHandler.client && currentTerminalHandler.client.terminalHandlers) {
+                    // 直接处理器清理
+                    currentTerminalHandler.client.terminalHandlers.delete(currentTerminalHandler.handler);
+                    console.log('🧹 useTerminal cleanup: 直接终端处理器已移除');
+                }
+                currentTerminalHandler = null;
+            }
+        }
     };
+}
+
+// Export the event manager function for external use
+export { getTerminalEventManager };
+
+// 调试用导出 - 仅在开发环境
+if (import.meta.env?.MODE === 'development' || process.env.NODE_ENV === 'development') {
+    // 暴露到全局对象用于调试，但不再依赖它
+    window.debugTerminalEventManager = getTerminalEventManager;
+    console.log('🔧 Debug: Terminal event manager available at window.debugTerminalEventManager()');
 }

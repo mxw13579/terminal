@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import useConnectionManager from '@/composables/useConnectionManager.js'
 import { useTerminal } from '@/composables/useTerminal.js'
 import NavigationHeader from '@/components/NavigationHeader.vue'
@@ -107,7 +107,8 @@ const {
   monitorVisible, isMonitoring, systemStats, dockerContainers,
   setTerminalInstance, sendTerminalData, sendTerminalResize, 
   toggleSftpPanel, toggleMonitorPanel,
-  fetchSftpList, downloadSftpFiles, uploadSftpFile
+  fetchSftpList, downloadSftpFiles, uploadSftpFile,
+  cleanup // 获取清理方法
 } = useTerminal({
   onShowModal: showModal,
   // 复用连接管理器创建的 STOMP 客户端，避免重复连接导致页面无响应
@@ -119,6 +120,12 @@ onMounted(() => {
   if (connectionState.isConnected) {
     console.log('已存在连接，直接进入终端界面')
   }
+})
+
+// 组件卸载时清理资源
+onBeforeUnmount(() => {
+  console.log('🧹 Terminal component unmounting, cleaning up...')
+  cleanup() // 调用useTerminal的清理方法
 })
 </script>
 
