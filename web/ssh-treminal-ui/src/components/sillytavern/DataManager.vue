@@ -645,7 +645,7 @@ export default {
           console.log('导入成功!')
           // 停止保活机制
           connectionManager.stopKeepAlive()
-          
+
           // 确保所有步骤都标记为完成
           importSteps.value.forEach((step, index) => {
             if (step.status !== 'completed') {
@@ -658,7 +658,7 @@ export default {
           successMessage.value = response.message || '数据导入成功'
 
           if (response.requiresRestart) {
-            successMessage.value += ' 建议重启容器以应用更改。'
+            successMessage.value += ' 服务已重启完成。'
           }
 
           console.log('导入成功完成')
@@ -669,7 +669,7 @@ export default {
           console.error('导入失败:', response.message)
           // 停止保活机制
           connectionManager.stopKeepAlive()
-          
+
           // 设置当前步骤为错误状态
           if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
             updateStepStatus(currentStep.value, 'error', 0)
@@ -844,7 +844,7 @@ export default {
     onUnmounted(() => {
       // 停止保活机制
       connectionManager.stopKeepAlive()
-      
+
       if (exportSubscription) exportSubscription.unsubscribe()
       if (importSubscription) importSubscription.unsubscribe()
       if (exportProgressSubscription) exportProgressSubscription.unsubscribe()

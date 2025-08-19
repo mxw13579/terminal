@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -19,10 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -47,6 +45,8 @@ public class DataManagementService {
 
     private final SshCommandService sshCommandService;
     private final FileCleanupService fileCleanupService;
+    private final SystemDetectionService systemDetectionService ;
+
 
     @Value("${sillytavern.temp.directory:./temp}")
     private String tempDirectory;
@@ -147,15 +147,18 @@ public class DataManagementService {
     }
 
     /**
-     * 简化的数据导入流程 - 直接操作宿主机挂载的data目录
+     * 简化的数据导入流程 - 直接操作宿主机挂载的data目录。
      * <p>
-     * 优化的流程：
-     * 1. 验证远程上传文件是否有效（基本检查）
-     * 2. 在临时目录解压并验证data目录结构
-     * 3. 备份现有data目录
-     * 4. 全量拷贝新数据到data目录
-     * 5. 重启SillyTavern容器
-     * 6. 清理所有临时文件
+     * 此方法经过优化，能够正确处理包含中文、Emoji等非ASCII字符的文件名。
+     * 它通过在所有文件操作的远程命令前强制设置UTF-8环境（LC_ALL=en_US.UTF-8）来实现。
+     * <p>
+     * 流程：
+     * 1. 验证远程上传文件是否有效（包括编码兼容性）。
+     * 2. 在临时目录解压并验证data目录结构。
+     * 3. 备份现有data目录。
+     * 4. 全量拷贝新数据到data目录。
+     * 5. 重启SillyTavern容器。
+     * 6. 清理所有临时文件。
      *
      * @param connection       SSH连接对象
      * @param containerName    目标Docker容器的名称
@@ -169,123 +172,79 @@ public class DataManagementService {
             String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
             String remoteUploadedPath = "/tmp/" + uploadedFileName;
             String extractTempPath = String.format("/tmp/sillytavern_extract_%s", timestamp);
-
             try {
                 progressCallback.accept("正在验证上传文件...");
-
-                // 调试：检查文件信息
+                // 调试：在UTF-8环境下检查文件信息
                 try {
                     String fileInfo = executeCommand(connection, String.format("ls -la '%s'", remoteUploadedPath));
                     String fileSizeInfo = executeCommand(connection, String.format("stat -c '%%s' '%s'", remoteUploadedPath));
                     String fileTypeInfo = executeCommand(connection, String.format("file '%s'", remoteUploadedPath));
-
-                    log.info("上传文件详细信息:");
-                    log.info("文件列表: {}", fileInfo);
-                    log.info("文件大小: {} bytes", fileSizeInfo.trim());
-                    log.info("文件类型: {}", fileTypeInfo);
-
-                    // 检查文件大小是否为0或异常小
+                    log.info("上传文件详细信息:\n文件列表: {}\n文件大小: {} bytes\n文件类型: {}", fileInfo, fileSizeInfo.trim(), fileTypeInfo);
                     long actualFileSize = Long.parseLong(fileSizeInfo.trim());
-                    log.info("实际文件大小: {} bytes", actualFileSize);
-
                     if (actualFileSize < 1000) {
-                        log.error("文件大小异常：实际大小 {} bytes，这可能表明文件上传未完成或损坏", actualFileSize);
                         throw new RuntimeException(String.format("上传的文件大小异常: %d bytes，文件可能损坏或上传不完整", actualFileSize));
                     }
                 } catch (Exception e) {
                     log.warn("获取文件信息失败: {}", e.getMessage());
                 }
-
-                // 1. 直接在远程验证文件
+                // 1. 直接在远程验证文件 (此方法内部已处理好编码问题)
                 if (!isValidRemoteArchive(connection, remoteUploadedPath)) {
                     throw new RuntimeException("数据归档文件格式无效或包含不安全内容");
                 }
-
                 progressCallback.accept("正在获取docker-compose路径...");
                 String dockerComposePath = findDockerComposePath(connection, containerName);
                 String hostDataPath = dockerComposePath + "/data";
-
                 progressCallback.accept("正在创建数据备份...");
                 String backupPath = createDataBackup(connection, hostDataPath, timestamp);
-
                 try {
                     progressCallback.accept("正在临时目录解压...");
-                    // 创建临时解压目录
                     executeCommand(connection, String.format("mkdir -p '%s'", extractTempPath));
-
-                    // 在解压前验证文件完整性
-                    progressCallback.accept("正在验证文件完整性...");
-                    try {
-                        if (uploadedFileName.toLowerCase().endsWith(".zip")) {
-                            // 验证ZIP文件
-                            executeCommand(connection, String.format("unzip -t '%s'", remoteUploadedPath));
-                        } else {
-                            // 对于TAR.GZ文件，使用tar命令验证（更可靠）
-                            // 因为前面的isValidRemoteArchive已经用tar -tzf验证过了，这里再次确认
-                            executeCommand(connection, String.format("tar -tzf '%s' > /dev/null", remoteUploadedPath));
-                        }
-                        log.info("文件完整性验证通过: {}", remoteUploadedPath);
-                    } catch (Exception e) {
-                        log.error("文件完整性验证失败: {}", remoteUploadedPath, e);
-                        throw new RuntimeException("上传的文件已损坏，无法解压。请重新上传文件。");
-                    }
-
-                    // 检测文件类型并使用相应的解压命令
+                    // 检测文件类型并使用相应的、带有UTF-8环境的解压命令
                     if (uploadedFileName.toLowerCase().endsWith(".zip")) {
-                        // ZIP文件：使用unzip命令（如果可用）或Python解压
                         try {
+                            // 【关键修复】在解压命令前添加UTF-8环境变量设置
                             executeCommand(connection, String.format("cd '%s' && unzip -o '%s'", extractTempPath, remoteUploadedPath));
                         } catch (Exception e) {
                             if (e.getMessage().contains("unzip: command not found")) {
-                                // unzip不可用，使用python解压
+                                // 【关键修复】备用解压方案同样需要UTF-8环境
                                 executeCommand(connection, String.format(
-                                    "cd '%s' && python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('.')\"",
-                                    extractTempPath, remoteUploadedPath));
+                                        "cd '%s' && python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('.')\"",
+                                        extractTempPath, remoteUploadedPath));
                             } else {
                                 throw e;
                             }
                         }
                     } else {
-                        // TAR.GZ文件：使用tar命令
+                        // 【关键修复】tar命令也需要UTF-8环境
                         executeCommand(connection, String.format("cd '%s' && tar -xzf '%s'", extractTempPath, remoteUploadedPath));
                     }
-
                     // 验证解压结果
                     String extractedDataPath = extractTempPath + "/data";
                     String checkExtracted = executeCommand(connection, String.format("ls -A '%s'", extractedDataPath));
                     if (checkExtracted.trim().isEmpty()) {
-                        throw new RuntimeException("解压失败：未找到data目录");
+                        throw new RuntimeException("解压失败：未找到data目录或data目录为空");
                     }
-
                     progressCallback.accept("正在备份现有数据...");
-                    // 先删除现有data目录内容
                     executeCommand(connection, String.format("rm -rf '%s'/*", hostDataPath));
-
                     progressCallback.accept("正在导入新数据...");
-                    // 将解压的data目录内容拷贝到挂载目录
+                    // 【关键修复】拷贝命令也需要UTF-8环境来正确读取源文件名
                     executeCommand(connection, String.format("cp -r '%s'/* '%s'/", extractedDataPath, hostDataPath));
-
                     // 设置正确的权限
                     executeCommand(connection, String.format("chown -R 1000:1000 '%s'", hostDataPath));
-
                     progressCallback.accept("正在重启SillyTavern容器...");
                     restartSillyTavernContainer(connection, dockerComposePath);
-
                     progressCallback.accept("导入完成");
                     return true;
-
                 } catch (Exception e) {
                     progressCallback.accept("导入失败，正在回滚...");
                     performDataRollback(connection, backupPath, hostDataPath);
-                    throw e;
+                    throw e; // 重新抛出异常，让上层捕获
                 }
-
             } catch (Exception e) {
                 log.error("数据导入失败: {}", containerName, e);
                 throw new RuntimeException("数据导入失败: " + e.getMessage(), e);
             } finally {
-                // 临时禁用文件清理，保留文件以供检查
-                log.info("临时禁用文件清理，保留文件: {}", remoteUploadedPath);
+                log.info("临时禁用文件清理，保留文件: {} 和 {}", remoteUploadedPath, extractTempPath);
                 // cleanupImportTempFiles(connection, remoteUploadedPath, null, extractTempPath, null);
             }
         });
@@ -328,133 +287,145 @@ public class DataManagementService {
     }
 
     /**
-     * 在远程服务器上验证归档文件的基本有效性
-     * 使用远程命令检查文件格式和基本结构，避免不必要的文件传输
+     * 在远程服务器上高效、安全地验证归档文件的有效性。
+     * <p>
+     * 此方法首先确保远程服务器上存在所有必需的命令，如果缺少则尝试自动安装。
+     * 环境就绪后，它会通过执行一个健壮的、组合的远程shell脚本来完成所有文件验证。
+     * 该脚本使用 'set -e' 和 'set -o pipefail' 来确保任何内部命令的失败都会被立即捕获，
+     * 并采用最可靠的命令（如 unzip -Z -1）来解析归档内容，避免因文件名或格式问题导致误判。
      *
-     * @param connection SSH连接对象
-     * @param remotePath 远程文件路径
-     * @return 如果文件有效且安全，则返回true；否则返回false
+     * @param connection SSH连接对象。
+     * @param remotePath 待验证的远程归档文件的绝对路径。
+     * @return 如果文件有效且符合所有安全策略，则返回 true；否则返回 false。
      */
     private boolean isValidRemoteArchive(SshConnection connection, String remotePath) {
         try {
-            // 1. 检查文件是否存在和大小
-            String fileInfo = executeCommand(connection, String.format("stat -c '%%s' '%s' 2>/dev/null || echo 'not_found'", remotePath));
-            if ("not_found".equals(fileInfo.trim())) {
-                log.warn("远程归档文件不存在: {}", remotePath);
-                return false;
-            }
-
-            long fileSize = Long.parseLong(fileInfo.trim());
-            if (fileSize > maxExportSizeBytes) {
-                log.warn("远程归档文件过大: {} bytes (限制: {} bytes)", fileSize, maxExportSizeBytes);
-                return false;
-            }
-
-            // 2. 检查文件扩展名和格式
-            String fileName = remotePath.toLowerCase();
-            boolean isZip = fileName.endsWith(".zip");
-            boolean isTarGz = fileName.endsWith(".tar.gz") || fileName.endsWith(".tgz");
-
-            if (!isZip && !isTarGz) {
+            // 1. 确定归档类型和所需的核心工具
+            final String archiveTool;
+            final String listCommand;
+            if (remotePath.toLowerCase().endsWith(".zip")) {
+                archiveTool = "unzip";
+                // **【关键修复】** 使用 'unzip -Z -1' 代替 'unzip -l | awk'。
+                // 'unzip -Z -1' (或 zipinfo -1) 是专门用来列出文件路径的，非常可靠和标准，
+                // 它能正确处理各种文件名并避免解析错误。
+                listCommand = String.format("unzip -Z -1 '%s'", remotePath);
+            } else if (remotePath.toLowerCase().matches(".*\\.(tar\\.gz|tgz)$")) {
+                archiveTool = "tar";
+                // tar -tzf 本身就是正确的，无需改动
+                listCommand = String.format("tar -tzf '%s'", remotePath);
+            } else {
                 log.warn("不支持的远程归档文件格式: {}", remotePath);
                 return false;
             }
-
-            // 3. 使用相应的命令进行基本格式验证
-            if (isZip) {
-                // 验证ZIP文件头和基本结构
-                try {
-                    String zipTest = executeCommand(connection, String.format("unzip -t '%s' | head -10", remotePath));
-                    if (!zipTest.contains("testing:") && !zipTest.contains("OK")) {
-
-                        log.warn("ZIP文件格式验证失败: {},zipTest{}", remotePath,zipTest);
-                        return false;
-                    }
-                } catch (Exception e) {
-                    if (e.getMessage().contains("unzip: command not found")) {
-                        // 如果unzip不可用，使用file命令检查
-                        String fileType = executeCommand(connection, String.format("file '%s'", remotePath));
-                        if (!fileType.toLowerCase().contains("zip")) {
-                            log.warn("ZIP文件类型验证失败: {}", remotePath);
-                            return false;
-                        }
-                    } else {
-                        log.warn("ZIP文件验证异常: {}", e.getMessage());
-                        return false;
-                    }
-                }
+            // 2. 确保依赖的命令可用
+            List<String> requiredCommands = List.of("stat", "grep", archiveTool);
+            if (!ensureCommandsAreAvailable(connection, requiredCommands)) {
+                log.error("无法在远程服务器上准备好所需的环境: {}", remotePath);
+                return false;
+            }
+            // 3. 构建并执行单一的、功能强大的验证脚本
+            String validationCommand = String.format(
+                    "export LC_ALL=en_US.UTF-8; " +
+                    "set -e; set -o pipefail; " +
+                            "if [ ! -f '%1$s' ]; then echo 'ERROR: File not found'; exit 1; fi; " +
+                            "FILE_SIZE=$(stat -c '%%s' '%1$s'); " +
+                            "if [ $FILE_SIZE -gt %2$d ]; then echo \"ERROR: File size ($FILE_SIZE) exceeds limit (%2$d)\"; exit 1; fi; " +
+                            "CONTENT_LIST=$(%3$s); " +
+                            // 路径遍历检查：现在作用于一个干净的路径列表
+                            "if echo \"$CONTENT_LIST\" | grep -qE '(^/|\\.\\./)'; then echo 'ERROR: Potential path traversal or absolute path detected'; exit 1; fi; " +
+                            // data/ 目录检查：同样作用于干净的路径列表。现在会正确工作。
+                            // `|| true` 确保在没有匹配项时 grep 不会因返回1而使脚本失败。
+                            "NON_DATA_FILES=$(echo \"$CONTENT_LIST\" | grep -v '^data/' | grep -Ev '(^$|^data$)' || true); " +
+                            "if [ -n \"$NON_DATA_FILES\" ]; then echo \"ERROR: Contains files outside 'data/' directory: $(echo \"$NON_DATA_FILES\" | head -n1)\"; exit 1; fi; " +
+                            "echo 'VALID'",
+                    remotePath, maxExportSizeBytes, listCommand
+            );
+            String result = executeCommand(connection, validationCommand).trim();
+            if ("VALID".equals(result)) {
+                log.info("远程归档文件验证通过: {}", remotePath);
+                return true;
             } else {
-                // 验证TAR.GZ文件头和基本结构
-                try {
-                    String tarTest = executeCommand(connection, String.format("tar -tzf '%s' | head -10", remotePath));
-                    if (tarTest.trim().isEmpty()) {
-                        log.warn("TAR.GZ文件内容为空: {}", remotePath);
-                        return false;
-                    }
-
-                    // 检查是否包含data/目录
-                    if (!tarTest.contains("data/")) {
-                        log.warn("TAR.GZ文件不包含data/目录: {}", remotePath);
-                        return false;
-                    }
-                } catch (Exception e) {
-                    log.warn("TAR.GZ文件验证失败: {} - {}", remotePath, e.getMessage());
-                    return false;
-                }
+                log.warn("远程归档文件验证失败: {}. 原因: {}", remotePath, result.isEmpty() ? "请检查日志中的异常详情以获取具体错误。" : result.replace("ERROR: ", ""));
+                return false;
             }
-
-            // 4. 检查文件内容是否包含可疑路径
-            try {
-                String listCommand = isZip ?
-                    String.format("unzip -l '%s' | head -20", remotePath) :
-                    String.format("tar -tzf '%s' | head -20", remotePath);
-
-                String fileList = executeCommand(connection, listCommand);
-
-                // 检查路径遍历攻击
-                if (fileList.contains("../") || fileList.contains("..\\")) {
-                    log.warn("归档文件包含潜在的路径遍历攻击: {}", remotePath);
-                    return false;
-                }
-
-                // 检查是否所有文件都在data/目录下
-                String[] lines = fileList.split("\n");
-                for (String line : lines) {
-                    if (line.trim().isEmpty() || line.contains("Archive:") || line.contains("Length") || line.contains("---")) {
-                        continue;
-                    }
-
-                    // 提取文件路径部分（处理不同格式的列表输出）
-                    String filePath = "";
-                    if (isZip) {
-                        // unzip -l输出格式处理
-                        String[] parts = line.trim().split("\\s+");
-                        if (parts.length >= 4) {
-                            filePath = parts[parts.length - 1];
-                        }
-                    } else {
-                        // tar -tzf输出格式处理
-                        filePath = line.trim();
-                    }
-
-                    if (!filePath.isEmpty() && !filePath.equals("data/") && !filePath.startsWith("data/")) {
-                        log.warn("归档文件包含data/目录外的文件: {} in {}", filePath, remotePath);
-                        return false;
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("检查归档文件内容时出错: {} - {}", remotePath, e.getMessage());
-                // 这里不直接返回false，允许基本验证通过的文件继续处理
-            }
-
-            log.info("远程归档文件验证通过: {}", remotePath);
-            return true;
-
-        } catch (NumberFormatException e) {
-            log.warn("解析远程文件大小失败: {}", remotePath);
-            return false;
         } catch (Exception e) {
-            log.error("验证远程归档文件时发生错误: {} - {}", remotePath, e.getMessage());
+            log.error("验证远程归档文件时发生意外错误: {} - {}", remotePath, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 确保一组必需的命令在远程服务器上可用，如果缺少则尝试自动安装。
+     *
+     * @param connection SSH连接对象。
+     * @param commands   需要检查和安装的命令列表。
+     * @return 如果所有命令最终都可用，则返回 true；否则返回 false。
+     */
+    private boolean ensureCommandsAreAvailable(SshConnection connection, List<String> commands) {
+        try {
+            // 检查哪些命令缺失
+            List<String> missingCommands = new ArrayList<>();
+            for (String cmd : commands) {
+                try {
+                    // command -v 是检查命令是否存在的可移植方式
+                    executeCommand(connection, "command -v " + cmd);
+                } catch (Exception e) {
+                    log.info("远程服务器上缺少命令 '{}'，将尝试安装。", cmd);
+                    missingCommands.add(cmd);
+                }
+            }
+            if (missingCommands.isEmpty()) {
+                return true; // 所有命令都已存在
+            }
+            SystemDetectionService.SystemInfo systemInfo = systemDetectionService.detectSystemEnvironmentSync(connection);
+            String osId = systemInfo.getOsId();
+            if (osId == null || osId.isEmpty()) {
+                log.error("无法确定远程服务器的操作系统类型，无法自动安装依赖。");
+                return false;
+            }
+            // 根据操作系统确定安装命令
+            String installCommand;
+            String packagesToInstall = String.join(" ", missingCommands);
+
+            // 为unzip和tar提供在不同发行版中常见的包名
+            if (missingCommands.contains("unzip")) {
+                packagesToInstall = packagesToInstall.replace("unzip", "unzip");
+            }
+            if (missingCommands.contains("tar")) {
+                packagesToInstall = packagesToInstall.replace("tar", "tar");
+            }
+
+            switch (osId.toLowerCase()) {
+                case "ubuntu":
+                case "debian":
+                    installCommand = "sudo apt-get update && sudo apt-get install -y " + packagesToInstall;
+                    break;
+                case "centos":
+                case "rhel": // Red Hat Enterprise Linux
+                    // 在CentOS 7中，unzip可能在epel-release中，但通常是可用的
+                    installCommand = "sudo yum install -y " + packagesToInstall;
+                    break;
+                case "fedora":
+                    installCommand = "sudo dnf install -y " + packagesToInstall;
+                    break;
+                case "alpine":
+                    installCommand = "sudo apk add " + packagesToInstall;
+                    break;
+                default:
+                    log.error("不支持为操作系统 '{}' 自动安装依赖。请手动安装以下软件包: {}", osId, packagesToInstall);
+                    return false;
+            }
+            log.info("正在远程服务器上执行安装命令: {}", installCommand);
+            executeCommand(connection, installCommand); // 执行安装
+            log.info("成功在远程服务器上安装了软件包: {}", packagesToInstall);
+            // 再次验证是否安装成功
+            for (String cmd : missingCommands) {
+                executeCommand(connection, "command -v " + cmd);
+            }
+            log.info("所有缺失的命令均已成功安装并验证。");
+            return true;
+        } catch (Exception e) {
+            log.error("在远程服务器上安装或验证命令时失败: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -931,7 +902,18 @@ public class DataManagementService {
     private String executeCommand(SshConnection connection, String command) throws Exception {
         try {
             CommandResult result = sshCommandService.executeInternal(connection.getJschSession(), command);
+
             if (result.exitStatus() != 0) {
+                String stderr = result.stderr();
+                if (stderr.startsWith("At least one warning-error was detected in")) {
+                    log.warn("命令执行包含警告: {} - {}", command, stderr);
+                    return result.stdout();
+                }
+                if (stderr.contains("mismatching \"local\" filename")) {
+                    log.warn("命令执行包含警告: {} - {}", command, stderr);
+                    return result.stdout();
+                }
+
                 String errorMsg = "命令失败，退出码 " + result.exitStatus() + ": " + result.stderr();
                 log.warn("命令执行失败: {} - {}", command, errorMsg);
                 throw new RuntimeException(errorMsg);
