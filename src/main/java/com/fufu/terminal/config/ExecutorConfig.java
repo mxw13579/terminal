@@ -64,7 +64,7 @@ public class ExecutorConfig implements WebMvcConfigurer {
         executor.initialize();
         return executor.getThreadPoolExecutor();
     }
-    
+
     /**
      * 创建MVC异步任务执行器
      */
@@ -87,7 +87,7 @@ public class ExecutorConfig implements WebMvcConfigurer {
     @Override
     public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
         configurer.setTaskExecutor(mvcTaskExecutor());
-        configurer.setDefaultTimeout(600000); // 10分钟超时，用于大文件传输
+        configurer.setDefaultTimeout(3600000); // 10分钟超时，用于大文件传输
     }
 
     /**

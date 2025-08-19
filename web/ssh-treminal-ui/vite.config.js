@@ -33,7 +33,8 @@ export default defineConfig({
 
         // 关键修复 #1: 我们告诉代理我们将自己处理请求体，以绕过其内部缓冲缺陷。
         selfHandleRequest: true,
-        timeout: 1800000,
+        timeout: 3600000,
+        proxyTimeout: 3600000,
 
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {

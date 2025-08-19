@@ -337,6 +337,7 @@ public class DataManagementService {
      */
     private boolean isValidRemoteArchive(SshConnection connection, String remotePath) {
         try {
+            connection.get
             // 1. 检查文件是否存在和大小
             String fileInfo = executeCommand(connection, String.format("stat -c '%%s' '%s' 2>/dev/null || echo 'not_found'", remotePath));
             if ("not_found".equals(fileInfo.trim())) {
@@ -366,7 +367,8 @@ public class DataManagementService {
                 try {
                     String zipTest = executeCommand(connection, String.format("unzip -t '%s' | head -10", remotePath));
                     if (!zipTest.contains("testing:") && !zipTest.contains("OK")) {
-                        log.warn("ZIP文件格式验证失败: {}", remotePath);
+
+                        log.warn("ZIP文件格式验证失败: {},zipTest{}", remotePath,zipTest);
                         return false;
                     }
                 } catch (Exception e) {

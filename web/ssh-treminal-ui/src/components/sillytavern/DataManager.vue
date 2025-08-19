@@ -642,6 +642,10 @@ export default {
         importing.value = false
 
         if (response.success) {
+          console.log('导入成功!')
+          // 停止保活机制
+          connectionManager.stopKeepAlive()
+          
           // 确保所有步骤都标记为完成
           importSteps.value.forEach((step, index) => {
             if (step.status !== 'completed') {
@@ -662,6 +666,10 @@ export default {
           // 清除选中的文件
           clearSelection()
         } else {
+          console.error('导入失败:', response.message)
+          // 停止保活机制
+          connectionManager.stopKeepAlive()
+          
           // 设置当前步骤为错误状态
           if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
             updateStepStatus(currentStep.value, 'error', 0)
@@ -678,6 +686,8 @@ export default {
         }
       } catch (error) {
         console.error('处理导入响应时出错:', error)
+        // 停止保活机制
+        connectionManager.stopKeepAlive()
         // 设置当前步骤为错误状态
         if (currentStep.value >= 0 && currentStep.value < importSteps.value.length) {
           updateStepStatus(currentStep.value, 'error', 0)
@@ -832,6 +842,9 @@ export default {
     }, { immediate: true })
 
     onUnmounted(() => {
+      // 停止保活机制
+      connectionManager.stopKeepAlive()
+      
       if (exportSubscription) exportSubscription.unsubscribe()
       if (importSubscription) importSubscription.unsubscribe()
       if (exportProgressSubscription) exportProgressSubscription.unsubscribe()
