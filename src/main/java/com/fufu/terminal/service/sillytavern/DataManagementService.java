@@ -337,7 +337,6 @@ public class DataManagementService {
      */
     private boolean isValidRemoteArchive(SshConnection connection, String remotePath) {
         try {
-            connection.get
             // 1. 检查文件是否存在和大小
             String fileInfo = executeCommand(connection, String.format("stat -c '%%s' '%s' 2>/dev/null || echo 'not_found'", remotePath));
             if ("not_found".equals(fileInfo.trim())) {
