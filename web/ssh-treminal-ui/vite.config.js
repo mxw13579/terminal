@@ -27,7 +27,7 @@ export default defineConfig({
     proxy: {
       // 代理API请求到后端 - 这是包含最终修复的配置
       '/api': {
-        target: 'http://localhost:8080', // 您的Spring Boot应用地址
+        target: 'http://localhost:8100', // 您的Spring Boot应用地址
         changeOrigin: true,
         secure: false,
 
@@ -63,7 +63,7 @@ export default defineConfig({
       },
       // 代理WebSocket连接到后端，这部分无需修改
       '/ws': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8100',
         ws: true,
         changeOrigin: true,
         secure: false

@@ -8,20 +8,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build**: `mvn clean package` - Compiles and packages the Spring Boot application
 - **Run**: `mvn spring-boot:run` - Starts the development server on port 8080
 - **Test**: `mvn test` - Runs unit tests
+- **Security scan**: `mvn org.owasp:dependency-check-maven:check` - OWASP dependency vulnerability scan
+- **Security tests**: `./run-security-tests.sh` - Runs security-focused test suite
 - **Clean**: `mvn clean` - Removes target directory and compiled artifacts
 
 ### Frontend (Vue 3 + Vite + TypeScript)
 Navigate to `web/ssh-treminal-ui/` directory:
 - **Install dependencies**: `npm install`
-- **Development server**: `npm run dev` - Starts Vite dev server with hot reload
+- **Development server**: `npm run dev` - Starts Vite dev server with hot reload on port 5174
 - **Build**: `npm run build` - Creates production build in TypeScript
 - **Build (dev)**: `npm run build:dev` - Development mode build
 - **Preview**: `npm run preview` - Preview production build locally
-- **Format code**: `npm run format` - Formats source code with Prettier
+- **Format code**: `npm run format` / `npm run format:check` - Formats source code with Prettier
 - **Lint**: `npm run lint` / `npm run lint:fix` - ESLint checking and fixing
 - **Type check**: `npm run type-check` - TypeScript type checking with vue-tsc
 - **Test**: `npm run test:unit` - Run unit tests with Vitest
-- **E2E Test**: `npm run test:e2e` - Run end-to-end tests with Playwright
+- **Test (watch)**: `npm run test:unit:watch` - Run tests in watch mode
+- **Test (coverage)**: `npm run test:unit:coverage` - Run tests with coverage report
+- **E2E Test**: `npm run test:e2e` / `npm run test:e2e:ui` - Run end-to-end tests with Playwright
 
 ## Architecture Overview
 
@@ -135,7 +139,7 @@ This application includes a complete Docker-based SillyTavern deployment and man
 ### Standard Development
 1. **Start backend**: `mvn spring-boot:run` from root directory
 2. **Start frontend**: `npm run dev` from `web/ssh-treminal-ui/` directory  
-3. **Access application**: Navigate to `http://localhost:5173` (Vite dev server with auto-port fallback)
+3. **Access application**: Navigate to `http://localhost:5174` (Vite dev server with auto-port fallback)
 4. **Backend APIs**: 
    - WebSocket STOMP: `ws://localhost:8080/ws/terminal`
    - HTTP Streaming: `http://localhost:8080/api/streaming/*`
@@ -150,18 +154,20 @@ This application includes a complete Docker-based SillyTavern deployment and man
 ## Key Configuration Files
 
 ### Backend Configuration
-- `application.properties` - Multi-environment configuration (dev/test/prod profiles)
+- `application.yml` - Multi-environment configuration (dev/test/prod profiles)
   - File transfer limits (up to 2GB configurable)
   - STOMP WebSocket settings with heartbeat configuration
   - Security policies per environment
   - Rate limiting and throttling settings
 - `WebSocketStompConfig.java` - STOMP endpoint configuration with security
 - `FileUploadConfig.java` - Multipart file handling configuration
+- `owasp-dependency-check-suppressions.xml` - Security scan suppressions
 
 ### Frontend Configuration  
 - `vite.config.js` - Development proxy configuration with streaming support
   - Critical streaming upload fixes with `selfHandleRequest: true`
   - Proper proxy pipe configuration for large file uploads
+  - Port configuration (default 5174 with auto-fallback)
 - `package.json` - Dependencies with TypeScript and testing frameworks
 - `tsconfig.json` - TypeScript configuration with strict type checking
 
