@@ -317,10 +317,14 @@
                   :deployment-progress="deploymentProgress"
                   :server-stats="systemStats"
                   :docker-containers="terminalDockerContainers"
+                  :available-versions="availableVersions"
+                  :is-loading-versions="isLoadingVersions"
+                  :version-error="versionError"
                   @validate-system="handleValidateSystem"
                   @deploy="handleDeploy"
                   @deployment-complete="handleDeploymentComplete"
                   @step-confirmed="handleStepConfirmed"
+                  @get-versions="handleGetVersions"
                 />
               </div>
 
@@ -403,6 +407,9 @@ const {
   systemChecking,
   isDeploying,
   deploymentProgress,
+  availableVersions,
+  isLoadingVersions,
+  versionError,
   getContainerStatus,
   performServiceAction,
   validateSystem,
@@ -410,6 +417,7 @@ const {
   startInteractiveDeployment,
   confirmDeploymentStep,
   skipDeploymentStep,
+  getAvailableVersions,
   initializeSillyTavernSubscriptions
 } = useSillyTavern()
 
@@ -814,6 +822,11 @@ const handleStepConfirmed = (confirmationData) => {
     console.log('调用跳过方法:', stepId)
     skipDeploymentStep(stepId, '用户选择跳过')
   }
+}
+
+const handleGetVersions = () => {
+  console.log('组件请求获取版本信息')
+  getAvailableVersions()
 }
 
 // 生命周期

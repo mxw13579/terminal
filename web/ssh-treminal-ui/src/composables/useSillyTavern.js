@@ -119,7 +119,7 @@ export function useSillyTavern(options = {}) {
                             handleLogsResponse(data);
                             break;
                         case 'version-info':
-                            handleVersionInfoResponse(data);
+                            handleVersionsResponse(data);
                             break;
                         case 'version-upgrade':
                             handleVersionUpgradeResponse(data);
@@ -200,7 +200,7 @@ export function useSillyTavern(options = {}) {
         client.subscribe('/user/queue/sillytavern/version-info', (message) => {
             try {
                 const data = JSON.parse(message.body);
-                handleVersionInfoResponse(data);
+                handleVersionsResponse(data);
             } catch (e) {
                 console.error('Error processing version info response:', e);
             }
@@ -575,18 +575,18 @@ export function useSillyTavern(options = {}) {
             if (newLines.length > 0) {
                 const currentLogs = new Set(logs.value);
                 const uniqueNewLines = newLines.filter(line => !currentLogs.has(line));
-                
+
                 if (uniqueNewLines.length > 0) {
                     logs.value = [...logs.value, ...uniqueNewLines];
                     console.log('添加去重后的日志，新增行数:', uniqueNewLines.length, '总长度:', logs.value.length);
-                    
+
                     // 特别标记最后一批数据
                     if (data.payload.isComplete) {
                         console.log('🚨 收到最后一批日志数据！isComplete=true，总日志数:', logs.value.length);
                     }
                 } else {
                     console.log('所有新日志都是重复的，跳过添加');
-                    
+
                     // 即使是重复数据，也要检查是否为最后批次
                     if (data.payload.isComplete) {
                         console.log('🚨 收到最后一批日志数据（重复数据）！isComplete=true，总日志数:', logs.value.length);
@@ -607,12 +607,12 @@ export function useSillyTavern(options = {}) {
                 } else if (data.payload && typeof data.payload === 'string') {
                     newLines = [data.payload];
                 }
-                
+
                 // 去重处理
                 if (newLines.length > 0) {
                     const currentLogs = new Set(logs.value);
                     const uniqueNewLines = newLines.filter(line => !currentLogs.has(line));
-                    
+
                     if (uniqueNewLines.length > 0) {
                         logs.value = [...logs.value, ...uniqueNewLines];
                     }
@@ -642,12 +642,12 @@ export function useSillyTavern(options = {}) {
             } else {
                 newLines = [`[UNKNOWN] ${JSON.stringify(data)}`];
             }
-            
+
             // 去重处理
             if (newLines.length > 0) {
                 const currentLogs = new Set(logs.value);
                 const uniqueNewLines = newLines.filter(line => !currentLogs.has(line));
-                
+
                 if (uniqueNewLines.length > 0) {
                     logs.value = [...logs.value, ...uniqueNewLines];
                 }
@@ -689,16 +689,16 @@ export function useSillyTavern(options = {}) {
         console.log('收到数据导出响应:', data);
         if (data.success && data.payload) {
             console.log('数据导出成功，准备下载');
-            
+
             // 构建下载URL
             const baseUrl = data.payload.downloadUrl;
             if (baseUrl) {
                 // 获取STOMP客户端
                 const client = getStompClient();
-                
+
                 // 获取sessionId - 优先使用connectionState中的currentSessionId
                 let sessionId = '';
-                
+
                 console.log('useSillyTavern调试信息:', {
                     'connectionState': connectionState,
                     'currentSessionId': connectionState?.currentSessionId,
@@ -707,7 +707,7 @@ export function useSillyTavern(options = {}) {
                     'client存在': !!client,
                     'client.connected': client?.connected
                 });
-                
+
                 if (connectionState?.currentSessionId) {
                     sessionId = connectionState.currentSessionId;
                 } else if (client?.ws?._websocket?.extensions?.sessionId) {
@@ -720,14 +720,14 @@ export function useSillyTavern(options = {}) {
                     console.error('无法获取sessionId，这可能导致下载失败');
                     sessionId = 'fallback_' + Math.random().toString(36).substr(2, 9);
                 }
-                
+
                 const separator = baseUrl.includes('?') ? '&' : '?';
                 // 确保使用后端API服务器的URL（端口8080），而不是前端开发服务器（端口5173）
-                const backendUrl = baseUrl.startsWith('/') 
+                const backendUrl = baseUrl.startsWith('/')
                     ? `${window.location.protocol}//${window.location.hostname}:8080${baseUrl}`
                     : baseUrl;
                 const downloadUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(sessionId)}`;
-                
+
                 console.log('自动下载URL详细信息:', {
                     baseUrl: baseUrl,
                     backendUrl: backendUrl,
@@ -736,14 +736,14 @@ export function useSillyTavern(options = {}) {
                     connectionStateSessionId: connectionState?.currentSessionId,
                     clientInfo: client ? 'STOMP客户端存在' : 'STOMP客户端不存在'
                 });
-                
+
                 // 防止重复下载 - 检查是否已经在下载中
                 if (window.__sillyTavernDownloading) {
                     console.log('下载已在进行中，跳过重复下载');
                     return;
                 }
                 window.__sillyTavernDownloading = true;
-                
+
                 // 自动触发下载
                 const link = document.createElement('a');
                 link.href = downloadUrl;
@@ -752,10 +752,10 @@ export function useSillyTavern(options = {}) {
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                
+
                 console.log('自动下载已触发');
                 onShowModal("数据导出成功，下载已开始", "导出完成");
-                
+
                 // 5秒后重置下载标志
                 setTimeout(() => {
                     window.__sillyTavernDownloading = false;
@@ -1085,7 +1085,7 @@ export function useSillyTavern(options = {}) {
     };
 
     // --- Public API Methods ---
-    
+
     // 启动实时日志
     const startRealtimeLogs = (containerName = 'sillytavern', maxLines = 1000) => {
         const client = getStompClient();
@@ -1100,15 +1100,15 @@ export function useSillyTavern(options = {}) {
         }
 
         console.log('🚀 启动实时日志，容器:', containerName, '最大行数:', maxLines);
-        
+
         // 启动前清空旧日志数据
         logs.value = [];
         console.log('✅ 已清空旧日志数据，当前长度:', logs.value.length);
-        
+
         isRealtimeLogsActive.value = true;
 
         const request = { containerName, maxLines };
-        
+
         try {
             if (typeof client.publish === 'function') {
                 client.publish({
@@ -1569,6 +1569,8 @@ export function useSillyTavern(options = {}) {
     };
 
     console.log('useSillyTavern: 单例状态已创建，logs引用:', !!logs, 'logs长度:', logs.value.length);
-    
+
     return api;
 }
+
+
