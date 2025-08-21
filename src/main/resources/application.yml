@@ -1,0 +1,306 @@
+# ===================================================================
+# 统一权威配置文件 (application.yml)
+# 该文件合并了 application.properties.back, .yaml, .yml 的所有配置
+# 并解决了所有冲突，以最大/最宽松的设置为准。
+# ===================================================================
+
+# -------------------------------------------------------------------
+# 服务器配置 (Server Configuration)
+# -------------------------------------------------------------------
+server:
+  port: 8100
+  servlet:
+    context-path: /
+  error:
+    include-stacktrace: never
+    include-message: always
+  # Tomcat特定配置，确保支持大文件和长连接
+  tomcat:
+    max-http-form-post-size: -1 # -1 表示不限制POST大小
+    max-swallow-size: -1        # -1 表示不限制内部缓冲区大小
+
+# -------------------------------------------------------------------
+# Spring Boot 核心配置 (Spring Core Configuration)
+# -------------------------------------------------------------------
+spring:
+  application:
+    name: terminal-application
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:development} # 默认激活 'development' 环境
+
+  # 关键修复：MVC异步请求配置
+  mvc:
+    async:
+      request-timeout: -1 # 核心修复：-1 表示永不超时，解决文件上传中断问题
+
+  # 注意：此应用不使用数据库，所有数据存储在内存中
+  # 数据库配置已移除，因为应用架构完全基于内存存储
+
+  # 文件上传配置 (统一为最大值)
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 2147483648          # 取最大值：2147483648 bytes
+      max-request-size: 2147483648       # 取最大值：2147483648 bytes
+      file-size-threshold: 10240   # 10240 bytes
+      resolve-lazily: false
+
+  # WebSocket & STOMP 配置
+  websocket:
+    sockjs:
+      heartbeat-time: 25000
+      disconnect-delay: 5000
+    stomp:
+      max-text-message-size: 2097152    # 2097152 bytes
+      max-binary-message-size: 2097152  # 2097152 bytes
+      max-message-buffer-size: 2097152  # 2097152 bytes
+      broker:
+        heartbeat:
+          send-interval: 25000
+          receive-interval: 25000
+
+# -------------------------------------------------------------------
+# 日志配置 (Logging Configuration)
+# -------------------------------------------------------------------
+logging:
+  level:
+    root: INFO
+    com.fufu.terminal: DEBUG # 取最宽松级别
+    org.springframework.web.socket: DEBUG # 取最宽松级别
+    org.springframework.messaging: DEBUG # 取最宽松级别
+    org.springframework.messaging.simp: INFO
+    org.springframework.web.socket.sockjs: INFO
+    com.jcraft.jsch: WARN
+    com.fufu.terminal.config.StompAuthenticationInterceptor: WARN # 默认WARN，dev profile会覆盖为DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+  file:
+    name: logs/terminal-application.log
+
+# -------------------------------------------------------------------
+# 自定义应用配置 (Custom Application Configuration)
+# -------------------------------------------------------------------
+terminal:
+  # 安全相关配置
+  security:
+    strict-host-checking: false # 取最宽松设置
+    allowed-origins: # 默认为空，允许所有来源，具体由profile覆盖
+    token-expiry-minutes: 30
+    key-length: 2048
+  # 速率限制配置
+  rate-limit:
+    connections-per-minute: 10
+    enabled: false
+
+# 文件传输服务配置
+file:
+  transfer:
+    max-file-size: 2147483648 # 2147483648
+    max-total-size: 2147483648 # 2147483648
+    chunk-size: 262144 # 262144
+    max-concurrent: 3
+    temp-dir: ${java.io.tmpdir}
+    throttle-bytes-per-second: 10485760 # 10485760
+
+# 线程池配置
+threadpool:
+  corePoolSize: 10
+  maxPoolSize: 100
+  queueCapacity: 50
+  awaitTerminationSeconds: 60
+  scheduledPoolSize: 2
+
+# -------------------------------------------------------------------
+# Actuator & 监控配置 (Monitoring Configuration)
+# -------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers,env,configprops,beans
+      base-path: /actuator
+      cors:
+        allowed-origins: "*"
+        allowed-methods: GET,POST
+        allowed-headers: "*"
+    enabled-by-default: true
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+      group:
+        custom:
+          include: terminal,db,diskSpace
+          show-details: always
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+      mode: full
+  health:
+    diskspace:
+      enabled: true
+      threshold: 10GB
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active}
+
+# ===================================================================
+# Profile-Specific Configurations
+# ===================================================================
+
+---
+# -------------------------------------------------------------------
+# 开发环境 (Development Profile)
+# -------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: development
+
+logging:
+  level:
+    com.fufu.terminal: DEBUG
+    org.springframework.web.socket: DEBUG
+    org.springframework.messaging: DEBUG
+    com.fufu.terminal.config.StompAuthenticationInterceptor: DEBUG
+
+terminal:
+  security:
+    strict-host-checking: false
+    allowed-origins: # 允许所有来源
+
+file:
+  transfer:
+    max-file-size: 2147483648 # 2147483648
+    max-total-size: 4294967296 # 4294967296
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+    env:
+      show-values: always
+
+---
+# -------------------------------------------------------------------
+# 测试环境 (Test Profile)
+# -------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: test
+
+logging:
+  level:
+    root: WARN
+    com.fufu.terminal: DEBUG # 取最宽松级别 DEBUG > INFO
+
+terminal:
+  security:
+    strict-host-checking: false
+    allowed-origins:
+    token-ttl-seconds: 60
+
+file:
+  transfer:
+    max-file-size: 2147483648 # 2147483648
+    max-total-size: 4294967296 # 4294967296
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+---
+# -------------------------------------------------------------------
+# 生产环境 (Production Profile)
+# -------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: production
+
+logging:
+  level:
+    root: INFO
+    com.fufu.terminal: INFO
+    org.springframework.messaging: INFO
+    org.springframework.web.socket: INFO
+    com.fufu.terminal.config.StompAuthenticationInterceptor: WARN
+
+terminal:
+  security:
+    strict-host-checking: true
+    allowed-origins: ${ALLOWED_ORIGINS:https://your-domain.com} # 推荐使用环境变量配置
+  rate-limit:
+    enabled: true
+    connections-per-minute: 5
+
+file:
+  transfer:
+    max-file-size: 2147483648 # 2147483648
+    max-total-size: 4294967296 # 4294967296
+    throttle-bytes-per-second: 5242880 # 5242880
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+    env:
+      show-values: never
+
+---
+# -------------------------------------------------------------------
+# Docker环境 (Docker Profile)
+# -------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+logging:
+  level:
+    root: INFO
+    com.fufu.terminal: INFO
+    org.springframework.messaging: INFO
+    org.springframework.web.socket: INFO
+    com.fufu.terminal.config.StompAuthenticationInterceptor: WARN
+
+terminal:
+  security:
+    strict-host-checking: false
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost,http://frontend,http://127.0.0.1}
+  rate-limit:
+    enabled: false
+    connections-per-minute: 10
+
+file:
+  transfer:
+    max-file-size: ${MAX_FILE_SIZE:2147483648}
+    max-total-size: ${MAX_TOTAL_SIZE:2147483648}
+    throttle-bytes-per-second: ${THROTTLE_BYTES_PER_SECOND:10485760}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      cors:
+        allowed-origins: "*"
+        allowed-methods: GET,POST
+        allowed-headers: "*"
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # Backend Spring Boot Application (无数据库版本)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: terminal-backend
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8100
+      
+      # Security settings
+      ALLOWED_ORIGINS: "http://localhost,http://frontend,http://127.0.0.1,http://localhost:80"
+      
+      # File transfer configuration
+      MAX_FILE_SIZE: "2147483648"
+      MAX_TOTAL_SIZE: "2147483648"
+      THROTTLE_BYTES_PER_SECOND: "10485760"
+      
+      # JVM optimization for container
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0"
+      
+    volumes:
+      - ./logs:/app/logs
+      - ./temp:/app/temp
+      - terminal_uploads:/app/uploads
+    networks:
+      - terminal-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Frontend Vue.js Application
+  frontend:
+    build:
+      context: ./web/ssh-treminal-ui
+      dockerfile: Dockerfile
+    container_name: terminal-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - terminal-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Nginx反向代理（生产环境推荐）
+  nginx-proxy:
+    image: nginx:1.25-alpine
+    container_name: terminal-nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/proxy.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - terminal-network
+    depends_on:
+      - frontend
+      - backend
+    profiles:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus监控（可选）
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: terminal-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - terminal-network
+    profiles:
+      - monitoring
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana仪表板（可选）
+  grafana:
+    image: grafana/grafana:latest
+    container_name: terminal-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - terminal-network
+    profiles:
+      - monitoring
+    depends_on:
+      - prometheus
+
+volumes:
+  terminal_uploads:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  terminal-network:
+    driver: bridge
