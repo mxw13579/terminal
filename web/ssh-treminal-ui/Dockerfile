@@ -107,6 +107,17 @@ http {
         }
         
         location /api/ {
+            # 处理OPTIONS预检请求
+            if ($request_method = 'OPTIONS') {
+                add_header Access-Control-Allow-Origin *;
+                add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS';
+                add_header Access-Control-Allow-Headers 'Origin, Authorization, Accept, Content-Type';
+                add_header Access-Control-Allow-Credentials true;
+                add_header Content-Length 0;
+                add_header Content-Type text/plain;
+                return 204;
+            }
+            
             proxy_pass http://backend:8100/api/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -119,6 +130,10 @@ http {
             proxy_connect_timeout 60s;
             proxy_send_timeout 3600s;
             client_max_body_size 2G;
+            
+            # 添加CORS头
+            add_header Access-Control-Allow-Origin * always;
+            add_header Access-Control-Allow-Credentials true always;
         }
         
         location /ws/ {
@@ -131,6 +146,12 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 86400;
+            
+            # 添加CORS头支持跨域WebSocket连接
+            add_header Access-Control-Allow-Origin *;
+            add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
+            add_header Access-Control-Allow-Headers "Origin, Authorization, Accept";
+            add_header Access-Control-Allow-Credentials true;
         }
         
         error_page 500 502 503 504 /50x.html;

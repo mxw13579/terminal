@@ -13,8 +13,8 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8100
       
-      # Security settings
-      ALLOWED_ORIGINS: "http://localhost,http://frontend,http://127.0.0.1,http://localhost:80,http://localhost:8080,http://localhost:8081"
+      # Security settings (支持所有IP地址访问，用于开发和测试)
+      ALLOWED_ORIGINS: "*"
       
       # File transfer configuration
       MAX_FILE_SIZE: "2147483648"
