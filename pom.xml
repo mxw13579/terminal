@@ -95,7 +95,6 @@
                 <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.fufu.terminal.TerminalApplication</mainClass>
-                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>
