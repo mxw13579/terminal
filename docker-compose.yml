@@ -14,7 +14,7 @@ services:
       SERVER_PORT: 8100
       
       # Security settings
-      ALLOWED_ORIGINS: "http://localhost,http://frontend,http://127.0.0.1,http://localhost:80,http://localhost:8080"
+      ALLOWED_ORIGINS: "http://localhost,http://frontend,http://127.0.0.1,http://localhost:80,http://localhost:8080,http://localhost:8081"
       
       # File transfer configuration
       MAX_FILE_SIZE: "2147483648"
@@ -53,7 +53,7 @@ services:
     container_name: terminal-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8081:80"
     networks:
       - terminal-network
     depends_on:
