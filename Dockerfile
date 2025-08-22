@@ -25,6 +25,7 @@ RUN apk add --no-cache \
     openssh-client \
     curl \
     bash \
+    su-exec \
     && rm -rf /var/cache/apk/*
 
 # Create application user for security
@@ -42,8 +43,8 @@ RUN mkdir -p /app/logs /app/temp /app/uploads && \
     chown -R appuser:appgroup /app && \
     chmod 755 /app/logs /app/temp /app/uploads
 
-# Switch to non-root user
-USER appuser
+# Don't switch to non-root user yet - handle permissions at runtime
+# USER appuser
 
 # Expose the application port
 EXPOSE 8100
@@ -55,5 +56,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # JVM optimization for containerized environment
 ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
-# Run the application
-CMD ["sh", "-c", "java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
+# Run the application with proper permission handling
+CMD ["sh", "-c", "chown -R appuser:appgroup /app/logs /app/temp /app/uploads 2>/dev/null || true; chmod 755 /app/logs /app/temp /app/uploads 2>/dev/null || true; exec su-exec appuser java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
