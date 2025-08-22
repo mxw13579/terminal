@@ -4,11 +4,16 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
+# Install build dependencies for native modules
+RUN apk add --no-cache python3 make g++ libc6-compat
+
 # Copy package files for dependency caching
 COPY package*.json ./
 
-# Install dependencies (including dev dependencies for build)
-RUN npm ci --silent
+# Clear npm cache and install dependencies with forced rebuild
+RUN npm cache clean --force && \
+    rm -rf node_modules package-lock.json && \
+    npm install --verbose
 
 # Copy source code
 COPY . .
