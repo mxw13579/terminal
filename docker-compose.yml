@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Backend Spring Boot Application (无数据库版本)
   backend:
