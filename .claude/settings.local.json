@@ -33,11 +33,21 @@
       "Bash(taskkill:*)",
       "Bash(start-frontend.cmd)",
       "Bash(git checkout:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(docker build:*)",
+      "Bash(docker scout:*)",
+      "Bash(npx bmad-method@latest install:*)",
+      "Bash(where npm)",
+      "Bash(\"C:\\Program Files\\nodejs\\npm.cmd\" exec bmad-method@latest install -f -d . -i claude-code)",
+      "Bash(\"C:\\Program Files\\nodejs\\npm.cmd\" install bmad-method@latest)",
+      "Bash(\"C:\\Program Files\\nodejs\\node.exe\" node_modules/bmad-method/tools/cli.js install -f -d . -i claude-code)",
+      "Bash(\"C:\\Program Files\\nodejs\\node.exe\" \"F:\\coding\\ai\\terminal\\node_modules\\bmad-method\\tools\\cli.js\" install -f -d . -i claude-code)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "additionalDirectories": [
-      "F:\\f\\coding\\ai"
+      "F:\\f\\coding\\ai",
+      "F:\\"
     ]
   }
 }

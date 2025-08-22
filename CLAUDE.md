@@ -1,215 +1,151 @@
 # CLAUDE.md
 
+## 变更记录 (Changelog)
+
+### 2025-08-22 16:05:35 - AI上下文初始化
+- 自动生成项目架构文档和模块索引
+- 识别出核心Spring Boot后端和Vue 3前端双架构
+- 完成模块级文档生成（后端、前端、SillyTavern管理、测试套件）
+- 建立覆盖率度量体系
+
+---
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Development Commands
+## 项目愿景
 
-### Backend (Spring Boot)
-- **Build**: `mvn clean package` - Compiles and packages the Spring Boot application
-- **Run**: `mvn spring-boot:run` - Starts the development server on port 8080
-- **Test**: `mvn test` - Runs unit tests
-- **Security scan**: `mvn org.owasp:dependency-check-maven:check` - OWASP dependency vulnerability scan
-- **Security tests**: `./run-security-tests.sh` - Runs security-focused test suite
-- **Clean**: `mvn clean` - Removes target directory and compiled artifacts
+**终端管理系统** - 一个基于Spring Boot + Vue 3的企业级SSH终端管理和AI服务部署平台，提供安全的远程终端访问、文件传输、系统监控以及SillyTavern Docker容器的完整生命周期管理。
 
-### Frontend (Vue 3 + Vite + TypeScript)
-Navigate to `web/ssh-treminal-ui/` directory:
-- **Install dependencies**: `npm install`
-- **Development server**: `npm run dev` - Starts Vite dev server with hot reload on port 5174
-- **Build**: `npm run build` - Creates production build in TypeScript
-- **Build (dev)**: `npm run build:dev` - Development mode build
-- **Preview**: `npm run preview` - Preview production build locally
-- **Format code**: `npm run format` / `npm run format:check` - Formats source code with Prettier
-- **Lint**: `npm run lint` / `npm run lint:fix` - ESLint checking and fixing
-- **Type check**: `npm run type-check` - TypeScript type checking with vue-tsc
-- **Test**: `npm run test:unit` - Run unit tests with Vitest
-- **Test (watch)**: `npm run test:unit:watch` - Run tests in watch mode
-- **Test (coverage)**: `npm run test:unit:coverage` - Run tests with coverage report
-- **E2E Test**: `npm run test:e2e` / `npm run test:e2e:ui` - Run end-to-end tests with Playwright
+## 架构总览
 
-## Architecture Overview
+本项目采用**前后端分离架构**，包含以下核心技术栈：
 
-This is an **advanced dual-component web application** with sophisticated enterprise features:
+### 后端技术栈 (Spring Boot 3.0.2)
+- **核心框架**: Spring Boot Web + WebSocket + WebFlux 
+- **通信协议**: STOMP over WebSocket + HTTP流式传输
+- **SSH操作**: JSch 0.1.55 提供SSH/SFTP功能
+- **安全机制**: RSA加密 + JWT令牌 + CORS策略
+- **监控观测**: Spring Actuator + Micrometer Prometheus
 
-### Backend: Spring Boot Multi-Service Architecture
-- **Main application**: `TerminalApplication.java` - Entry point with scheduling enabled
-- **Core STOMP Controllers**:
-  - `SshTerminalStompController.java` - Terminal operations via STOMP protocol
-  - `SftpStompController.java` - File transfer operations
-  - `MonitorStompController.java` - System monitoring
-  - `SillyTavernStompController.java` - SillyTavern Docker deployment management
-- **HTTP Controllers**:
-  - `TrueStreamingController.java` - HTTP streaming file transfers with `StreamingResponseBody`
-  - `StreamingFileController.java` - Alternative HTTP file operations
-  - `SecurityController.java` - RSA-encrypted credential authentication
-  - `SessionController.java` - Session management
-- **Advanced Services**:
-  - `StreamingFileService.java` & `TrueStreamingFileService.java` - Memory-efficient large file transfers
-  - `SshCommandService.java`, `SftpService.java`, `SshMonitorService.java` - Core SSH operations
-  - `StompSessionManager.java` - Centralized STOMP session management with security
-  - **SillyTavern Management Suite**: Full Docker-based AI deployment management
-- **Security & Configuration**:
-  - `WebSocketStompConfig.java` - STOMP WebSocket configuration with CORS policies
-  - `StompAuthenticationInterceptor.java` - RSA-based credential authentication
-  - `CryptoService.java` & `TokenVault.java` - Security token management
-  - `FileUploadConfig.java` - Multi-gigabyte file transfer configuration
+### 前端技术栈 (Vue 3.5.17 + TypeScript)
+- **核心框架**: Vue 3 Composition API + TypeScript 5.9.2
+- **构建工具**: Vite 7.0.0 + Vue DevTools
+- **状态管理**: Pinia 3.0.3
+- **通信**: STOMP.js + xterm.js 终端模拟
 
-### Frontend: Vue 3 + TypeScript Enterprise SPA
-- **Core Architecture**:
-  - TypeScript-first development with full type safety
-  - Pinia state management stores (`stores/`)
-  - Composition API with advanced composables
-  - Multiple routing with Vue Router (`views/`)
-- **Key Composables**:
-  - `useTerminal.js` - SSH terminal state and STOMP communication
-  - `useSillyTavern.js` & `useSillyTavernExtended.js` - Docker deployment management
-  - `useConnectionManager.js` - SSH connection lifecycle
-  - `useValidation.js` - Form validation utilities
-- **Primary Views & Components**:
-  - `Terminal.vue` - Main SSH terminal interface
-  - `Dashboard.vue` - Multi-service dashboard
-  - `SillyTavernConsole.vue` - AI deployment management interface
-  - **UI Component System**: Reusable base components (`components/ui/`)
-  - **SillyTavern Suite**: Complete Docker container management UI
-- **Services**:
-  - `streamingFile.js` - HTTP streaming file transfers with progress tracking
-  - `auth.js` & `crypto.js` - RSA encryption and secure authentication
-  - Advanced performance utilities and accessibility helpers
+## 模块结构图
 
-## Advanced Technical Patterns
+```mermaid
+graph TD
+    A["(根) Terminal项目"] --> B["后端模块 (src/main)"];
+    A --> C["前端模块 (web/ssh-treminal-ui)"];
+    A --> D["测试套件 (src/test)"];
+    A --> E["配置与部署"];
 
-### STOMP WebSocket Communication Protocol
-The application uses enterprise-grade STOMP over WebSocket with comprehensive message routing:
-- **Terminal Operations**: `/app/terminal/*` - Real-time terminal I/O, resizing
-- **File Transfer**: `/app/sftp/*` - SFTP operations with progress tracking
-- **System Monitoring**: `/app/monitor/*` - Real-time system metrics
-- **SillyTavern Management**: `/app/sillytavern/*` - Complete Docker lifecycle management
-- **Queue Subscriptions**: `/user/queue/*` - User-specific message queues
+    B --> F["核心控制器层"];
+    B --> G["服务业务层"];
+    B --> H["安全与配置层"];
+    B --> I["SillyTavern管理"];
+    
+    C --> J["视图组件"];
+    C --> K["状态管理"];
+    C --> L["服务层"];
+    C --> M["工具库"];
+    
+    D --> N["单元测试"];
+    D --> O["集成测试"];
+    D --> P["性能测试"];
+    
+    E --> Q["Docker部署"];
+    E --> R["环境配置"];
 
-### Dual File Transfer Architecture
-**1. STOMP-based Transfer** (Legacy/Compatibility):
-- WebSocket message-based for smaller files
-- Base64 encoding with chunked transfer
-- Real-time progress via STOMP messages
+    click B "./src/main/CLAUDE.md" "查看后端模块文档"
+    click C "./web/ssh-treminal-ui/CLAUDE.md" "查看前端模块文档"
+    click D "./src/test/CLAUDE.md" "查看测试套件文档"
+    click I "./src/main/java/com/fufu/terminal/service/sillytavern/CLAUDE.md" "查看SillyTavern管理文档"
+```
 
-**2. HTTP Streaming Transfer** (Primary):
-- `StreamingResponseBody` for memory-efficient large file handling
-- Direct binary streaming with progress tracking
-- Configurable throttling and concurrent transfer limits
-- Support for multi-gigabyte files (configurable up to 2GB per file)
+## 模块索引
 
-### Security & Authentication Architecture
-- **RSA Encryption**: Client-side public key encryption of SSH credentials
-- **Secure Token Exchange**: JWT-style tokens for session authentication
-- **STOMP Authentication Interceptor**: Custom authentication for WebSocket connections
-- **Environment-based Security**: Different security profiles for dev/test/production
-- **CORS Configuration**: Environment-specific cross-origin policies
+| 模块名称 | 路径 | 技术栈 | 职责描述 |
+|---------|------|--------|---------|
+| **后端核心** | `src/main` | Spring Boot 3.0.2 | SSH终端、SFTP传输、WebSocket通信、安全认证 |
+| **前端界面** | `web/ssh-treminal-ui` | Vue 3 + TS + Vite | 终端UI、文件管理、实时通信、SillyTavern控制台 |
+| **SillyTavern管理** | `src/main/java/.../sillytavern` | Docker API | AI服务容器部署、配置管理、版本控制、日志监控 |
+| **测试套件** | `src/test` | JUnit + Spring Test | 安全测试、集成测试、性能测试、用户体验测试 |
+| **部署配置** | `.` (根目录) | Docker + Maven | 容器化部署、环境配置、CI/CD脚本 |
 
-### State Management Patterns
-- **Frontend**: Pinia stores with TypeScript typing + Vue 3 Composition API
-- **Backend**: `ConcurrentHashMap`-based session management with thread-safe operations
-- **File Upload State**: Atomic progress tracking with cancellation support
-- **Connection Lifecycle**: Sophisticated connection management with automatic recovery
+## 运行与开发
 
-## SillyTavern Deployment Management
+### 快速启动
+```bash
+# 后端启动 (端口: 8100)
+mvn spring-boot:run
 
-This application includes a complete Docker-based SillyTavern deployment and management system:
+# 前端启动 (端口: 5174)  
+cd web/ssh-treminal-ui
+npm install && npm run dev
 
-### Features
-- **Automated Deployment**: One-click Docker container deployment
-- **System Requirements Validation**: Pre-deployment environment checking
-- **Interactive Deployment Wizard**: Step-by-step deployment with user confirmations
-- **Container Lifecycle Management**: Start, stop, restart, upgrade, delete operations
-- **Version Management**: Docker Hub integration for version updates
-- **Configuration Management**: Dynamic config file editing with validation
-- **Data Management**: Export/import functionality with progress tracking
-- **Real-time Logging**: Live log streaming with historical log access
-- **System Configuration**: Automatic mirror configuration for Chinese users
-- **Docker Installation**: Automated Docker installation with system detection
+# 应用访问
+open http://localhost:5174
+```
 
-### Technical Implementation
-- Geolocation-based mirror selection for optimal performance
-- Comprehensive system detection (Ubuntu, CentOS, etc.)
-- Advanced error handling and recovery mechanisms
-- Real-time progress updates via STOMP messaging
-- Background task management with proper resource cleanup
+### 核心端点
+- **WebSocket STOMP**: `ws://localhost:8100/ws/terminal`
+- **HTTP流式传输**: `http://localhost:8100/api/streaming/*`
+- **健康监控**: `http://localhost:8100/actuator/health`
 
-## Development Workflow
+## 测试策略
 
-### Standard Development
-1. **Start backend**: `mvn spring-boot:run` from root directory
-2. **Start frontend**: `npm run dev` from `web/ssh-treminal-ui/` directory  
-3. **Access application**: Navigate to `http://localhost:5174` (Vite dev server with auto-port fallback)
-4. **Backend APIs**: 
-   - WebSocket STOMP: `ws://localhost:8080/ws/terminal`
-   - HTTP Streaming: `http://localhost:8080/api/streaming/*`
-   - Regular HTTP: `http://localhost:8080/api/*`
+### 测试分层
+1. **单元测试**: 服务层逻辑、工具类、安全组件
+2. **集成测试**: STOMP通信、文件传输、Docker操作
+3. **性能测试**: 大文件传输、并发连接、内存使用
+4. **安全测试**: RSA加密、认证流程、CORS策略
 
-### Production Deployment
-- **Backend**: Standard Spring Boot JAR deployment
-- **Frontend**: Static assets served via web server with proxy configuration
-- **Configuration**: Environment-specific `application.properties` profiles
-- **Security**: Production CORS policies and strict host key checking
+### 测试覆盖重点
+- SillyTavern全生命周期管理
+- 文件传输中断恢复机制  
+- WebSocket连接稳定性
+- 多环境配置正确性
 
-## Key Configuration Files
+## 编码规范
 
-### Backend Configuration
-- `application.yml` - Multi-environment configuration (dev/test/prod profiles)
-  - File transfer limits (up to 2GB configurable)
-  - STOMP WebSocket settings with heartbeat configuration
-  - Security policies per environment
-  - Rate limiting and throttling settings
-- `WebSocketStompConfig.java` - STOMP endpoint configuration with security
-- `FileUploadConfig.java` - Multipart file handling configuration
-- `owasp-dependency-check-suppressions.xml` - Security scan suppressions
+### 后端规范 (Java)
+- **架构原则**: 分层架构，Controller -> Service -> Repository模式
+- **命名约定**: 
+  - Controller: `*StompController` / `*Controller`
+  - Service: `*Service`  
+  - DTO: `*Dto`
+- **异常处理**: 全局异常处理器 + 统一错误响应格式
+- **日志记录**: SLF4J + Logback，结构化JSON日志
 
-### Frontend Configuration  
-- `vite.config.js` - Development proxy configuration with streaming support
-  - Critical streaming upload fixes with `selfHandleRequest: true`
-  - Proper proxy pipe configuration for large file uploads
-  - Port configuration (default 5174 with auto-fallback)
-- `package.json` - Dependencies with TypeScript and testing frameworks
-- `tsconfig.json` - TypeScript configuration with strict type checking
+### 前端规范 (Vue 3 + TypeScript)
+- **组件命名**: PascalCase组件名，kebab-case文件名
+- **状态管理**: Pinia stores按功能模块划分
+- **TypeScript**: 严格类型检查，完整类型定义
+- **代码风格**: ESLint + Prettier自动格式化
 
-## Dependencies & Technology Stack
+## AI使用指引
 
-### Backend (Maven)
-- **Core**: Spring Boot 3.0.2 with Web, WebSocket, WebFlux, and Messaging starters
-- **SSH**: JSch 0.1.55 for SSH/SFTP operations
-- **Security**: Spring Boot Validation and custom RSA encryption
-- **Observability**: Spring Boot Actuator, Micrometer Prometheus registry
-- **Logging**: Logback with JSON structured logging support
-- **Utilities**: Lombok for boilerplate reduction
-- **Security**: OWASP Dependency Check Maven plugin
+### 开发任务类型
+1. **功能增强**: 重点关注WebSocket通信、文件传输优化
+2. **安全加固**: RSA加密实现、认证机制完善
+3. **性能调优**: 大文件处理、内存管理、并发控制
+4. **SillyTavern集成**: Docker API集成、容器生命周期管理
 
-### Frontend (npm)
-- **Core Framework**: Vue 3.5.17 with Composition API and TypeScript support
-- **Build System**: Vite 7.0.0 with Vue DevTools integration
-- **State Management**: Pinia 3.0.3 for TypeScript-first state management  
-- **Communication**: @stomp/stompjs 7.0.0 + SockJS for WebSocket connections
-- **Terminal**: xterm.js 5.3.0 with fit addon for terminal emulation
-- **Development**: 
-  - TypeScript 5.9.2 with Vue TSC for type checking
-  - ESLint + Prettier for code quality
-  - Vitest for unit testing  
-  - Playwright for E2E testing
-  - Webpack Bundle Analyzer for performance optimization
+### 关键约束
+- **安全第一**: 所有SSH凭据必须RSA加密传输
+- **内存安全**: 文件传输采用流式处理，避免内存溢出
+- **连接稳定**: WebSocket断线重连机制必须可靠
+- **多环境支持**: dev/test/prod配置文件完整性
 
-## Performance & Scalability Features
+### 代码修改注意事项
+- 修改文件传输配置需同时更新前后端
+- STOMP消息映射修改需更新前端对应的composables
+- Docker操作相关代码需考虑跨平台兼容性
+- 安全相关修改需同步更新测试用例
 
-- **Memory Management**: Streaming file transfers prevent memory overflow
-- **Concurrency Control**: Configurable concurrent transfer limits  
-- **Rate Limiting**: Bandwidth throttling for file operations
-- **Progress Tracking**: Real-time progress updates with speed calculations
-- **Resource Cleanup**: Automatic temporary file cleanup and connection management
-- **Background Processing**: Asynchronous operations with proper thread pool management
-- **Caching**: Service-level caching for frequently accessed data
+---
 
-## Security Considerations
-
-- **Credential Security**: RSA encryption prevents plaintext credential transmission
-- **Token Management**: Secure token generation and validation
-- **Environment Isolation**: Different security profiles for development vs production
-- **Connection Security**: SSH strict host key checking (configurable per environment)
-- **File Transfer Security**: Size limits and path validation to prevent abuse
-- **CORS Policies**: Environment-specific cross-origin configurations
+*本文档由AI自动生成和维护，最后更新: 2025-08-22 16:05:35*

@@ -38,8 +38,9 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 
 # Create necessary directories and set permissions
-RUN mkdir -p /app/logs /app/temp && \
-    chown -R appuser:appgroup /app
+RUN mkdir -p /app/logs /app/temp /app/uploads && \
+    chown -R appuser:appgroup /app && \
+    chmod 755 /app/logs /app/temp /app/uploads
 
 # Switch to non-root user
 USER appuser
