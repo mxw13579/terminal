@@ -1,5 +1,6 @@
 package com.fufu.terminal.dto.security;
 
+import com.fufu.terminal.constants.ValidationMessages;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -22,7 +23,7 @@ public class EncryptedCredentialsRequest {
      * RSA加密后的凭据数据（Base64编码）
      * 解密后应包含：host, port, user, password 等字段的JSON
      */
-    @NotBlank(message = "加密凭据数据不能为空")
+    @NotBlank(message = ValidationMessages.ENCRYPTED_DATA_NOT_BLANK)
     private String encryptedCredentials;
 
     /**

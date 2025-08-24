@@ -431,9 +431,10 @@ export class StreamingFileService {
             // 开发环境：使用相对路径，让Vite代理处理
             return ''; // 空字符串表示使用相对路径
         } else {
-            console.log('检测到生产环境，直接连接后端');
-            // 生产环境：直接连接到后端端口
-            return `${currentProtocol}//${currentHost}:8080`;
+            console.log('检测到生产环境，使用相对路径');
+            // 生产环境：使用相对路径，由Nginx等反向代理处理
+            // 这样可以自动适配任何部署环境，无需硬编码端口
+            return '';
         }
     }
     
@@ -461,8 +462,8 @@ export class StreamingFileService {
                             !this.backendBaseUrl;
         
         if (isDevelopment && BYPASS_VITE_PROXY) {
-            console.log(`开发环境 - 直接连接后端: http://localhost:8080${path}`);
-            return `http://localhost:8080${path}`;
+            console.log(`开发环境 - 直接连接后端: http://localhost:8100${path}`);
+            return `http://localhost:8100${path}`;
         } else if (isDevelopment) {
             console.log(`开发环境 - 使用Vite代理: ${path}`);
             return path;
@@ -1060,16 +1061,16 @@ export class StreamingFileService {
                 
                 if (testError.message.includes('Failed to fetch') || testError.name === 'TypeError') {
                     errorMessage += `当前运行在端口 ${window.location.port}，请检查:\n`;
-                    errorMessage += `1. 后端是否运行在端口8080\n`;
+                    errorMessage += `1. 后端是否运行在端口8100\n`;
                     errorMessage += `2. Vite开发服务器代理配置\n`;
                     errorMessage += `3. 重启前端开发服务器试试\n`;
                     errorMessage += `4. 检查网络连接和防火墙\n\n`;
                     errorMessage += `调试信息:\n`;
                     errorMessage += `- 前端地址: ${window.location.href}\n`;
                     errorMessage += `- 请求URL: ${this.getApiUrl('/api/files/upload')}\n`;
-                    errorMessage += `- 后端目标: http://localhost:8080\n`;
+                    errorMessage += `- 后端目标: http://localhost:8100\n`;
                 } else {
-                    errorMessage += `请检查后端是否运行在端口8080\n`;
+                    errorMessage += `请检查后端是否运行在端口8100\n`;
                 }
                 
                 throw new Error(errorMessage);
@@ -1178,7 +1179,7 @@ export class StreamingFileService {
                     
                     // 根据不同的错误状态提供更具体的错误信息
                     if (xhr.readyState === 0) {
-                        errorMessage = '无法连接到服务器。请检查:\n1. 后端服务是否在端口8080运行\n2. 网络连接是否正常\n3. 防火墙设置';
+                        errorMessage = '无法连接到服务器。请检查:\n1. 后端服务是否在端口8100运行\n2. 网络连接是否正常\n3. 防火墙设置';
                     } else if (xhr.status === 0) {
                         errorMessage = 'CORS错误或服务器不可达。请检查后端服务状态。';
                     }
@@ -1203,7 +1204,7 @@ export class StreamingFileService {
                 console.log('typeof uploadUrl:', typeof uploadUrl);
                 console.log('uploadUrl.startsWith("http"):', uploadUrl.startsWith('http'));
                 console.log('window.location.origin:', window.location.origin);
-                console.log('Vite代理预期行为: 相对路径/api/files/upload应该被代理到http://localhost:8080/api/files/upload');
+                console.log('Vite代理预期行为: 相对路径/api/files/upload应该被代理到http://localhost:8100/api/files/upload');
                 
                 console.log('FormData 内容:', {
                     sessionId,
@@ -1329,12 +1330,12 @@ export class StreamingFileService {
             };
             
             if (!testResponse.ok) {
-                diagnosis.recommendations.push('后端服务未响应，请检查后端是否运行在端口8080');
+                diagnosis.recommendations.push('后端服务未响应，请检查后端是否运行在端口8100');
             }
         } catch (e) {
             diagnosis.backendConnection = { error: e.message };
             diagnosis.recommendations.push('无法连接后端服务，请检查:');
-            diagnosis.recommendations.push('1. 后端服务是否运行在端口8080');
+            diagnosis.recommendations.push('1. 后端服务是否运行在端口8100');
             diagnosis.recommendations.push('2. 前端代理配置是否正确 (vite.config.js)');
             diagnosis.recommendations.push('3. 防火墙是否阻止了连接');
         }

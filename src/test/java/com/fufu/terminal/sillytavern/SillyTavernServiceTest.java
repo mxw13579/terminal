@@ -223,9 +223,9 @@ class SillyTavernServiceTest {
         GeolocationDetectionService.GeolocationInfo chineseLocation = 
                 GeolocationDetectionService.GeolocationInfo.builder()
                 .countryCode("CN")
-                .countryName("China")
                 .useChineseMirror(true)
-                .detectionMethod("IP API")
+                .detectionSuccess(true)
+                .mirrorRecommendation("阿里云镜像")
                 .build();
 
         SystemConfigurationService.SystemConfigResult configResult = 
@@ -264,9 +264,9 @@ class SillyTavernServiceTest {
         GeolocationDetectionService.GeolocationInfo usLocation = 
                 GeolocationDetectionService.GeolocationInfo.builder()
                 .countryCode("US")
-                .countryName("United States")
                 .useChineseMirror(false)
-                .detectionMethod("IP API")
+                .detectionSuccess(true)
+                .mirrorRecommendation("Docker官方源")
                 .build();
 
         SystemConfigurationService.SystemConfigResult configResult = 

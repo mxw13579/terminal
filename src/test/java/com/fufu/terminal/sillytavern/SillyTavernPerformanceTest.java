@@ -163,7 +163,7 @@ class SillyTavernPerformanceTest {
         }
 
         // 验证WebSocket消息发送性能
-        verify(messagingTemplate, atLeast(concurrentSessions * 3)).convertAndSend(anyString(), any());
+        verify(messagingTemplate, atLeast(concurrentSessions * 3)).convertAndSend(anyString(), (Object) any());
 
         System.out.printf("性能测试结果: %d个并发会话，总用时%dms，内存使用%dMB%n", 
                 concurrentSessions, totalTime, memoryUsed / 1024 / 1024);
@@ -180,7 +180,7 @@ class SillyTavernPerformanceTest {
         doAnswer(invocation -> {
             messageCount.incrementAndGet();
             return null;
-        }).when(messagingTemplate).convertAndSend(anyString(), any());
+        }).when(messagingTemplate).convertAndSend(anyString(), (Object) any());
 
         InteractiveDeploymentDto.RequestDto request = InteractiveDeploymentDto.RequestDto.builder()
                 .deploymentMode("trust")
@@ -248,9 +248,10 @@ class SillyTavernPerformanceTest {
         long startTime = System.currentTimeMillis();
 
         for (int i = 0; i < concurrentInstalls; i++) {
+            final int installIndex = i; // 创建final副本供lambda使用
             CompletableFuture<DockerInstallationService.DockerInstallationResult> future = 
                     dockerInstallationService.installDocker(sshConnection, systemInfo, false, 
-                            progress -> System.out.println("安装" + i + ": " + progress));
+                            progress -> System.out.println("安装" + installIndex + ": " + progress));
             installFutures.add(future);
         }
 
@@ -453,7 +454,8 @@ class SillyTavernPerformanceTest {
                 GeolocationDetectionService.GeolocationInfo.builder()
                 .countryCode("US")
                 .useChineseMirror(false)
-                .detectionMethod("快速检测")
+                .detectionSuccess(true)
+                .mirrorRecommendation("Docker官方源")
                 .build();
 
         when(geolocationService.detectGeolocation(any(), any()))
@@ -512,7 +514,7 @@ class SillyTavernPerformanceTest {
         when(sillyTavernDeploymentService.deploySillyTavern(any(), any(), anyBoolean(), any()))
                 .thenReturn(CompletableFuture.completedFuture(
                         SillyTavernDeploymentService.SillyTavernDeploymentResult.builder()
-                        .success(true).message("部署完成").containerId("test-container").build()));
+                        .success(true).message("部署完成").containerName("test-container").build()));
 
         // 外网访问配置
         when(externalAccessService.configureExternalAccess(any(), any(), any()))

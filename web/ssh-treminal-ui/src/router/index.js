@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from '../views/Dashboard.vue'
-import Terminal from '../views/Terminal.vue'
-import SillyTavernConsole from '../views/SillyTavernConsole.vue'
+
+// 路由懒加载优化 - 代码分割和性能提升
+const Dashboard = () => import('../views/Dashboard.vue')
+const Terminal = () => import('../views/Terminal.vue')
+const SillyTavernConsole = () => import('../views/SillyTavernConsole.vue')
 
 const routes = [
   {

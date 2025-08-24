@@ -1,5 +1,6 @@
 package com.fufu.terminal.dto;
 
+import com.fufu.terminal.constants.ValidationMessages;
 import lombok.Data;
 import jakarta.validation.constraints.NotBlank;
 
@@ -16,7 +17,7 @@ public class SftpListDto {
      * 目录路径
      * 要列出文件的目录路径，默认为当前目录"."，不能为空白字符串
      */
-    @NotBlank(message = "目录路径不能为空")
+    @NotBlank(message = ValidationMessages.DIRECTORY_PATH_NOT_BLANK)
     private String path = ".";
     
     /**

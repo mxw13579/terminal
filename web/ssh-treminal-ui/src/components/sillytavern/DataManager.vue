@@ -48,7 +48,7 @@
             </div>
             <div class="download-info">
               <div class="file-info">
-                <span class="file-name">{{ exportResult.fileName }}</span>
+                <span class="file-name">{{ exportResult.fileName || exportResult.filename || '导出文件' }}</span>
                 <span class="file-size">{{ formatFileSize(exportResult.sizeBytes) }}</span>
               </div>
               <a
@@ -399,6 +399,7 @@ export default {
     const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
 
     const formatFileSize = (bytes) => {
+      if (bytes == null || bytes === undefined || isNaN(bytes)) return '0 字节'
       if (bytes === 0) return '0 字节'
       const k = 1024
       const sizes = ['字节', 'KB', 'MB', 'GB']
@@ -621,7 +622,7 @@ export default {
         exportProgress.value = 100
 
         if (response.success) {
-          exportResult.value = response
+          exportResult.value = response.payload
           exportStatus.value = 'Export completed successfully'
         } else {
           errorMessage.value = response.message || 'Export failed'
@@ -874,10 +875,12 @@ export default {
 
       const separator = exportResult.value.downloadUrl.includes('?') ? '&' : '?';
 
-      // 确保使用后端API服务器的URL（端口8080），而不是前端开发服务器（端口5173）
+      // 生产环境自动适配：如果是相对路径则使用当前域名
       const baseUrl = exportResult.value.downloadUrl;
       const backendUrl = baseUrl.startsWith('/')
-        ? `${window.location.protocol}//${window.location.hostname}:8080${baseUrl}`
+        ? (import.meta.env.PROD 
+            ? baseUrl // 生产环境使用相对路径，由反向代理处理
+            : `${window.location.protocol}//${window.location.hostname}:8100${baseUrl}`) // 开发环境直连8100端口
         : baseUrl;
       const fullUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(realSessionId)}`;
 

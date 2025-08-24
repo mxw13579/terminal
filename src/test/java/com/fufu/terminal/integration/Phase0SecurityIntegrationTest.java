@@ -370,7 +370,7 @@ class Phase0SecurityIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isInternalServerError())
-                    .andExpected(jsonPath("$.success").value(false));
+                    .andExpect(jsonPath("$.success").value(false));
         }
         
         @Test
@@ -505,7 +505,13 @@ class Phase0SecurityIntegrationTest {
     private void assumePublicKeyExists() {
         if (testPublicKey == null) {
             try {
-                step1_shouldGetPublicKeySuccessfully();
+                // 获取公钥用于测试
+                MvcResult result = mockMvc.perform(get("/api/security/public-key"))
+                        .andExpect(status().isOk())
+                        .andReturn();
+                        
+                PublicKeyResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), PublicKeyResponse.class);
+                testPublicKey = response.getPublicKey();
             } catch (Exception e) {
                 fail("无法获取测试所需的公钥: " + e.getMessage());
             }

@@ -1,5 +1,6 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fufu.terminal.constants.SillyTavernConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.dto.sillytavern.DeploymentInfoDto;
 import com.fufu.terminal.model.CommandResult;
@@ -28,11 +29,11 @@ import java.util.function.Consumer;
 public class SillyTavernDeploymentService {
 
     /** SillyTavern容器名 */
-    private static final String CONTAINER_NAME = "sillytavern";
+    private static final String CONTAINER_NAME = SillyTavernConstants.DEFAULT_CONTAINER_NAME;
     /** Watchtower容器名 */
     private static final String WATCHTOWER_NAME = "watchtower";
     /** 部署目录 */
-    private static final String DEPLOYMENT_PATH = "/data/docker/sillytavern";
+    private static final String DEPLOYMENT_PATH = SillyTavernConstants.DEPLOYMENT_PATH;
     /** docker-compose文件名 */
     private static final String DOCKER_COMPOSE_FILE = DEPLOYMENT_PATH + "/docker-compose.yaml";
     /** Docker网络名 */

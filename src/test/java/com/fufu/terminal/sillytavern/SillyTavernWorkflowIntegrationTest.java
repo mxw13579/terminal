@@ -57,6 +57,21 @@ class SillyTavernWorkflowIntegrationTest {
     private DataManagementService dataManagementService;
     
     @Mock
+    private InteractiveDeploymentService interactiveDeploymentService;
+    
+    @Mock
+    private SystemConfigurationService systemConfigurationService;
+    
+    @Mock
+    private DockerInstallationService dockerInstallationService;
+    
+    @Mock
+    private SystemDetectionService systemDetectionService;
+    
+    @Mock
+    private DockerHubApiService dockerHubApiService;
+    
+    @Mock
     private DockerVersionService dockerVersionService;
 
     @Mock
@@ -86,6 +101,11 @@ class SillyTavernWorkflowIntegrationTest {
             dockerVersionService,
             realTimeLogService,
             dataManagementService,
+            interactiveDeploymentService,
+            systemConfigurationService,
+            dockerInstallationService,
+            systemDetectionService,
+            dockerHubApiService,
             sessionManager,
             messagingTemplate
         );
@@ -188,7 +208,7 @@ class SillyTavernWorkflowIntegrationTest {
         controller.handleStatusRequest(headerAccessor);
 
         // 验证所有消息模板调用
-        verify(messagingTemplate, atLeast(4)).convertAndSendToUser(anyString(), anyString(), any());
+        verify(messagingTemplate, atLeast(4)).convertAndSendToUser(anyString(), anyString(), (Object) any());
     }
 
     // ===== 配置管理工作流测试 =====
@@ -242,9 +262,9 @@ class SillyTavernWorkflowIntegrationTest {
 
         // 验证配置管理消息
         verify(messagingTemplate, times(2)).convertAndSendToUser(
-                eq(TEST_SESSION_ID), contains("config"), any());
+                eq(TEST_SESSION_ID), contains("config"), (Object) any());
         verify(messagingTemplate, times(1)).convertAndSend(
-                contains("config-updated-user"), any());
+                contains("config-updated-user"), (Object) any());
     }
 
     // ===== 数据管理工作流测试 =====
@@ -294,7 +314,7 @@ class SillyTavernWorkflowIntegrationTest {
                 eq("sillytavern-backup.zip"), any());
 
         // 验证数据管理消息
-        verify(messagingTemplate, atLeast(2)).convertAndSend(contains("progress-user"), any());
+        verify(messagingTemplate, atLeast(2)).convertAndSend(contains("progress-user"), (Object) any());
     }
 
     // ===== 版本管理工作流测试 =====
@@ -349,11 +369,11 @@ class SillyTavernWorkflowIntegrationTest {
 
         // 验证版本管理消息
         verify(messagingTemplate).convertAndSendToUser(
-                eq(TEST_SESSION_ID), contains("version-info"), any());
+                eq(TEST_SESSION_ID), contains("version-info"), (Object) any());
         verify(messagingTemplate, atLeast(1)).convertAndSend(
-                contains("version-upgrade-progress-user"), any());
+                contains("version-upgrade-progress-user"), (Object) any());
         verify(messagingTemplate, atLeast(1)).convertAndSend(
-                contains("cleanup-images-user"), any());
+                contains("cleanup-images-user"), (Object) any());
     }
 
     // ===== 实时日志监控工作流测试 =====
@@ -406,11 +426,11 @@ class SillyTavernWorkflowIntegrationTest {
 
         // 验证日志监控消息
         verify(messagingTemplate).convertAndSendToUser(
-                eq(TEST_SESSION_ID), eq("/queue/sillytavern/realtime-logs-started"), any());
+                eq(TEST_SESSION_ID), eq("/queue/sillytavern/realtime-logs-started"), (Object) any());
         verify(messagingTemplate).convertAndSendToUser(
-                eq(TEST_SESSION_ID), eq("/queue/sillytavern/history-logs"), any());
+                eq(TEST_SESSION_ID), eq("/queue/sillytavern/history-logs"), (Object) any());
         verify(messagingTemplate).convertAndSendToUser(
-                eq(TEST_SESSION_ID), eq("/queue/sillytavern/realtime-logs-stopped"), any());
+                eq(TEST_SESSION_ID), eq("/queue/sillytavern/realtime-logs-stopped"), (Object) any());
     }
 
     // ===== 完整维护工作流测试 =====
@@ -494,7 +514,7 @@ class SillyTavernWorkflowIntegrationTest {
         verify(dockerVersionService).cleanupUnusedImages(sshConnection);
 
         // 验证发送了所有相关消息
-        verify(messagingTemplate, atLeast(6)).convertAndSendToUser(anyString(), anyString(), any());
+        verify(messagingTemplate, atLeast(6)).convertAndSendToUser(anyString(), anyString(), (Object) any());
     }
 
     // ===== 错误检测和恢复工作流测试 =====
@@ -551,7 +571,7 @@ class SillyTavernWorkflowIntegrationTest {
         verify(sillyTavernService, times(2)).deployContainer(eq(sshConnection), eq(deploymentRequest), any());
 
         // 应该有错误和成功消息
-        verify(messagingTemplate, atLeast(4)).convertAndSendToUser(anyString(), anyString(), any());
+        verify(messagingTemplate, atLeast(4)).convertAndSendToUser(anyString(), anyString(), (Object) any());
     }
 
     // ===== 并发用户操作测试 =====
@@ -608,7 +628,7 @@ class SillyTavernWorkflowIntegrationTest {
 
             // 验证所有用户都得到了独立处理
             verify(messagingTemplate, times(CONCURRENT_USERS))
-                    .convertAndSendToUser(anyString(), contains("status"), any());
+                    .convertAndSendToUser(anyString(), contains("status"), (Object) any());
 
         } finally {
             executor.shutdown();

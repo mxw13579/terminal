@@ -47,6 +47,21 @@ class SillyTavernStompControllerTest {
     private DataManagementService dataManagementService;
     
     @Mock
+    private InteractiveDeploymentService interactiveDeploymentService;
+    
+    @Mock
+    private SystemConfigurationService systemConfigurationService;
+    
+    @Mock
+    private DockerInstallationService dockerInstallationService;
+    
+    @Mock
+    private SystemDetectionService systemDetectionService;
+    
+    @Mock
+    private DockerHubApiService dockerHubApiService;
+    
+    @Mock
     private StompSessionManager sessionManager;
     
     @Mock
@@ -73,6 +88,11 @@ class SillyTavernStompControllerTest {
             dockerVersionService,
             realTimeLogService,
             dataManagementService,
+            interactiveDeploymentService,
+            systemConfigurationService,
+            dockerInstallationService,
+            systemDetectionService,
+            dockerHubApiService,
             sessionManager,
             messagingTemplate
         );
@@ -268,7 +288,7 @@ class SillyTavernStompControllerTest {
 
     @Test
     @DisplayName("应该处理配置获取请求并返回完整配置信息")
-    void testHandleGetConfiguration() {
+    void testHandleGetConfiguration() throws Exception {
         // Given
         ConfigurationDto expectedConfig = new ConfigurationDto();
         expectedConfig.setContainerName("sillytavern");
@@ -291,7 +311,7 @@ class SillyTavernStompControllerTest {
         verify(configurationService).readConfiguration(sshConnection, "sillytavern");
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/config-user" + TEST_SESSION_ID),
-                argThat(message -> {
+                (Object) argThat(message -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> msg = (java.util.Map<String, Object>) message;
                     return msg.get("success").equals(true) && 
@@ -302,7 +322,7 @@ class SillyTavernStompControllerTest {
 
     @Test
     @DisplayName("应该处理配置更新请求并执行自动重启")
-    void testHandleUpdateConfigurationWithRestart() {
+    void testHandleUpdateConfigurationWithRestart() throws Exception {
         // Given
         ConfigurationDto updateRequest = new ConfigurationDto();
         updateRequest.setContainerName("sillytavern");
@@ -327,7 +347,7 @@ class SillyTavernStompControllerTest {
         verify(configurationService).updateConfigurationWithRestart(sshConnection, "sillytavern", updateRequest);
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/config-updated-user" + TEST_SESSION_ID),
-                argThat(response -> {
+                (Object) argThat(response -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> resp = (java.util.Map<String, Object>) response;
                     return resp.get("success").equals(true) &&
@@ -339,7 +359,7 @@ class SillyTavernStompControllerTest {
 
     @Test
     @DisplayName("应该处理配置验证失败的情况")
-    void testHandleUpdateConfigurationValidationFailure() {
+    void testHandleUpdateConfigurationValidationFailure() throws Exception {
         // Given
         ConfigurationDto invalidRequest = new ConfigurationDto();
         invalidRequest.setUsername("admin123"); // 包含数字的无效用户名
@@ -360,7 +380,7 @@ class SillyTavernStompControllerTest {
         verify(configurationService, never()).updateConfigurationWithRestart(any(), any(), any());
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/config-updated-user" + TEST_SESSION_ID),
-                argThat(response -> {
+                (Object) argThat(response -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> resp = (java.util.Map<String, Object>) response;
                     return resp.get("success").equals(false) &&
@@ -388,7 +408,7 @@ class SillyTavernStompControllerTest {
         verify(realTimeLogService).startLogStream(TEST_SESSION_ID, "sillytavern", 1000);
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/realtime-logs-started-user" + TEST_SESSION_ID),
-                argThat(message -> {
+                (Object) argThat(message -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> msg = (java.util.Map<String, Object>) message;
                     return msg.get("success").equals(true) && 
@@ -410,7 +430,7 @@ class SillyTavernStompControllerTest {
         verify(realTimeLogService).stopLogStream(TEST_SESSION_ID);
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/realtime-logs-stopped-user" + TEST_SESSION_ID),
-                argThat(message -> {
+                (Object) argThat(message -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> msg = (java.util.Map<String, Object>) message;
                     return msg.get("success").equals(true) && 
@@ -421,7 +441,7 @@ class SillyTavernStompControllerTest {
 
     @Test
     @DisplayName("应该处理历史日志获取请求")
-    void testHandleGetHistoryLogs() {
+    void testHandleGetHistoryLogs() throws Exception {
         // Given
         java.util.Map<String, Object> request = new java.util.HashMap<>();
         request.put("containerName", "sillytavern");
@@ -449,7 +469,7 @@ class SillyTavernStompControllerTest {
         verify(realTimeLogService).getHistoryLogs(sshConnection, "sillytavern", 500, "all");
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/history-logs-user" + TEST_SESSION_ID),
-                argThat(message -> {
+                (Object) argThat(message -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> msg = (java.util.Map<String, Object>) message;
                     return msg.get("success").equals(true) && 
@@ -460,7 +480,7 @@ class SillyTavernStompControllerTest {
 
     @Test
     @DisplayName("应该验证日志行数参数")
-    void testHandleGetHistoryLogsInvalidLineCount() {
+    void testHandleGetHistoryLogsInvalidLineCount() throws Exception {
         // Given - 无效的行数（超出范围）
         java.util.Map<String, Object> request = new java.util.HashMap<>();
         request.put("containerName", "sillytavern");
@@ -507,7 +527,7 @@ class SillyTavernStompControllerTest {
         // 验证进度消息会被发送
         verify(messagingTemplate, atLeastOnce()).convertAndSend(
                 eq("/queue/sillytavern/export-progress-user" + TEST_SESSION_ID),
-                any()
+                (Object) any()
         );
     }
 
@@ -538,7 +558,7 @@ class SillyTavernStompControllerTest {
         // 验证进度消息会被发送
         verify(messagingTemplate, atLeastOnce()).convertAndSend(
                 eq("/queue/sillytavern/import-progress-user" + TEST_SESSION_ID),
-                any()
+                (Object) any()
         );
     }
 
@@ -568,7 +588,7 @@ class SillyTavernStompControllerTest {
         // 验证失败消息会被发送
         verify(messagingTemplate, atLeastOnce()).convertAndSend(
                 eq("/queue/sillytavern/import-user" + TEST_SESSION_ID),
-                argThat(response -> {
+                (Object) argThat(response -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> resp = (java.util.Map<String, Object>) response;
                     return resp.get("success").equals(false);
@@ -600,7 +620,7 @@ class SillyTavernStompControllerTest {
         verify(dockerVersionService).getVersionInfo(sshConnection, "sillytavern");
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/version-info-user" + TEST_SESSION_ID),
-                argThat(message -> {
+                (Object) argThat(message -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> msg = (java.util.Map<String, Object>) message;
                     return msg.get("success").equals(true) && 
@@ -637,7 +657,7 @@ class SillyTavernStompControllerTest {
         // 验证进度消息会被发送
         verify(messagingTemplate, atLeastOnce()).convertAndSend(
                 eq("/queue/sillytavern/version-upgrade-progress-user" + TEST_SESSION_ID),
-                any()
+                (Object) any()
         );
     }
 
@@ -654,7 +674,7 @@ class SillyTavernStompControllerTest {
         verify(dockerVersionService).cleanupUnusedImages(sshConnection);
         verify(messagingTemplate).convertAndSend(
                 eq("/queue/sillytavern/cleanup-images-user" + TEST_SESSION_ID),
-                argThat(response -> {
+                (Object) argThat(response -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> resp = (java.util.Map<String, Object>) response;
                     return resp.get("success").equals(true) &&
@@ -689,7 +709,7 @@ class SillyTavernStompControllerTest {
         // 验证失败消息会被发送
         verify(messagingTemplate, atLeastOnce()).convertAndSend(
                 eq("/queue/sillytavern/version-upgrade-user" + TEST_SESSION_ID),
-                argThat(response -> {
+                (Object) argThat(response -> {
                     @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> resp = (java.util.Map<String, Object>) response;
                     return resp.get("success").equals(false);

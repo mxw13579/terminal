@@ -3,7 +3,7 @@ package com.fufu.terminal.dto.sillytavern;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,10 +13,10 @@ import java.util.List;
  * 包含当前版本、最新版本和可用版本列表信息
  */
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class VersionInfoDto {
+public class VersionInfoDto extends BaseSillyTavernDto {
     
     /**
      * 容器名称

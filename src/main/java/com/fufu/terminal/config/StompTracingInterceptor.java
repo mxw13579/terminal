@@ -59,8 +59,16 @@ public class StompTracingInterceptor implements ChannelInterceptor {
                 "stomp_" + command.toLowerCase()
             );
             
-            // 将关联 ID 添加到消息头中
-            accessor.addNativeHeader("X-Correlation-ID", correlationId);
+            // 检查消息头是否可变，避免"Already immutable"异常
+            try {
+                // 如果访问器是可变的，则添加关联ID到消息头
+                if (accessor.isMutable()) {
+                    accessor.addNativeHeader("X-Correlation-ID", correlationId);
+                }
+            } catch (IllegalStateException e) {
+                // 如果消息头已经不可变，跳过添加头信息，但不影响追踪功能
+                log.debug("消息头已不可变，跳过添加关联ID头信息: {}", e.getMessage());
+            }
             
             log.debug("STOMP 消息追踪设置: correlationId={}, sessionId={}, destination={}, command={}", 
                      correlationId, correlationIdService.maskSensitiveData(sessionId), destination, command);

@@ -1,0 +1,600 @@
+/**
+ * 响应式工具类和无障碍优化
+ * 扩展现有的设计系统，添加实用的工具类
+ */
+
+/* ===== 响应式工具类 ===== */
+
+/* 响应式显示控制 */
+.show-mobile-only {
+  display: block;
+}
+
+.show-tablet-up,
+.show-desktop-up,
+.show-large-up {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .hide-mobile-up {
+    display: none;
+  }
+  
+  .show-tablet-up {
+    display: block;
+  }
+}
+
+@media (min-width: 768px) {
+  .hide-tablet-up {
+    display: none;
+  }
+  
+  .show-desktop-up {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hide-desktop-up {
+    display: none;
+  }
+  
+  .show-large-up {
+    display: block;
+  }
+}
+
+/* 响应式Flexbox */
+.flex-responsive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .flex-responsive {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.flex-responsive-reverse {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .flex-responsive-reverse {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+/* 响应式Grid */
+.grid-responsive {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-responsive {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.grid-responsive-4 {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .grid-responsive-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-responsive-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* 响应式间距 */
+.space-y-responsive > * + * {
+  margin-top: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .space-y-responsive > * + * {
+    margin-top: var(--space-6);
+  }
+}
+
+.space-x-responsive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .space-x-responsive {
+    flex-direction: row;
+    gap: var(--space-6);
+  }
+}
+
+/* 响应式文字大小 */
+.text-responsive-sm {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+@media (min-width: 768px) {
+  .text-responsive-sm {
+    font-size: var(--font-size-sm);
+  }
+}
+
+.text-responsive-base {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+
+@media (min-width: 768px) {
+  .text-responsive-base {
+    font-size: var(--font-size-base);
+  }
+}
+
+.text-responsive-lg {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-tight);
+}
+
+@media (min-width: 768px) {
+  .text-responsive-lg {
+    font-size: var(--font-size-lg);
+  }
+}
+
+.text-responsive-xl {
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (min-width: 768px) {
+  .text-responsive-xl {
+    font-size: var(--font-size-xl);
+  }
+}
+
+/* ===== 无障碍工具类 ===== */
+
+/* 屏幕阅读器专用 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* 跳过链接 */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: var(--color-primary);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  text-decoration: none;
+  border-radius: var(--radius-base);
+  z-index: 9999;
+  font-weight: var(--font-weight-medium);
+  transition: top var(--duration-200) var(--ease-out);
+}
+
+.skip-link:focus {
+  top: 6px;
+}
+
+/* 焦点指示器增强 */
+.focus-enhanced:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-base);
+}
+
+.focus-enhanced-inset:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-base);
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .contrast-enhanced {
+    border: 2px solid currentColor;
+  }
+  
+  .contrast-border {
+    border: 1px solid currentColor;
+  }
+  
+  .contrast-outline {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+/* 减少动画支持 */
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  .motion-reduce {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 强制动画（仅在用户明确允许时） */
+@media (prefers-reduced-motion: no-preference) {
+  .motion-safe {
+    animation: inherit;
+    transition: inherit;
+  }
+}
+
+/* ===== 交互状态工具类 ===== */
+
+/* 悬停效果 */
+.hover-lift {
+  transition: transform var(--duration-200) var(--ease-out),
+              box-shadow var(--duration-200) var(--ease-out);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.hover-scale {
+  transition: transform var(--duration-200) var(--ease-out);
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+}
+
+.hover-brighten {
+  transition: filter var(--duration-200) var(--ease-out);
+}
+
+.hover-brighten:hover {
+  filter: brightness(1.1);
+}
+
+/* 触摸友好的交互区域 */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.touch-target-large {
+  min-height: 56px;
+  min-width: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== 布局工具类 ===== */
+
+/* Flexbox工具 */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-start {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.flex-end {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+.flex-nowrap {
+  flex-wrap: nowrap;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.flex-row {
+  flex-direction: row;
+}
+
+/* Grid工具 */
+.grid-center {
+  display: grid;
+  place-items: center;
+}
+
+.grid-auto-fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--space-4);
+}
+
+.grid-auto-fill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+/* ===== 可见性和状态工具类 ===== */
+
+/* 加载状态 */
+.loading {
+  position: relative;
+  color: transparent;
+}
+
+.loading::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1em;
+  height: 1em;
+  margin: -0.5em 0 0 -0.5em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 禁用状态 */
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* 选中状态 */
+.selected {
+  background-color: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ===== 实用工具类 ===== */
+
+/* 截断文本 */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 长单词换行 */
+.break-words {
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.break-all {
+  word-break: break-all;
+}
+
+/* 内容居中 */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+.container-sm {
+  max-width: 640px;
+}
+
+.container-md {
+  max-width: 768px;
+}
+
+.container-lg {
+  max-width: 1024px;
+}
+
+.container-xl {
+  max-width: 1280px;
+}
+
+/* ===== 打印样式 ===== */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+  
+  * {
+    color: black !important;
+    background: white !important;
+    box-shadow: none !important;
+  }
+}
+
+/* ===== 深色模式工具类 ===== */
+.dark-hidden {
+  display: block;
+}
+
+.dark-visible {
+  display: none;
+}
+
+[data-theme="dark"] .dark-hidden {
+  display: none;
+}
+
+[data-theme="dark"] .dark-visible {
+  display: block;
+}
+
+/* ===== 状态指示器 ===== */
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.status-indicator::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.status-success {
+  background-color: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.status-error {
+  background-color: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.status-warning {
+  background-color: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.status-info {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+/* ===== 进度条 ===== */
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: var(--color-primary);
+  border-radius: var(--radius-full);
+  transition: width var(--duration-300) var(--ease-out);
+}
+
+.progress-animated {
+  background-image: linear-gradient(
+    45deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.2) 25%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 50%,
+    transparent 75%,
+    rgba(255, 255, 255, 0.2) 75%,
+    rgba(255, 255, 255, 0.2)
+  );
+  background-size: 1rem 1rem;
+  animation: progress-slide 1s linear infinite;
+}
+
+@keyframes progress-slide {
+  0% { background-position-x: 0; }
+  100% { background-position-x: 1rem; }
+}

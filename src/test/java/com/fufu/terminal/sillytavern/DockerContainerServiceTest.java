@@ -5,6 +5,8 @@ import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
 import com.fufu.terminal.service.sillytavern.DockerContainerService;
+import com.fufu.terminal.service.sillytavern.ConfigurationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jcraft.jsch.Session;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,6 +36,12 @@ class DockerContainerServiceTest {
     private SshCommandService sshCommandService;
     
     @Mock
+    private ObjectMapper objectMapper;
+    
+    @Mock
+    private ConfigurationService configurationService;
+    
+    @Mock
     private SshConnection sshConnection;
     
     @Mock
@@ -43,7 +51,7 @@ class DockerContainerServiceTest {
     
     @BeforeEach
     void setUp() {
-        dockerContainerService = new DockerContainerService(sshCommandService);
+        dockerContainerService = new DockerContainerService(sshCommandService, objectMapper, configurationService);
         when(sshConnection.getJschSession()).thenReturn(jschSession);
     }
 
@@ -234,11 +242,10 @@ class DockerContainerServiceTest {
                 .thenReturn(new CommandResult(0, expectedContainerId, ""));
         
         // When
-        String result = dockerContainerService.createContainer(
+        dockerContainerService.createContainer(
                 sshConnection, containerName, image, port, dataPath);
         
         // Then
-        assertEquals(expectedContainerId, result);
         verify(sshCommandService).executeCommand(eq(jschSession), contains("mkdir -p " + dataPath));
         verify(sshCommandService).executeCommand(eq(jschSession), 
                 contains("run -d --name " + containerName + " -p " + port + ":8000"));

@@ -339,7 +339,7 @@ class SillyTavernErrorHandlingTest {
                         new RuntimeException("ZIP文件损坏：无法解压缩")));
 
         // When & Then
-        CompletableFuture<Void> future = dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback);
+        CompletableFuture<Boolean> future = dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback);
 
         ExecutionException exception = assertThrows(ExecutionException.class, () -> {
             future.get(5, TimeUnit.SECONDS);
@@ -382,7 +382,7 @@ class SillyTavernErrorHandlingTest {
                         new RuntimeException("数据导入失败且回滚失败：备份文件也已损坏")));
 
         // When & Then
-        CompletableFuture<Void> future = dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback);
+        CompletableFuture<Boolean> future = dataManagementService.importData(sshConnection, containerName, uploadedFileName, progressCallback);
 
         ExecutionException exception = assertThrows(ExecutionException.class, () -> {
             future.get(5, TimeUnit.SECONDS);
@@ -562,11 +562,8 @@ class SillyTavernErrorHandlingTest {
     @DisplayName("应该处理意外服务中断")
     void testUnexpectedServiceInterruption() throws Exception {
         // Given - 服务操作被中断
-        when(sillyTavernService.startContainer(sshConnection))
-                .thenAnswer(invocation -> {
-                    Thread.currentThread().interrupt();  // 模拟中断
-                    throw new InterruptedException("服务操作被中断");
-                });
+        doThrow(new InterruptedException("服务操作被中断"))
+                .when(sillyTavernService).startContainer(sshConnection);
 
         // When & Then
         Exception exception = assertThrows(Exception.class, () -> {

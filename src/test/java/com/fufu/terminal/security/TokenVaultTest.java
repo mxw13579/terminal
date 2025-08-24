@@ -534,6 +534,17 @@ class TokenVaultTest {
             assertTrue(stats.contains("检索总数: " + (getRetrievedCountFromStats(stats))), "应包含检索总数");
         }
         
+        private int getCreatedCountFromStats() {
+            String stats = tokenVault.getStats();
+            // 解析创建总数
+            String[] parts = stats.split("创建总数: ");
+            if (parts.length > 1) {
+                String[] numParts = parts[1].split(",");
+                return Integer.parseInt(numParts[0]);
+            }
+            return 0;
+        }
+        
         private int getRetrievedCountFromStats(String stats) {
             String[] parts = stats.split("检索总数: ");
             if (parts.length > 1) {

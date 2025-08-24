@@ -1,5 +1,7 @@
 package com.fufu.terminal.controller;
 
+import com.fufu.terminal.helper.StompControllerHelper;
+import com.fufu.terminal.helper.StompExceptionHandler;
 import com.fufu.terminal.dto.MonitorStartDto;
 import com.fufu.terminal.dto.MonitorStopDto;
 import com.fufu.terminal.model.SshConnection;
@@ -41,10 +43,10 @@ public class MonitorStompController {
             @Valid MonitorStartDto message,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        String sessionId = getSessionId(headerAccessor);
+        String sessionId = headerAccessor.getSessionId();
         log.info("收到启动监控请求，sessionId: {}，频率: {}s", sessionId, message.getFrequencySeconds());
 
-        SshConnection connection = getConnectionOrNotifyError(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) {
             return;
         }
@@ -54,8 +56,7 @@ public class MonitorStompController {
             stompMonitoringService.startMonitoring(sessionId, connection);
             log.info("监控启动成功，sessionId: {}", sessionId);
         } catch (Exception e) {
-            log.error("启动监控失败，sessionId: {}，原因: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "启动监控失败: " + e.getMessage());
+            StompExceptionHandler.handleException(sessionId, e, sessionManager, "启动监控");
         }
     }
 
@@ -70,10 +71,10 @@ public class MonitorStompController {
             @Valid MonitorStopDto message,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        String sessionId = getSessionId(headerAccessor);
+        String sessionId = headerAccessor.getSessionId();
         log.info("收到停止监控请求，sessionId: {}", sessionId);
 
-        SshConnection connection = getConnectionOrNotifyError(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) {
             return;
         }
@@ -83,34 +84,9 @@ public class MonitorStompController {
             stompMonitoringService.stopMonitoring(sessionId, connection);
             log.info("监控已停止，sessionId: {}", sessionId);
         } catch (Exception e) {
-            log.error("停止监控失败，sessionId: {}，原因: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "停止监控失败: " + e.getMessage());
+            StompExceptionHandler.handleException(sessionId, e, sessionManager, "停止监控");
         }
     }
 
-    /**
-     * 根据 sessionId 获取 SSH 连接，若不存在则发送错误消息给客户端。
-     *
-     * @param sessionId WebSocket 会话 ID
-     * @return SshConnection 实例，若不存在则返回 null
-     */
-    private SshConnection getConnectionOrNotifyError(String sessionId) {
-        SshConnection connection = sessionManager.getConnection(sessionId);
-        if (connection == null) {
-            log.warn("未找到 SSH 连接，sessionId: {}", sessionId);
-            sessionManager.sendErrorMessage(sessionId, "SSH 连接尚未建立");
-            return null;
-        }
-        return connection;
-    }
 
-    /**
-     * 从消息头访问器中获取 sessionId。
-     *
-     * @param headerAccessor WebSocket 消息头访问器
-     * @return sessionId 字符串
-     */
-    private String getSessionId(SimpMessageHeaderAccessor headerAccessor) {
-        return headerAccessor.getSessionId();
-    }
 }

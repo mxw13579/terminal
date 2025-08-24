@@ -3,7 +3,7 @@ package com.fufu.terminal.dto.sillytavern;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.experimental.SuperBuilder;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
@@ -15,10 +15,10 @@ import jakarta.validation.constraints.Max;
  * @author lizelin
  */
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LogRequestDto {
+public class LogRequestDto extends BaseSillyTavernDto {
     
     /**
      * 日志天数

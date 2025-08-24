@@ -140,6 +140,7 @@ public class ExternalAccessService {
 
             // 验证用户名密码格式
             if (!isValidCredentials(username, password)) {
+                log.error("用户名或密码格式错误 ：{} ，{}", username, password);
                 throw new RuntimeException("用户名或密码格式不正确（不能为纯数字且不能为空）");
             }
         }

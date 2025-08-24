@@ -1,0 +1,91 @@
+# Docker ignore file for SSH Terminal Application
+
+# Maven build artifacts
+target/
+*.jar
+*.war
+*.ear
+
+# Node.js dependencies and build artifacts  
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# SSL certificates and keys
+*.key
+*.crt
+*.pem
+ssl/
+
+# Database files (if any local ones)
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Documentation (optional - comment out if you want to include)
+# *.md
+# docs/
+
+# Large files and uploads
+uploads/
+*.iso
+*.img
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Backup and monitoring scripts output
+backups/
+health_report_*.txt
+docker-backup.sh
+docker-monitor.sh

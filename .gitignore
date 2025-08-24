@@ -1,11 +1,29 @@
-HELP.md
+# 通用
+*.class
+*.log
+*.gz
+*.bak
+*.back
+*.tmp
+*.swp
+*.swo
+*.DS_Store
+*.iml
+
+# Java
 target/
+build/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
 
+# Spring Boot
 application.yaml
 application.yml
+
+# IDE
 ### STS ###
 .apt_generated
 .classpath
@@ -16,7 +34,7 @@ application.yml
 .sts4-cache
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -27,9 +45,46 @@ application.yml
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
 ### VS Code ###
 .vscode/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/package-lock.json
+/node_modules/.package-lock.json
+
+# 日志
+/logs/
+*.log
+*.gz
+
+# 个人/临时/备份
+/.bmad-core/
+/.claude/
+/.xcodemap/
+/src/main/resources/*.back
+/docker-backup.sh
+/docker-monitor.sh
+/generate-ssl.sh
+
+# 业务相关
+/src/main/java/com/fufu/terminal/service/sillytavern/CLAUDE.md
+/src/main/CLAUDE.md
+/src/test/CLAUDE.md
+/web/ssh-treminal-ui/CLAUDE.md
+/src/main/java/com/fufu/terminal/constants/SillyTavernConstants.class
+
+# 其他
+HELP.md
+
+# 可选：如果你需要保留某些被忽略目录下的特定文件，可以用 ! 例外规则
+# !src/main/resources/application.yaml
+
+/.claude/
+/package.json
+/monitoring/prometheus.yml
+/nginx/proxy.conf

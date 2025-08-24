@@ -58,8 +58,8 @@ public class InteractiveDeploymentService {
             "package_manager_config",
             "docker_installation",
             "docker_mirror_config",
-            "sillytavern_deployment",
             "external_access_config",
+            "sillytavern_deployment",
             "service_validation",
             "deployment_complete"
     );
@@ -331,11 +331,11 @@ public class InteractiveDeploymentService {
             case "docker_mirror_config":
                 executeDockerMirrorConfig(sessionId, connection, step);
                 break;
-            case "sillytavern_deployment":
-                executeSillyTavernDeployment(sessionId, connection, step);
-                break;
             case "external_access_config":
                 executeExternalAccessConfig(sessionId, connection, step);
+                break;
+            case "sillytavern_deployment":
+                executeSillyTavernDeployment(sessionId, connection, step);
                 break;
             case "service_validation":
                 executeServiceValidation(sessionId, connection, step);
@@ -708,18 +708,21 @@ public class InteractiveDeploymentService {
         String username = getStringValue(customConfig, "username", "");
         String password = getStringValue(customConfig, "password", "");
 
-        // 如果启用外网访问但没有提供用户名密码，则生成随机凭据
+        // 从customConfig中获取凭据（可能来自外网访问配置步骤生成的随机凭据）
+        // 如果外网访问配置步骤已生成随机凭据，则直接使用；否则检查是否需要生成
         if (enableExternalAccess && (username.isEmpty() || password.isEmpty())) {
-            ExternalAccessService.ExternalAccessCredentials randomCredentials = 
+            // 这种情况不应该发生，因为外网访问配置步骤已经在前面处理了凭据生成
+            // 但为了安全起见，仍然提供后备逻辑
+            ExternalAccessService.ExternalAccessCredentials randomCredentials =
                 externalAccessService.generateRandomCredentials();
             username = randomCredentials.getUsername();
             password = randomCredentials.getPassword();
-            
-            // 将生成的凭据保存到customConfig中，以便后续步骤使用
+
+            // 将生成的凭据保存到customConfig中
             customConfig.put("username", username);
             customConfig.put("password", password);
-            
-            progressCallback.accept("已生成随机访问凭据: 用户名=" + username);
+
+            progressCallback.accept("警告: 外网访问凭据未找到，重新生成: 用户名=" + username);
         }
 
         // 创建部署配置 - 使用用户提供的配置或生成的随机凭据
@@ -779,7 +782,7 @@ public class InteractiveDeploymentService {
         step.setProgress(20);
         sendDeploymentProgress(sessionId);
 
-        // 从部署状态中获取配置信息（包含已生成的随机凭据）
+        // 从部署状态中获取配置信息
         InteractiveDeploymentDto.StatusDto status = deploymentStates.get(sessionId);
         Map<String, Object> customConfig = status != null && status.getRequest() != null ?
             status.getRequest().getCustomConfig() : new HashMap<>();
@@ -787,14 +790,36 @@ public class InteractiveDeploymentService {
         // 提取配置信息
         String port = getStringValue(customConfig, "port", "8000");
         boolean enableExternalAccess = getBooleanValue(customConfig, "enableExternalAccess", false);
+        String authMode = getStringValue(customConfig, "authMode", "random");
         String username = getStringValue(customConfig, "username", "");
         String password = getStringValue(customConfig, "password", "");
 
-        // 创建外网访问配置 - 使用与部署步骤相同的凭据
+        // 如果启用外网访问且需要生成随机凭据
+        if (enableExternalAccess && ("random".equals(authMode) || username.isEmpty() || password.isEmpty())) {
+            step.setMessage("生成随机访问凭据...");
+            step.setProgress(40);
+            sendDeploymentProgress(sessionId);
+
+            ExternalAccessService.ExternalAccessCredentials randomCredentials =
+                externalAccessService.generateRandomCredentials();
+            username = randomCredentials.getUsername();
+            password = randomCredentials.getPassword();
+
+            // 将生成的凭据保存到customConfig中，以便后续SillyTavern部署步骤使用
+            customConfig.put("username", username);
+            customConfig.put("password", password);
+
+            addStepLog(step, "已生成随机访问凭据: 用户名=" + username);
+            step.setMessage("随机凭据已生成，配置外网访问...");
+            step.setProgress(60);
+            sendDeploymentProgress(sessionId);
+        }
+
+        // 创建外网访问配置
         ExternalAccessService.ExternalAccessConfig accessConfig =
                 ExternalAccessService.ExternalAccessConfig.builder()
                         .enableExternalAccess(enableExternalAccess)
-                        .useRandomCredentials(false)
+                        .useRandomCredentials(false) // 这里设为false，因为我们已经处理了凭据生成
                         .username(username)
                         .password(password)
                         .port(port)
@@ -1128,8 +1153,8 @@ public class InteractiveDeploymentService {
                 "package_manager_config", "包管理器配置",
                 "docker_installation", "Docker安装",
                 "docker_mirror_config", "Docker镜像源配置",
-                "sillytavern_deployment", "SillyTavern部署",
                 "external_access_config", "外网访问配置",
+                "sillytavern_deployment", "SillyTavern部署",
                 "service_validation", "服务验证",
                 "deployment_complete", "部署完成"
         );

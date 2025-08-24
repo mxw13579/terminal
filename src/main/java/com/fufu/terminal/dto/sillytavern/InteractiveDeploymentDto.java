@@ -1,5 +1,6 @@
 package com.fufu.terminal.dto.sillytavern;
 
+import com.fufu.terminal.constants.ValidationMessages;
 import lombok.Data;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
@@ -29,8 +30,27 @@ public class InteractiveDeploymentDto {
          * 部署模式
          * 部署模式，可选值："trusted" | "confirmation"
          */
-        @NotBlank(message = "部署模式不能为空")
+        @NotBlank(message = ValidationMessages.DEPLOYMENT_MODE_NOT_BLANK)
         private String deploymentMode; // "trusted" | "confirmation"
+        
+        /**
+         * 容器名称
+         * 要部署的容器名称
+         */
+        private String containerName;
+        
+        /**
+         * 端口号
+         * SillyTavern服务监听的端口号
+         */
+        private String port;
+        
+        /**
+         * 是否自动确认所有步骤
+         * 标识是否自动确认所有需要用户确认的步骤，默认为false
+         */
+        @Builder.Default
+        private boolean autoConfirmAll = false;
         
         /**
          * 用户自定义配置
@@ -65,21 +85,21 @@ public class InteractiveDeploymentDto {
          * 步骤ID
          * 步骤的唯一标识符
          */
-        @NotBlank(message = "步骤ID不能为空")
+        @NotBlank(message = ValidationMessages.STEP_ID_NOT_BLANK)
         private String stepId; // 步骤标识
         
         /**
          * 步骤名称
          * 步骤的显示名称
          */
-        @NotBlank(message = "步骤名称不能为空")
+        @NotBlank(message = ValidationMessages.STEP_NAME_NOT_BLANK)
         private String stepName; // 步骤名称
         
         /**
          * 步骤状态
          * 步骤的当前状态，可选值："pending" | "running" | "completed" | "failed" | "waiting_confirmation"
          */
-        @NotBlank(message = "步骤状态不能为空")
+        @NotBlank(message = ValidationMessages.STEP_STATUS_NOT_BLANK)
         private String status; // pending | running | completed | failed | waiting_confirmation
         
         /**
@@ -139,14 +159,14 @@ public class InteractiveDeploymentDto {
          * 步骤ID
          * 要确认的步骤的唯一标识符
          */
-        @NotBlank(message = "步骤ID不能为空")
+        @NotBlank(message = ValidationMessages.STEP_ID_NOT_BLANK)
         private String stepId; // 步骤标识
         
         /**
          * 用户操作
          * 用户的确认操作类型，可选值："confirm" | "skip" | "cancel"
          */
-        @NotBlank(message = "用户操作不能为空")
+        @NotBlank(message = ValidationMessages.USER_OPERATION_NOT_BLANK)
         private String action; // "confirm" | "skip" | "cancel"
         
         /**
@@ -174,21 +194,21 @@ public class InteractiveDeploymentDto {
          * 会话ID
          * 部署会话的唯一标识符
          */
-        @NotBlank(message = "会话ID不能为空")
+        @NotBlank(message = ValidationMessages.SESSION_ID_NOT_BLANK)
         private String sessionId; // 会话标识
         
         /**
          * 部署模式
          * 部署的模式类型
          */
-        @NotBlank(message = "部署模式不能为空")
+        @NotBlank(message = ValidationMessages.DEPLOYMENT_MODE_NOT_BLANK)
         private String deploymentMode; // 部署模式
         
         /**
          * 步骤列表
          * 所有部署步骤状态的列表
          */
-        @NotNull(message = "步骤列表不能为空")
+        @NotNull(message = ValidationMessages.STEP_LIST_NOT_NULL)
         private List<StepDto> steps; // 所有步骤状态
         
         /**
@@ -313,21 +333,21 @@ public class InteractiveDeploymentDto {
          * 步骤ID
          * 需要用户确认的步骤的唯一标识符
          */
-        @NotBlank(message = "步骤ID不能为空")
+        @NotBlank(message = ValidationMessages.STEP_ID_NOT_BLANK)
         private String stepId; // 步骤标识
         
         /**
          * 步骤名称
          * 需要用户确认的步骤的显示名称
          */
-        @NotBlank(message = "步骤名称不能为空")
+        @NotBlank(message = ValidationMessages.STEP_NAME_NOT_BLANK)
         private String stepName; // 步骤名称
         
         /**
          * 确认消息
          * 向用户显示的确认消息
          */
-        @NotBlank(message = "确认消息不能为空")
+        @NotBlank(message = ValidationMessages.CONFIRMATION_MESSAGE_NOT_BLANK)
         private String message; // 确认消息
         
         /**
@@ -368,14 +388,14 @@ public class InteractiveDeploymentDto {
          * 选项键
          * 选项的唯一标识键
          */
-        @NotBlank(message = "选项键不能为空")
+        @NotBlank(message = ValidationMessages.OPTION_KEY_NOT_BLANK)
         private String key; // 选项键
         
         /**
          * 选项标签
          * 选项的显示标签
          */
-        @NotBlank(message = "选项标签不能为空")
+        @NotBlank(message = ValidationMessages.OPTION_LABEL_NOT_BLANK)
         private String label; // 选项标签
         
         /**
@@ -417,7 +437,7 @@ public class InteractiveDeploymentDto {
          * 会话ID
          * 部署会话的唯一标识符
          */
-        @NotBlank(message = "会话ID不能为空")
+        @NotBlank(message = ValidationMessages.SESSION_ID_NOT_BLANK)
         private String sessionId; // 会话标识
         
         /**

@@ -3,7 +3,7 @@ package com.fufu.terminal.dto.sillytavern;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.experimental.SuperBuilder;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Min;
@@ -16,10 +16,10 @@ import jakarta.validation.constraints.Max;
  * @author lizelin
  */
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DeploymentRequestDto {
+public class DeploymentRequestDto extends BaseSillyTavernDto {
     
     /**
      * 用户名

@@ -1,5 +1,6 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fufu.terminal.constants.SillyTavernConstants;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
@@ -37,7 +38,7 @@ public class DockerInstallationService {
     /** Docker CE 相关包名常量 */
     private static final String DOCKER_CE_PACKAGES = "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin";
     /** 检查 Docker 版本命令 */
-    private static final String DOCKER_VERSION_COMMAND = "docker --version";
+    private static final String DOCKER_VERSION_COMMAND = SillyTavernConstants.DOCKER_VERSION_COMMAND;
 
     /**
      * 异步检查目标主机上的 Docker 安装状态。

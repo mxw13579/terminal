@@ -1,5 +1,6 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fufu.terminal.constants.SillyTavernConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fufu.terminal.dto.sillytavern.ConfigurationDto;
@@ -41,9 +42,9 @@ public class DockerContainerService {
 
     private static final String DOCKER_CMD_WITH_SUDO = "sudo docker";
     private static final String DOCKER_CMD_WITHOUT_SUDO = "docker";
-    private static final String DOCKER_VERSION_CHECK = "docker --version";
+    private static final String DOCKER_VERSION_CHECK = SillyTavernConstants.DOCKER_VERSION_COMMAND;
     private static final String OUTPUT_DELIMITER = "---FUFU_TERMINAL_DELIMITER---";
-    private static final String DEPLOYMENT_PATH = "/data/docker/sillytavern";
+    private static final String DEPLOYMENT_PATH = SillyTavernConstants.DEPLOYMENT_PATH;
     
     /** 缓存的 Docker Compose 命令 */
     private String cachedComposeCommand = null;

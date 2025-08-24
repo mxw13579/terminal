@@ -74,47 +74,47 @@ class DockerInstallationGapFixTest {
                 .build();
 
         // Mock Docker检查命令 - 未安装
-        CommandResult dockerCheckFailed = new CommandResult("", "docker: command not found", 127);
+        CommandResult dockerCheckFailed = new CommandResult(127, "", "docker: command not found");
         when(sshCommandService.executeCommand(jschSession, "command -v docker &> /dev/null"))
                 .thenReturn(dockerCheckFailed);
 
         // Mock sudo权限检查
-        CommandResult sudoCheckSuccess = new CommandResult("", "", 0);
+        CommandResult sudoCheckSuccess = new CommandResult(0, "", "");
         when(sshCommandService.executeCommand(jschSession, "sudo -v"))
                 .thenReturn(sudoCheckSuccess);
 
         // Mock APT依赖安装成功
-        CommandResult aptInstallDeps = new CommandResult("", "", 0);
+        CommandResult aptInstallDeps = new CommandResult(0, "", "");
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release"))
                 .thenReturn(aptInstallDeps);
 
         // Mock GPG密钥添加成功
         when(sshCommandService.executeCommand(eq(jschSession), contains("gpg --dearmor")))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock 仓库添加成功
         when(sshCommandService.executeCommand(eq(jschSession), contains("tee /etc/apt/sources.list.d/docker.list")))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock APT更新成功
-        CommandResult aptUpdate = new CommandResult("", "", 0);
+        CommandResult aptUpdate = new CommandResult(0, "", "");
         when(sshCommandService.executeCommand(jschSession, "sudo apt-get update"))
                 .thenReturn(aptUpdate);
 
         // Mock Docker安装成功
-        CommandResult dockerInstall = new CommandResult("", "", 0);
+        CommandResult dockerInstall = new CommandResult(0, "", "");
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"))
                 .thenReturn(dockerInstall);
 
         // Mock Docker版本检查成功
-        CommandResult dockerVersion = new CommandResult("Docker version 24.0.7, build 297e128", "", 0);
+        CommandResult dockerVersion = new CommandResult(0, "Docker version 24.0.7, build 297e128", "");
         when(sshCommandService.executeCommand(jschSession, "docker --version"))
                 .thenReturn(dockerVersion);
 
         // Mock Docker服务启动成功
-        CommandResult dockerServiceStart = new CommandResult("", "", 0);
+        CommandResult dockerServiceStart = new CommandResult(0, "", "");
         when(sshCommandService.executeCommand(jschSession, "sudo systemctl start docker && sudo systemctl enable docker"))
                 .thenReturn(dockerServiceStart);
 
@@ -175,32 +175,32 @@ class DockerInstallationGapFixTest {
 
         // Mock Docker检查 - 未安装
         when(sshCommandService.executeCommand(jschSession, "command -v docker &> /dev/null"))
-                .thenReturn(new CommandResult("", "", 1));
+                .thenReturn(new CommandResult(1, "", ""));
 
         // Mock 旧版本清理
         when(sshCommandService.executeCommand(eq(jschSession), contains("yum remove")))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock yum-utils安装
         when(sshCommandService.executeCommand(jschSession, "sudo yum install -y yum-utils"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock Docker仓库添加（中国镜像）
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock Docker安装
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock版本检查和服务启动
         when(sshCommandService.executeCommand(jschSession, "docker --version"))
-                .thenReturn(new CommandResult("Docker version 24.0.7, build 297e128", "", 0));
+                .thenReturn(new CommandResult(0, "Docker version 24.0.7, build 297e128", ""));
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo systemctl start docker && sudo systemctl enable docker"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // When - 执行带中国镜像的Docker安装
         StringBuilder progressLog = new StringBuilder();
@@ -235,7 +235,7 @@ class DockerInstallationGapFixTest {
     void testDockerStatusCheckLogic() throws Exception {
         // Test Case 1: Docker未安装
         when(sshCommandService.executeCommand(jschSession, "command -v docker &> /dev/null"))
-                .thenReturn(new CommandResult("", "", 1));
+                .thenReturn(new CommandResult(1, "", ""));
 
         CompletableFuture<DockerInstallationService.DockerInstallationStatus> checkFuture1 = 
                 dockerInstallationService.checkDockerInstallation(sshConnection);
@@ -248,11 +248,11 @@ class DockerInstallationGapFixTest {
 
         // Test Case 2: Docker已安装但服务未启动
         when(sshCommandService.executeCommand(jschSession, "command -v docker &> /dev/null"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
         when(sshCommandService.executeCommand(jschSession, "docker --version"))
-                .thenReturn(new CommandResult("Docker version 24.0.7, build 297e128", "", 0));
+                .thenReturn(new CommandResult(0, "Docker version 24.0.7, build 297e128", ""));
         when(sshCommandService.executeCommand(jschSession, "sudo systemctl is-active docker"))
-                .thenReturn(new CommandResult("inactive", "", 3)); // 服务未启动
+                .thenReturn(new CommandResult(3, "inactive", "")); // 服务未启动
 
         CompletableFuture<DockerInstallationService.DockerInstallationStatus> checkFuture2 = 
                 dockerInstallationService.checkDockerInstallation(sshConnection);
@@ -265,7 +265,7 @@ class DockerInstallationGapFixTest {
 
         // Test Case 3: Docker已安装且正常运行
         when(sshCommandService.executeCommand(jschSession, "sudo systemctl is-active docker"))
-                .thenReturn(new CommandResult("active", "", 0)); // 服务正常运行
+                .thenReturn(new CommandResult(0, "active", "")); // 服务正常运行
 
         CompletableFuture<DockerInstallationService.DockerInstallationStatus> checkFuture3 = 
                 dockerInstallationService.checkDockerInstallation(sshConnection);
@@ -289,12 +289,12 @@ class DockerInstallationGapFixTest {
 
         // Mock 权限检查失败
         when(sshCommandService.executeCommand(jschSession, "sudo -v"))
-                .thenReturn(new CommandResult("", "sudo: no password entry for user", 1));
+                .thenReturn(new CommandResult(1, "", "sudo: no password entry for user"));
 
         // Mock Docker依赖安装失败（权限不足）
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release"))
-                .thenReturn(new CommandResult("", "Permission denied", 1));
+                .thenReturn(new CommandResult(1, "", "Permission denied"));
 
         // When - 尝试安装Docker
         StringBuilder errorLog = new StringBuilder();
@@ -333,11 +333,11 @@ class DockerInstallationGapFixTest {
         // Mock 依赖安装成功
         when(sshCommandService.executeCommand(jschSession, 
                 "sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         // Mock GPG密钥下载失败（网络问题）
         when(sshCommandService.executeCommand(eq(jschSession), contains("curl -fsSL")))
-                .thenReturn(new CommandResult("", "curl: (28) Connection timed out", 28));
+                .thenReturn(new CommandResult(28, "", "curl: (28) Connection timed out"));
 
         // When - 尝试安装Docker
         StringBuilder errorLog = new StringBuilder();
@@ -377,9 +377,9 @@ class DockerInstallationGapFixTest {
 
         // Mock Arch Linux Docker安装
         when(sshCommandService.executeCommand(jschSession, "sudo pacman -S --noconfirm docker docker-compose"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
         when(sshCommandService.executeCommand(jschSession, "docker --version"))
-                .thenReturn(new CommandResult("Docker version 24.0.7", "", 0));
+                .thenReturn(new CommandResult(0, "Docker version 24.0.7", ""));
 
         CompletableFuture<DockerInstallationService.DockerInstallationResult> archInstallFuture = 
                 dockerInstallationService.installDocker(sshConnection, archSystem, false, 
@@ -398,7 +398,7 @@ class DockerInstallationGapFixTest {
                 .build();
 
         when(sshCommandService.executeCommand(jschSession, "sudo apk add docker docker-compose"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         CompletableFuture<DockerInstallationService.DockerInstallationResult> alpineInstallFuture = 
                 dockerInstallationService.installDocker(sshConnection, alpineSystem, false, 
@@ -460,13 +460,13 @@ class DockerInstallationGapFixTest {
 
         // Mock Alpine Docker安装和OpenRC服务管理
         when(sshCommandService.executeCommand(jschSession, "sudo apk add docker docker-compose"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
         when(sshCommandService.executeCommand(jschSession, "docker --version"))
-                .thenReturn(new CommandResult("Docker version 24.0.7", "", 0));
+                .thenReturn(new CommandResult(0, "Docker version 24.0.7", ""));
         when(sshCommandService.executeCommand(jschSession, "sudo rc-update add docker boot"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
         when(sshCommandService.executeCommand(jschSession, "sudo service docker start"))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
 
         CompletableFuture<DockerInstallationService.DockerInstallationResult> alpineInstallFuture = 
                 dockerInstallationService.installDocker(sshConnection, alpineSystem, false, 
@@ -485,13 +485,13 @@ class DockerInstallationGapFixTest {
     /**
      * Mock成功的Docker安装过程
      */
-    private void mockSuccessfulDockerInstallation() {
+    private void mockSuccessfulDockerInstallation() throws InterruptedException {
         // Mock所有安装相关的命令都成功
         when(sshCommandService.executeCommand(eq(jschSession), anyString()))
-                .thenReturn(new CommandResult("", "", 0));
+                .thenReturn(new CommandResult(0, "", ""));
         
         // Mock Docker版本检查
         when(sshCommandService.executeCommand(jschSession, "docker --version"))
-                .thenReturn(new CommandResult("Docker version 24.0.7, build 297e128", "", 0));
+                .thenReturn(new CommandResult(0, "Docker version 24.0.7, build 297e128", ""));
     }
 }

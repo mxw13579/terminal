@@ -1,5 +1,7 @@
 package com.fufu.terminal.controller;
 
+import com.fufu.terminal.helper.StompControllerHelper;
+import com.fufu.terminal.helper.StompExceptionHandler;
 import com.fufu.terminal.dto.TerminalDataDto;
 import com.fufu.terminal.dto.TerminalResizeDto;
 import com.fufu.terminal.model.SshConnection;
@@ -43,7 +45,7 @@ public class SshTerminalStompController {
         String sessionId = headerAccessor.getSessionId();
         log.debug("处理终端数据，sessionId: {}", sessionId);
 
-        SshConnection connection = getValidatedConnection(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) {
             return;
         }
@@ -62,8 +64,7 @@ public class SshTerminalStompController {
             log.error("发送数据到终端失败，sessionId: {}，错误: {}", sessionId, e.getMessage(), e);
             sessionManager.sendErrorMessage(sessionId, "发送数据到终端失败: " + e.getMessage());
         } catch (Exception e) {
-            log.error("处理终端数据时发生异常，sessionId: {}，错误: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "终端处理异常: " + e.getMessage());
+            StompExceptionHandler.handleException(sessionId, e, sessionManager, "处理终端数据");
         }
     }
 
@@ -81,7 +82,7 @@ public class SshTerminalStompController {
         String sessionId = headerAccessor.getSessionId();
         log.debug("处理终端尺寸调整，sessionId: {}，cols: {}，rows: {}", sessionId, message.getCols(), message.getRows());
 
-        SshConnection connection = getValidatedConnection(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) {
             return;
         }
@@ -101,8 +102,7 @@ public class SshTerminalStompController {
                 sessionManager.sendErrorMessage(sessionId, "终端通道不可用");
             }
         } catch (Exception e) {
-            log.error("调整终端尺寸失败，sessionId: {}，错误: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "调整终端尺寸失败: " + e.getMessage());
+            StompExceptionHandler.handleException(sessionId, e, sessionManager, "调整终端尺寸");
         }
     }
 
@@ -116,7 +116,7 @@ public class SshTerminalStompController {
         String sessionId = headerAccessor.getSessionId();
         log.debug("启动终端输出转发，sessionId: {}", sessionId);
 
-        SshConnection connection = getValidatedConnection(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) {
             return;
         }
@@ -125,8 +125,7 @@ public class SshTerminalStompController {
             sessionManager.startTerminalOutputForwarder(sessionId);
             log.info("已启动输出转发，sessionId: {}", sessionId);
         } catch (Exception e) {
-            log.error("启动输出转发失败，sessionId: {}，错误: {}", sessionId, e.getMessage(), e);
-            sessionManager.sendErrorMessage(sessionId, "启动输出转发失败: " + e.getMessage());
+            StompExceptionHandler.handleException(sessionId, e, sessionManager, "启动输出转发");
         }
     }
 
@@ -136,13 +135,4 @@ public class SshTerminalStompController {
      * @param sessionId 会话ID
      * @return 若存在则返回 SshConnection，否则返回 null
      */
-    private SshConnection getValidatedConnection(String sessionId) {
-        SshConnection connection = sessionManager.getConnection(sessionId);
-        if (connection == null) {
-            log.warn("未找到 SSH 连接，sessionId: {}", sessionId);
-            sessionManager.sendErrorMessage(sessionId, "SSH 连接尚未建立");
-            return null;
-        }
-        return connection;
-    }
 }

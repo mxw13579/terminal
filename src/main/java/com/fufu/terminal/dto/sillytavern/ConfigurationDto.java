@@ -3,7 +3,7 @@ package com.fufu.terminal.dto.sillytavern;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.experimental.SuperBuilder;
 
 /**
  * SillyTavern配置管理DTO
@@ -12,10 +12,10 @@ import lombok.Builder;
  * @author lizelin
  */
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ConfigurationDto {
+public class ConfigurationDto extends BaseSillyTavernDto {
     
     /**
      * 容器名称

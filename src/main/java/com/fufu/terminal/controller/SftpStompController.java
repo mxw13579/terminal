@@ -1,5 +1,6 @@
 package com.fufu.terminal.controller;
 
+import com.fufu.terminal.helper.StompControllerHelper;
 import com.fufu.terminal.dto.SftpListDto;
 import com.fufu.terminal.dto.SftpDownloadDto;
 import com.fufu.terminal.dto.SftpUploadDto;
@@ -51,7 +52,7 @@ public class SftpStompController {
         String sessionId = headerAccessor.getSessionId();
         log.debug("处理 SFTP 目录列表请求，session: {}，path: {}", sessionId, request.getPath());
 
-        SshConnection connection = getConnectionOrNotify(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) return;
 
         try {
@@ -79,7 +80,7 @@ public class SftpStompController {
         String sessionId = headerAccessor.getSessionId();
         log.debug("处理 SFTP 下载请求，session: {}，paths: {}", sessionId, request.getPaths());
 
-        SshConnection connection = getConnectionOrNotify(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) return;
 
         try {
@@ -108,7 +109,7 @@ public class SftpStompController {
         log.debug("处理 SFTP 上传分片，session: {}，file: {}，chunk: {}/{}",
                 sessionId, request.getFilename(), request.getChunkIndex() + 1, request.getTotalChunks());
 
-        SshConnection connection = getConnectionOrNotify(sessionId);
+        SshConnection connection = StompControllerHelper.getValidatedConnection(sessionId, sessionManager);
         if (connection == null) return;
 
         try {
@@ -133,14 +134,6 @@ public class SftpStompController {
      * @param sessionId 会话 ID
      * @return SshConnection 实例，如果不存在则返回 null 并通知前端
      */
-    private SshConnection getConnectionOrNotify(String sessionId) {
-        SshConnection connection = sessionManager.getConnection(sessionId);
-        if (connection == null) {
-            log.warn("未找到 SSH 连接，session: {}", sessionId);
-            sessionManager.sendErrorMessage(sessionId, "SSH 连接尚未建立");
-        }
-        return connection;
-    }
 
     /**
      * 创建 WebSocket 会话适配器，用于消息推送。

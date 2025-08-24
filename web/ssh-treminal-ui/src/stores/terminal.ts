@@ -28,6 +28,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   let terminalOutputTimer: number | null = null
   let resizeTimeout: NodeJS.Timeout | null = null
   
+  // Cleanup tracking
+  let isDestroyed = false
+  
   // STOMP connection
   let stompClient: Client | null = null
   let currentCredentials: SshCredentials | null = null
@@ -49,6 +52,8 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   // Terminal output buffering for performance
   const bufferTerminalOutput = (data: string) => {
+    if (isDestroyed) return
+    
     terminalOutputBuffer.push(data)
     
     if (!terminalOutputTimer) {
@@ -59,7 +64,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   const flushTerminalOutput = () => {
     terminalOutputTimer = null
     
-    if (!terminalInstance.value || terminalOutputBuffer.length === 0) {
+    if (isDestroyed || !terminalInstance.value || terminalOutputBuffer.length === 0) {
       return
     }
 
@@ -78,7 +83,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
-    if (flushData) {
+    if (flushData && !isDestroyed) {
       try {
         terminalInstance.value.write(flushData)
       } catch (e) {
@@ -86,7 +91,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
-    if (terminalOutputBuffer.length > 0) {
+    if (terminalOutputBuffer.length > 0 && !isDestroyed) {
       terminalOutputTimer = requestAnimationFrame(flushTerminalOutput)
     }
   }
@@ -288,13 +293,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     resetConnection()
   }
 
-  const resetConnection = () => {
-    if (stompClient) {
-      stompClient.deactivate()
-      stompClient = null
-    }
+  const cleanup = () => {
+    isDestroyed = true
     
-    // Clear buffering
+    // Clear buffering and timers
     terminalOutputBuffer.length = 0
     if (terminalOutputTimer) {
       cancelAnimationFrame(terminalOutputTimer)
@@ -304,6 +306,15 @@ export const useTerminalStore = defineStore('terminal', () => {
       clearTimeout(resizeTimeout)
       resizeTimeout = null
     }
+  }
+  
+  const resetConnection = () => {
+    if (stompClient) {
+      stompClient.deactivate()
+      stompClient = null
+    }
+    
+    cleanup()
     
     // Reset state
     host.value = ''
@@ -315,6 +326,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     
     AuthService.clearToken()
     currentCredentials = null
+    
+    // Reset destroyed flag for potential reuse
+    isDestroyed = false
   }
 
   // Terminal interaction methods
@@ -369,6 +383,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     sendTerminalResize,
     clearError,
     retryConnection,
+    cleanup,
+    
+    // Internal methods for composables
+    bufferTerminalOutput,
     
     // For backward compatibility
     terminalInstance

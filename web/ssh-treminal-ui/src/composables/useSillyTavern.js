@@ -722,9 +722,11 @@ export function useSillyTavern(options = {}) {
                 }
 
                 const separator = baseUrl.includes('?') ? '&' : '?';
-                // 确保使用后端API服务器的URL（端口8080），而不是前端开发服务器（端口5173）
+                // 生产环境自动适配：如果是相对路径则使用当前域名
                 const backendUrl = baseUrl.startsWith('/')
-                    ? `${window.location.protocol}//${window.location.hostname}:8080${baseUrl}`
+                    ? (import.meta.env.PROD 
+                        ? baseUrl // 生产环境使用相对路径，由反向代理处理
+                        : `${window.location.protocol}//${window.location.hostname}:8100${baseUrl}`) // 开发环境直接连接8100端口
                     : baseUrl;
                 const downloadUrl = `${backendUrl}${separator}sessionId=${encodeURIComponent(sessionId)}`;
 

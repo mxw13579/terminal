@@ -6,10 +6,10 @@
         <h3 class="mode-title">🚀 SillyTavern 交互式部署向导</h3>
         <p class="mode-subtitle">选择您的部署模式，开始智能化部署流程</p>
       </div>
-      
+
       <div class="mode-options">
-        <div 
-          class="mode-card" 
+        <div
+          class="mode-card"
           :class="{ 'mode-selected': selectedMode === 'trusted' }"
           @click="selectMode('trusted')"
         >
@@ -26,9 +26,9 @@
           </div>
           <div class="mode-time">预计用时：5-10分钟</div>
         </div>
-        
-        <div 
-          class="mode-card" 
+
+        <div
+          class="mode-card"
           :class="{ 'mode-selected': selectedMode === 'interactive' }"
           @click="selectMode('interactive')"
         >
@@ -46,19 +46,19 @@
           <div class="mode-time">预计用时：10-20分钟</div>
         </div>
       </div>
-      
+
       <!-- 系统状态检查 -->
       <div class="system-status-panel" v-if="selectedMode">
         <h4 class="status-title">🔍 系统状态检查</h4>
-        
+
         <div v-if="systemInfo" class="status-checks">
-          <div v-for="check in systemInfo.requirementChecks" 
+          <div v-for="check in systemInfo.requirementChecks"
                :key="check"
                class="status-item"
                :class="getCheckClass(check)">
             {{ check }}
           </div>
-          
+
           <!-- Docker未安装时的特别提示 -->
           <div v-if="!systemInfo.dockerInstalled" class="docker-install-notice">
             <div class="notice-header">
@@ -77,7 +77,7 @@
               <span class="panel-icon">🖥️</span>
               <span class="panel-title">服务器信息</span>
             </div>
-            
+
             <div v-if="serverStats" class="server-stats">
               <!-- 基本信息 -->
               <div class="stats-section">
@@ -150,7 +150,7 @@
             </div>
           </div>
         </div>
-        
+
         <div v-else class="status-loading">
           <p>请先进行系统检查以了解当前状态</p>
           <button @click="$emit('validate-system')" class="btn btn-secondary">
@@ -158,7 +158,7 @@
           </button>
         </div>
       </div>
-      
+
       <!-- 部署配置 -->
       <div class="deployment-config" v-if="selectedMode">
         <h4 class="config-title">部署配置</h4>
@@ -174,8 +174,8 @@
               </span>
             </label>
             <select v-model="deploymentConfig.selectedVersion" class="form-select version-select">
-              <option 
-                v-for="option in versionOptions" 
+              <option
+                v-for="option in versionOptions"
                 :key="option.value"
                 :value="option.value"
                 :title="option.description"
@@ -211,68 +211,68 @@
               </small>
             </div>
           </div>
-          
+
           <div class="form-group">
             <label class="form-label">访问端口</label>
-            <input 
-              type="number" 
-              v-model="deploymentConfig.port" 
+            <input
+              type="number"
+              v-model="deploymentConfig.port"
               class="form-input"
-              min="1000" 
+              min="1000"
               max="65535"
               placeholder="8000"
             />
           </div>
-          
+
           <div class="form-group">
             <label class="form-checkbox">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 v-model="deploymentConfig.enableExternalAccess"
               />
               <span class="checkbox-text">开启外网访问（配置用户名密码）</span>
             </label>
           </div>
-          
+
           <!-- 用户名密码配置 -->
           <div v-if="deploymentConfig.enableExternalAccess" class="auth-config">
             <div class="form-group">
               <label class="form-label">认证方式</label>
               <div class="auth-options">
                 <label class="form-radio">
-                  <input 
-                    type="radio" 
-                    v-model="deploymentConfig.authMode" 
+                  <input
+                    type="radio"
+                    v-model="deploymentConfig.authMode"
                     value="manual"
                   />
                   <span class="radio-text">手动输入</span>
                 </label>
                 <label class="form-radio">
-                  <input 
-                    type="radio" 
-                    v-model="deploymentConfig.authMode" 
+                  <input
+                    type="radio"
+                    v-model="deploymentConfig.authMode"
                     value="random"
                   />
                   <span class="radio-text">随机生成</span>
                 </label>
               </div>
             </div>
-            
+
             <div v-if="deploymentConfig.authMode === 'manual'" class="manual-auth">
               <div class="form-group">
                 <label class="form-label">用户名</label>
-                <input 
-                  type="text" 
-                  v-model="deploymentConfig.username" 
+                <input
+                  type="text"
+                  v-model="deploymentConfig.username"
                   class="form-input"
                   placeholder="请输入用户名（3-20字符，字母开头，可包含数字、下划线、短横线）"
                 />
               </div>
               <div class="form-group">
                 <label class="form-label">密码</label>
-                <input 
-                  type="password" 
-                  v-model="deploymentConfig.password" 
+                <input
+                  type="password"
+                  v-model="deploymentConfig.password"
                   class="form-input"
                   placeholder="请输入密码（6位以上，不能为纯数字）"
                 />
@@ -280,11 +280,11 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 开始部署按钮 -->
         <div class="start-deployment">
-          <button 
-            @click="startDeployment" 
+          <button
+            @click="startDeployment"
             class="btn btn-primary btn-lg"
             :disabled="!isConfigValid"
           >
@@ -294,7 +294,7 @@
         </div>
       </div>
     </div>
-    
+
     <!-- 部署进度展示 -->
     <div class="deployment-progress" v-if="deploymentStarted">
       <div class="progress-header">
@@ -302,20 +302,20 @@
           <span class="progress-icon">⚙️</span>
           {{ selectedMode === 'trusted' ? '自动部署进行中' : '交互式部署进行中' }}
         </h3>
-        <button 
-          @click="cancelDeployment" 
+        <button
+          @click="cancelDeployment"
           class="btn btn-danger btn-sm"
           :disabled="deploymentCompleted"
         >
           取消部署
         </button>
       </div>
-      
+
       <!-- 横向卡片步骤展示 - 添加滚动容器 -->
       <div class="deployment-steps-container" ref="stepsContainer">
         <div class="deployment-steps">
-          <div 
-            v-for="step in deploymentSteps" 
+          <div
+            v-for="step in deploymentSteps"
             :key="step.id"
             class="step-card"
             :class="getStepCardClass(step)"
@@ -327,12 +327,12 @@
             </div>
             <div class="step-title">{{ step.title }}</div>
           </div>
-          
+
           <div class="step-content">
-            <!-- 步骤日志 -->  
+            <!-- 步骤日志 -->
             <div v-if="step.logs && step.logs.length > 0" class="step-logs">
-              <div 
-                v-for="(log, index) in step.logs" 
+              <div
+                v-for="(log, index) in step.logs"
                 :key="index"
                 class="log-entry"
                 :class="getLogEntryClass(log)"
@@ -341,7 +341,7 @@
                 <span class="log-message">{{ log.message }}</span>
               </div>
             </div>
-            
+
             <!-- Docker安装特殊提示 -->
             <div v-if="step.id === 'docker-installation' && step.status === 'running'" class="docker-install-info">
               <div class="install-info-header">
@@ -360,34 +360,34 @@
                 <p class="install-tip">首次安装可能需要5-10分钟，请耐心等待...</p>
               </div>
             </div>
-            
+
             <!-- 用户交互区域 -->
             <div v-if="step.requiresConfirmation && step.status === 'waiting'" class="step-interaction">
               <div class="interaction-content">
                 <div class="interaction-message">{{ step.confirmationMessage }}</div>
-                
+
                 <!-- 用户输入表单 -->
                 <div v-if="step.userInput" class="user-input-form">
-                  <div 
-                    v-for="input in step.userInput" 
+                  <div
+                    v-for="input in step.userInput"
                     :key="input.name"
                     class="input-group"
                   >
                     <label class="input-label">{{ input.label }}</label>
-                    <input 
+                    <input
                       v-if="input.type === 'text'"
                       :type="input.type"
                       v-model="userInputValues[input.name]"
                       class="form-input"
                       :placeholder="input.placeholder"
                     />
-                    <select 
+                    <select
                       v-else-if="input.type === 'select'"
                       v-model="userInputValues[input.name]"
                       class="form-select"
                     >
-                      <option 
-                        v-for="option in input.options" 
+                      <option
+                        v-for="option in input.options"
                         :key="option.value"
                         :value="option.value"
                       >
@@ -396,10 +396,10 @@
                     </select>
                   </div>
                 </div>
-                
+
                 <!-- 确认按钮 -->
                 <div class="interaction-buttons">
-                  <button 
+                  <button
                     @click="confirmStep(step.id, true)"
                     class="btn-confirm"
                   >
@@ -410,7 +410,7 @@
                     </span>
                     <span class="btn-text">确认执行</span>
                   </button>
-                  <button 
+                  <button
                     @click="confirmStep(step.id, false)"
                     class="btn-skip"
                   >
@@ -425,12 +425,12 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- 进度条 -->
             <div v-if="step.progress !== undefined" class="step-progress">
               <div class="progress-bar">
-                <div 
-                  class="progress-fill" 
+                <div
+                  class="progress-fill"
                   :style="{ width: step.progress + '%' }"
                 ></div>
               </div>
@@ -440,7 +440,7 @@
         </div>
       </div>
       </div>
-      
+
       <!-- 部署完成信息 -->
       <div v-if="deploymentCompleted" class="deployment-result">
         <div class="result-card" :class="deploymentSuccess ? 'result-success' : 'result-error'">
@@ -452,7 +452,7 @@
               {{ deploymentSuccess ? '部署成功！' : '部署失败' }}
             </h4>
             <p class="result-message">{{ deploymentMessage }}</p>
-            
+
             <!-- 访问信息 -->
             <div v-if="deploymentSuccess && accessInfo" class="access-info">
               <h5 class="access-title">访问信息</h5>
@@ -463,8 +463,8 @@
                     <a :href="accessInfo.url" target="_blank" class="access-link">
                       {{ accessInfo.url }}
                     </a>
-                    <button 
-                      @click="copyToClipboard(accessInfo.url)" 
+                    <button
+                      @click="copyToClipboard(accessInfo.url)"
                       class="btn btn-ghost btn-xs"
                       title="复制地址"
                     >
@@ -476,8 +476,8 @@
                   <span class="access-label">用户名：</span>
                   <span class="access-value">
                     <code>{{ accessInfo.username }}</code>
-                    <button 
-                      @click="copyToClipboard(accessInfo.username)" 
+                    <button
+                      @click="copyToClipboard(accessInfo.username)"
                       class="btn btn-ghost btn-xs"
                       title="复制用户名"
                     >
@@ -489,15 +489,15 @@
                   <span class="access-label">密码：</span>
                   <span class="access-value">
                     <code>{{ showPassword ? accessInfo.password : '••••••••' }}</code>
-                    <button 
-                      @click="togglePasswordVisibility" 
+                    <button
+                      @click="togglePasswordVisibility"
                       class="btn btn-ghost btn-xs"
                       :title="showPassword ? '隐藏密码' : '显示密码'"
                     >
                       {{ showPassword ? '👁️‍🗨️' : '👁️' }}
                     </button>
-                    <button 
-                      @click="copyToClipboard(accessInfo.password)" 
+                    <button
+                      @click="copyToClipboard(accessInfo.password)"
                       class="btn btn-ghost btn-xs"
                       title="复制密码"
                     >
@@ -509,17 +509,17 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 操作按钮 -->
         <div class="result-actions">
-          <button 
-            @click="resetDeployment" 
+          <button
+            @click="resetDeployment"
             class="btn btn-primary"
           >
             重新部署
           </button>
-          <button 
-            @click="$emit('deployment-complete')" 
+          <button
+            @click="$emit('deployment-complete')"
             class="btn btn-secondary"
           >
             返回管理界面
@@ -576,25 +576,25 @@ export default {
       default: () => []
     }
   },
-  
+
   mounted() {
     console.log('InteractiveDeploymentWizard mounted')
     console.log('当前版本信息:', this.availableVersions)
     console.log('是否在加载版本:', this.isLoadingVersions)
     console.log('版本错误:', this.versionError)
-    
+
     // 如果没有版本信息且不在加载中，触发获取版本信息事件
     if (!this.availableVersions.length && !this.isLoadingVersions && !this.versionError) {
       console.log('未找到版本信息，触发获取版本信息事件')
       this.$emit('get-versions')
     }
   },
-  
+
   data() {
     return {
       // 部署模式
       selectedMode: null, // 'trusted' | 'interactive'
-      
+
       // 部署配置
       deploymentConfig: {
         selectedVersion: 'stable', // 默认选择稳定版
@@ -604,20 +604,20 @@ export default {
         username: '',
         password: ''
       },
-      
+
       // 部署状态
       deploymentStarted: false,
       deploymentCompleted: false,
       deploymentSuccess: false,
       deploymentMessage: '',
-      
+
       // 用户输入
       userInputValues: {},
-      
+
       // 访问信息
       accessInfo: null,
       showPassword: false,
-      
+
       // 部署步骤
       deploymentSteps: [
         {
@@ -663,16 +663,16 @@ export default {
           progress: 0
         },
         {
-          id: 'sillytavern_deployment',
-          title: 'SillyTavern部署',
+          id: 'external_access_config',
+          title: '外网访问配置',
           status: 'pending',
           requiresConfirmation: false,
           logs: [],
           progress: 0
         },
         {
-          id: 'external_access_config',
-          title: '外网访问配置',
+          id: 'sillytavern_deployment',
+          title: 'SillyTavern部署',
           status: 'pending',
           requiresConfirmation: false,
           logs: [],
@@ -697,20 +697,20 @@ export default {
       ]
     }
   },
-  
+
   computed: {
     isConfigValid() {
       if (!this.selectedMode) return false
       if (!this.deploymentConfig.port || this.deploymentConfig.port < 1000 || this.deploymentConfig.port > 65535) return false
-      
+
       if (this.deploymentConfig.enableExternalAccess && this.deploymentConfig.authMode === 'manual') {
         if (!this.deploymentConfig.username || !this.deploymentConfig.password) return false
         if (/^\d+$/.test(this.deploymentConfig.username) || /^\d+$/.test(this.deploymentConfig.password)) return false
       }
-      
+
       return true
     },
-    
+
     versionOptions() {
       // 如果正在加载或有错误，返回默认选项
       if (this.isLoadingVersions || this.versionError || !this.availableVersions || this.availableVersions.length === 0) {
@@ -720,19 +720,19 @@ export default {
           { value: 'release', label: 'release (发布版)', description: '正式发布版本' }
         ]
       }
-      
+
       // 使用真实的版本信息，添加版本标识
       return this.availableVersions.map((version, index) => {
         let label = version.tagName
         let versionType = ''
-        
+
         // 标识版本类型
         if (version.tagName === 'latest' || index === 0) {
           versionType = ' (抢先版)'
         } else if (index === 1) {
           versionType = ' (稳定版 - 推荐)'
         }
-        
+
         return {
           value: version.tagName,
           label: `${label}${versionType}`,
@@ -742,24 +742,24 @@ export default {
         }
       })
     },
-    
+
     // 获取当前选中版本的详细信息
     selectedVersionDetails() {
       if (!this.availableVersions || this.availableVersions.length === 0) {
         return null
       }
-      
-      return this.availableVersions.find(version => 
+
+      return this.availableVersions.find(version =>
         version.tagName === this.deploymentConfig.selectedVersion
       )
     }
   },
-  
+
   watch: {
     deploymentProgress: {
       handler(newProgress) {
         console.log('部署进度更新:', newProgress)
-        
+
         if (newProgress) {
           // 处理进行中的部署进度
           if (!newProgress.completed) {
@@ -767,7 +767,7 @@ export default {
             if (!this.deploymentStarted) {
               this.deploymentStarted = true
             }
-            
+
             // 更新当前步骤状态（如果有步骤信息）
             if (newProgress.currentStep) {
               const stepId = typeof newProgress.currentStep === 'string' ? newProgress.currentStep : newProgress.currentStep.stepId;
@@ -783,14 +783,14 @@ export default {
                 } else {
                   step.status = 'running'
                 }
-                
+
                 if (newProgress.progress !== undefined) {
                   step.progress = newProgress.progress
                 }
                 if (newProgress.message) {
                   this.addStepLog(stepId, newProgress.message, 'info')
                 }
-                
+
                 // 处理来自后端的步骤日志 - 关键修复！
                 if (typeof newProgress.currentStep === 'object' && newProgress.currentStep.logs && newProgress.currentStep.logs.length > 0) {
                   console.log('处理后端步骤日志:', newProgress.currentStep.stepId, newProgress.currentStep.logs);
@@ -817,12 +817,12 @@ export default {
               }
             }
           }
-          
+
           // 处理部署完成
           if (newProgress.completed) {
             // 部署完成时自动发送完成事件
             this.$emit('deployment-complete', newProgress.success)
-            
+
             if (newProgress.success) {
               this.deploymentCompleted = true
               this.deploymentSuccess = true
@@ -837,7 +837,7 @@ export default {
       },
       deep: true
     },
-    
+
     availableVersions: {
       handler(newVersions) {
         console.log('InteractiveDeploymentWizard: 版本信息更新', newVersions)
@@ -847,7 +847,7 @@ export default {
           if (newVersions.length >= 2) {
             console.log('InteractiveDeploymentWizard: 默认选择第二个版本（稳定版）:', newVersions[1].tagName)
             this.deploymentConfig.selectedVersion = newVersions[1].tagName
-          } 
+          }
           // 如果只有一个版本，选择第一个
           else if (newVersions.length === 1) {
             console.log('InteractiveDeploymentWizard: 只有一个版本，选择:', newVersions[0].tagName)
@@ -857,7 +857,7 @@ export default {
       },
       immediate: true
     },
-    
+
     // 监听部署状态，确保部署开始时显示进度界面
     isDeploying: {
       handler(newIsDeploying) {
@@ -877,53 +877,53 @@ export default {
       immediate: true
     }
   },
-  
+
   methods: {
     getMemoryPercentage(stats) {
       if (!stats || (!stats.memoryUsage && !stats.memUsage)) return 0;
-      
+
       // 优先使用新的字段名 memoryUsage（后端实际返回的字段名）
       const memData = stats.memoryUsage || stats.memUsage;
-      
+
       // 新格式：对象格式，包含percentage字段
       if (typeof memData === 'object' && memData.percentage !== undefined) {
         return memData.percentage || 0;
       }
-      
+
       // 旧格式：直接是数字
       if (typeof memData === 'number') {
         return memData;
       }
-      
+
       return 0;
     },
-    
+
     selectMode(mode) {
       this.selectedMode = mode
     },
-    
+
     getCheckClass(check) {
       if (check.startsWith('✓')) return 'status-pass'
       if (check.startsWith('✗')) return 'status-fail'
       if (check.startsWith('⚠')) return 'status-warning'
       return 'status-info'
     },
-    
+
     startDeployment() {
       console.log('开始部署，模式:', this.selectedMode)
-      
+
       // 立即显示部署进度界面
       this.deploymentStarted = true
       this.deploymentCompleted = false
       this.deploymentSuccess = false
-      
+
       // 重置部署步骤状态
       this.deploymentSteps.forEach(step => {
         step.status = 'pending'
         step.progress = 0
         step.logs = []
       })
-      
+
       // 使用真正的交互式部署API
       const deploymentRequest = {
         deploymentMode: this.selectedMode === 'interactive' ? 'confirmation' : 'trusted', // 将 interactive 转换为 confirmation
@@ -931,44 +931,44 @@ export default {
         enableLogging: true,
         timeoutSeconds: 300
       }
-      
+
       console.log('部署请求配置:', deploymentRequest)
-      
+
       // 调用父组件的部署方法，传递交互式部署配置
       this.$emit('deploy', deploymentRequest)
     },
-    
+
     confirmStep(stepId, confirmed) {
       console.log('确认步骤被调用:', { stepId, confirmed })
-      
+
       const step = this.deploymentSteps.find(s => s.id === stepId)
       if (!step) {
         console.error('未找到步骤:', stepId)
         return
       }
-      
-      const userInput = step.userInput ? 
+
+      const userInput = step.userInput ?
         Object.fromEntries(step.userInput.map(input => [input.name, this.userInputValues[input.name]])) : {}
-      
+
       console.log('准备发送确认事件:', {
         stepId,
         confirmed,
         userInput
       })
-      
+
       this.$emit('step-confirmed', {
         stepId,
         confirmed,
         userInput
       })
     },
-    
+
     cancelDeployment() {
       if (confirm('确定要取消部署吗？已执行的操作可能无法撤销。')) {
         this.$emit('deployment-cancelled', '用户主动取消')
       }
     },
-    
+
     resetDeployment() {
       this.deploymentStarted = false
       this.deploymentCompleted = false
@@ -978,12 +978,12 @@ export default {
       this.showPassword = false
       this.userInputValues = {}
     },
-    
+
     // 步骤状态处理
     updateStepStatus(stepId, status, data = {}) {
       const step = this.deploymentSteps.find(s => s.id === stepId)
       if (!step) return
-      
+
       step.status = status
       if (data.progress !== undefined) step.progress = data.progress
       if (data.message) {
@@ -994,25 +994,25 @@ export default {
         })
       }
     },
-    
+
     addStepLog(stepId, message, type = 'info') {
       const step = this.deploymentSteps.find(s => s.id === stepId)
       if (!step) return
-      
+
       step.logs.push({
         timestamp: new Date(),
         message,
         type
       })
     },
-    
+
     completeDeployment(success, message, accessInfo = null) {
       this.deploymentCompleted = true
       this.deploymentSuccess = success
       this.deploymentMessage = message
       this.accessInfo = accessInfo
     },
-    
+
     // UI辅助方法
     getStepCardClass(step) {
       return {
@@ -1023,7 +1023,7 @@ export default {
         'step-waiting': step.status === 'waiting'
       }
     },
-    
+
     getStepIcon(status) {
       const icons = {
         pending: '⏳',
@@ -1034,7 +1034,7 @@ export default {
       }
       return icons[status] || '⏳'
     },
-    
+
     getStepStatusText(status) {
       const texts = {
         pending: '等待中',
@@ -1045,7 +1045,7 @@ export default {
       }
       return texts[status] || '未知'
     },
-    
+
     getLogEntryClass(log) {
       return {
         'log-info': log.type === 'info',
@@ -1054,11 +1054,11 @@ export default {
         'log-success': log.type === 'success'
       }
     },
-    
+
     formatTime(timestamp) {
       return timestamp.toLocaleTimeString()
     },
-    
+
     copyToClipboard(text) {
       navigator.clipboard.writeText(text).then(() => {
         // 这里可以添加复制成功的提示
@@ -1067,7 +1067,7 @@ export default {
         console.error('复制失败:', err)
       })
     },
-    
+
     togglePasswordVisibility() {
       this.showPassword = !this.showPassword
     }
@@ -2104,23 +2104,23 @@ export default {
   .mode-options {
     grid-template-columns: 1fr;
   }
-  
+
   .step-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .progress-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .interaction-buttons {
     flex-direction: column;
   }
-  
+
   .result-actions {
     flex-direction: column;
   }

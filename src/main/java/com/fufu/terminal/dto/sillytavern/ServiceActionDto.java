@@ -1,5 +1,6 @@
 package com.fufu.terminal.dto.sillytavern;
 
+import com.fufu.terminal.constants.ValidationMessages;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -21,7 +22,7 @@ public class ServiceActionDto {
      * 操作类型
      * 服务控制操作类型，可选值："start", "stop", "restart", "switch-version", "delete"
      */
-    @NotBlank(message = "操作类型不能为空")
+    @NotBlank(message = ValidationMessages.OPERATION_TYPE_NOT_BLANK)
     private String action;  // "start", "stop", "restart", "switch-version", "delete"
     
     /**

@@ -1,6 +1,8 @@
 package com.fufu.terminal.controller;
 
+import com.fufu.terminal.constants.SillyTavernConstants;
 import com.fufu.terminal.dto.sillytavern.*;
+import com.fufu.terminal.helper.StompExceptionHandler;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.StompSessionManager;
 import com.fufu.terminal.service.sillytavern.SillyTavernService;
@@ -49,7 +51,7 @@ import java.util.concurrent.CompletableFuture;
 public class SillyTavernStompController {
 
     /** 默认容器名称 */
-    private static final String DEFAULT_CONTAINER_NAME = "sillytavern";
+    private static final String DEFAULT_CONTAINER_NAME = SillyTavernConstants.DEFAULT_CONTAINER_NAME;
 
     /** SillyTavern核心服务 */
     private final SillyTavernService sillyTavernService;
@@ -96,8 +98,7 @@ public class SillyTavernStompController {
             SystemInfoDto systemInfo = sillyTavernService.validateSystemRequirements(connection);
             sendSuccessMessage(sessionId, "system-validation", systemInfo);
         } catch (Exception e) {
-            log.error("系统需求验证失败，会话 {}: {}", sessionId, e.getMessage(), e);
-            sendErrorMessage(sessionId, "系统需求验证失败: " + e.getMessage());
+            StompExceptionHandler.handleSillyTavernException(sessionId, e, "系统需求验证", this::sendErrorMessage);
         }
     }
 
@@ -125,8 +126,7 @@ public class SillyTavernStompController {
             sendSuccessMessage(sessionId, "status", status);
             log.debug("STOMP成功消息已发送，会话: {}", sessionId);
         } catch (Exception e) {
-            log.error("获取容器状态失败，会话 {}: {}", sessionId, e.getMessage(), e);
-            sendErrorMessage(sessionId, "获取容器状态失败: " + e.getMessage());
+            StompExceptionHandler.handleSillyTavernException(sessionId, e, "获取容器状态", this::sendErrorMessage);
         }
     }
 
@@ -156,8 +156,7 @@ public class SillyTavernStompController {
                     sendSuccessMessage(sessionId, "deployment-progress", progress)
             );
         } catch (Exception e) {
-            log.error("部署启动失败，会话 {}: {}", sessionId, e.getMessage(), e);
-            sendErrorMessage(sessionId, "部署启动失败: " + e.getMessage());
+            StompExceptionHandler.handleSillyTavernException(sessionId, e, "部署启动", this::sendErrorMessage);
         }
     }
 

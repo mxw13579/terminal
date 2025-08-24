@@ -35,11 +35,16 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
-const props = defineProps({
-  connectionInfo: { type: Object, required: true },
-  sftpVisible: { type: Boolean, default: false },
-  monitorVisible: { type: Boolean, default: false },
-});
+interface Props {
+  connectionInfo: ConnectionConfig
+  sftpVisible?: boolean
+  monitorVisible?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  sftpVisible: false,
+  monitorVisible: false
+})
 
 const emit = defineEmits(['disconnect', 'toggle-sftp',  'toggle-monitor', 'terminal-data', 'terminal-resize', 'terminal-ready', 'terminal-unmount']);
 

@@ -2,7 +2,7 @@
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "compilerOptions": {
     "strict": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "allowJs": true,
     "checkJs": false,
     "target": "ES2020",

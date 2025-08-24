@@ -18,6 +18,7 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -46,13 +47,16 @@ class StompAuthenticationInterceptorTest {
     private TokenVault tokenVault;
 
     @Mock
+    private ApplicationEventPublisher eventPublisher;
+
+    @Mock
     private MessageChannel messageChannel;
 
     private StompAuthenticationInterceptor interceptor;
     
     @BeforeEach
     void setUp() {
-        interceptor = new StompAuthenticationInterceptor(tokenVault);
+        interceptor = new StompAuthenticationInterceptor(tokenVault, eventPublisher);
         // 设置测试环境为不严格检查主机密钥
         ReflectionTestUtils.setField(interceptor, "strictHostKeyChecking", false);
     }
@@ -304,7 +308,7 @@ class StompAuthenticationInterceptorTest {
         @DisplayName("应该支持严格主机密钥检查配置")
         void shouldSupportStrictHostKeyCheckingConfiguration() {
             // Given - 创建使用严格主机检查的拦截器
-            StompAuthenticationInterceptor strictInterceptor = new StompAuthenticationInterceptor(tokenVault);
+            StompAuthenticationInterceptor strictInterceptor = new StompAuthenticationInterceptor(tokenVault, eventPublisher);
             ReflectionTestUtils.setField(strictInterceptor, "strictHostKeyChecking", true);
             
             String sessionId = "test-session-123";
@@ -336,7 +340,7 @@ class StompAuthenticationInterceptorTest {
         @DisplayName("默认配置应该禁用严格主机检查")
         void shouldDisableStrictHostCheckingByDefault() {
             // Given - 使用默认配置的拦截器
-            StompAuthenticationInterceptor defaultInterceptor = new StompAuthenticationInterceptor(tokenVault);
+            StompAuthenticationInterceptor defaultInterceptor = new StompAuthenticationInterceptor(tokenVault, eventPublisher);
             
             // When
             Boolean strictHostKeyChecking = (Boolean) ReflectionTestUtils.getField(defaultInterceptor, "strictHostKeyChecking");

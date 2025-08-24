@@ -1,5 +1,6 @@
 package com.fufu.terminal.service.sillytavern;
 
+import com.fufu.terminal.constants.SillyTavernConstants;
 import com.fufu.terminal.dto.sillytavern.*;
 import com.fufu.terminal.model.SshConnection;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class SillyTavernService {
     private final SystemDetectionService systemDetectionService;
 
     /** 默认容器名称 */
-    private static final String DEFAULT_CONTAINER_NAME = "sillytavern";
+    private static final String DEFAULT_CONTAINER_NAME = SillyTavernConstants.DEFAULT_CONTAINER_NAME;
     /** 默认镜像地址 */
     private static final String DEFAULT_IMAGE = "ghcr.io/sillytavern/sillytavern:latest";
 

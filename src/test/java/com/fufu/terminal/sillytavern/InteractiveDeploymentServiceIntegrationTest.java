@@ -119,9 +119,9 @@ class InteractiveDeploymentServiceIntegrationTest {
         GeolocationDetectionService.GeolocationInfo chineseGeo = 
                 GeolocationDetectionService.GeolocationInfo.builder()
                 .countryCode("CN")
-                .countryName("China")
                 .useChineseMirror(true)
-                .detectionMethod("IP API")
+                .detectionSuccess(true)
+                .mirrorRecommendation("阿里云镜像")
                 .build();
 
         when(geolocationService.detectGeolocation(eq(sshConnection), any()))
@@ -199,7 +199,7 @@ class InteractiveDeploymentServiceIntegrationTest {
                 DockerMirrorService.DockerMirrorConfigResult.builder()
                 .success(true)
                 .message("Docker镜像加速器配置完成")
-                .mirrorUrl("https://registry.cn-hangzhou.aliyuncs.com")
+                .configuredMirrors("https://registry.cn-hangzhou.aliyuncs.com")
                 .build();
 
         when(dockerMirrorService.configureMirror(sshConnection))
@@ -210,7 +210,7 @@ class InteractiveDeploymentServiceIntegrationTest {
                 SillyTavernDeploymentService.SillyTavernDeploymentResult.builder()
                 .success(true)
                 .message("SillyTavern部署完成")
-                .containerId("sillytavern-container-123")
+                .containerName("sillytavern-container-123")
                 .accessUrl("http://localhost:8000")
                 .build();
 
@@ -224,7 +224,7 @@ class InteractiveDeploymentServiceIntegrationTest {
                 .message("外网访问配置完成")
                 .username("admin")
                 .password("password123")
-                .externalUrl("http://your-server:8000")
+                .port("8000")
                 .build();
 
         when(externalAccessService.configureExternalAccess(eq(sshConnection), any(), any()))
@@ -269,7 +269,7 @@ class InteractiveDeploymentServiceIntegrationTest {
         verify(validationService).validateDeployment(sshConnection);
 
         // 验证WebSocket消息发送
-        verify(messagingTemplate, atLeast(5)).convertAndSend(contains("sillytavern/interactive-deployment"), any());
+        verify(messagingTemplate, atLeast(5)).convertAndSend(contains("sillytavern/interactive-deployment"), (Object) any());
     }
 
     @Test
@@ -310,7 +310,7 @@ class InteractiveDeploymentServiceIntegrationTest {
                 .thenReturn(CompletableFuture.completedFuture(dockerStopped));
 
         // Mock Docker服务启动成功
-        CommandResult startServiceResult = new CommandResult("", "", 0);
+        CommandResult startServiceResult = new CommandResult(0, "", "");
         when(sshCommandService.executeCommand(eq(jschSession), contains("systemctl start docker")))
                 .thenReturn(startServiceResult);
 
@@ -378,11 +378,11 @@ class InteractiveDeploymentServiceIntegrationTest {
 
         // 验证确认请求被发送到前端
         verify(messagingTemplate, atLeast(1)).convertAndSend(
-                eq("/queue/sillytavern/interactive-deployment-confirmation-user" + sessionId), any());
+                eq("/queue/sillytavern/interactive-deployment-confirmation-user" + sessionId), (Object) any());
 
         // 验证进度更新被发送
         verify(messagingTemplate, atLeast(3)).convertAndSend(
-                eq("/queue/sillytavern/interactive-deployment-progress-user" + sessionId), any());
+                eq("/queue/sillytavern/interactive-deployment-progress-user" + sessionId), (Object) any());
 
         // 清理异步任务
         deploymentFuture.cancel(true);
@@ -462,7 +462,7 @@ class InteractiveDeploymentServiceIntegrationTest {
 
         // 验证错误确认请求被发送
         verify(messagingTemplate, atLeast(1)).convertAndSend(
-                eq("/queue/sillytavern/interactive-deployment-confirmation-user" + sessionId), any());
+                eq("/queue/sillytavern/interactive-deployment-confirmation-user" + sessionId), (Object) any());
 
         // 验证Docker安装尝试和失败
         verify(dockerInstallationService).installDocker(eq(sshConnection), eq(noSudoSystem), anyBoolean(), any());
@@ -585,7 +585,7 @@ class InteractiveDeploymentServiceIntegrationTest {
         }
 
         // 验证WebSocket消息发送次数合理（每个会话都有独立的消息）
-        verify(messagingTemplate, atLeast(concurrentSessions * 5)).convertAndSend(anyString(), any());
+        verify(messagingTemplate, atLeast(concurrentSessions * 5)).convertAndSend(anyString(), (Object) any());
     }
 
     // ===== 辅助方法 =====
@@ -661,7 +661,7 @@ class InteractiveDeploymentServiceIntegrationTest {
                 SillyTavernDeploymentService.SillyTavernDeploymentResult.builder()
                 .success(true)
                 .message("部署完成")
-                .containerId("sillytavern-123")
+                .containerName("sillytavern-123")
                 .accessUrl("http://localhost:8000")
                 .build();
 

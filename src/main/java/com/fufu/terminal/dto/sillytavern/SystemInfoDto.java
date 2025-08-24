@@ -3,7 +3,7 @@ package com.fufu.terminal.dto.sillytavern;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.experimental.SuperBuilder;
 
 /**
  * 系统信息和需求验证DTO
@@ -12,10 +12,10 @@ import lombok.Builder;
  * @author lizelin
  */
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SystemInfoDto {
+public class SystemInfoDto extends BaseSillyTavernDto {
     
     /**
      * 操作系统类型
