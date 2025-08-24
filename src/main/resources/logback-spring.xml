@@ -7,11 +7,22 @@
     <property name="LOG_PATH" value="${LOG_PATH:-logs}"/>
     <property name="APP_NAME" value="terminal-application"/>
     
+    <!-- 敏感信息过滤器 -->
+    <turboFilter class="ch.qos.logback.classic.turbo.MatchingFilter">
+        <Name>SensitiveInfoFilter</Name>
+        <Marker>SENSITIVE</Marker>
+        <OnMatch>DENY</OnMatch>
+        <OnMismatch>NEUTRAL</OnMismatch>
+    </turboFilter>
+    
+    <!-- 敏感信息正则过滤器 -->
+    <conversionRule conversionWord="sanitized" converterClass="com.fufu.terminal.config.SensitiveInfoSanitizer" />
+    
     <!-- 控制台输出配置 -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <!-- 开发环境使用彩色日志格式 -->
-            <pattern>%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr([%X{correlationId:-}]){yellow} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}</pattern>
+            <!-- 开发环境使用彩色日志格式，集成敏感信息脱敏 -->
+            <pattern>%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr([%X{correlationId:-}]){yellow} %clr(:){faint} %sanitized%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}</pattern>
         </encoder>
     </appender>
 
@@ -68,7 +79,7 @@
             <level>ERROR</level>
         </filter>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %sanitized%n</pattern>
         </encoder>
         
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -85,7 +96,7 @@
     <appender name="SLOW_QUERY_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_PATH}/${APP_NAME}-slow-query.log</file>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId:-}] %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId:-}] %sanitized%n</pattern>
         </encoder>
         
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -98,7 +109,7 @@
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_PATH}/${APP_NAME}-audit.log</file>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId:-}] [%X{userId:-}] [%X{sessionId:-}] %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId:-}] [%X{userId:-}] [%X{sessionId:-}] %sanitized%n</pattern>
         </encoder>
         
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">

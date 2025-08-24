@@ -293,6 +293,9 @@ public class SshCommandService {
     public CommandResult executeInternal(Session session, String command, long timeoutMs, int outputLimitBytes, int errorLimitBytes) throws Exception {
         String sessionKey = session.getHost() + ":" + session.getPort() + "/" + session.getUserName();
         
+        // 检查并确保SSH会话连接有效
+        ensureSessionConnected(session, sessionKey);
+        
         // 仅记录审计日志，不执行安全策略
         auditLog(sessionKey, command, "INTERNAL_EXECUTE_START");
         
@@ -526,5 +529,31 @@ public class SshCommandService {
                 }
             }
         }
+    }
+
+    /**
+     * 确保SSH会话连接有效，如果会话断开则记录警告日志
+     * <p>
+     * 注意：此方法不会重新连接会话，因为重连需要密码等敏感信息，
+     * 应该由调用方（如StompSessionManager）负责重连逻辑。
+     * </p>
+     * 
+     * @param session SSH会话
+     * @param sessionKey 会话键，用于日志记录
+     * @throws JSchException 当会话无效且无法使用时
+     */
+    private void ensureSessionConnected(Session session, String sessionKey) throws JSchException {
+        if (session == null) {
+            log.error("SSH会话为空，sessionKey: {}", sessionKey);
+            throw new JSchException("SSH会话未初始化");
+        }
+        
+        if (!session.isConnected()) {
+            log.warn("检测到SSH会话已断开，sessionKey: {}，请检查网络连接或重新建立连接", sessionKey);
+            throw new JSchException("SSH会话已断开，需要重新连接");
+        }
+        
+        // 会话连接正常
+        log.debug("SSH会话连接正常，sessionKey: {}", sessionKey);
     }
 }

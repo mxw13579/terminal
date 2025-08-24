@@ -72,6 +72,10 @@ public class StompGlobalExceptionHandler {
             userMessage = "连接超时，请检查网络连接";
         } else if (message.contains("host key")) {
             userMessage = "服务器主机密钥验证失败";
+        } else if (message.contains("session is down") || message.contains("session not connected")) {
+            userMessage = "SSH会话已断开，请重新连接服务器";
+        } else if (message.contains("channel is not opened")) {
+            userMessage = "SSH通道未打开，连接可能已中断，请重新连接";
         } else {
             userMessage = "SSH连接失败: " + e.getMessage();
         }
