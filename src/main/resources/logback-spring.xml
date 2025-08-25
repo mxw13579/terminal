@@ -7,15 +7,7 @@
     <property name="LOG_PATH" value="${LOG_PATH:-logs}"/>
     <property name="APP_NAME" value="terminal-application"/>
     
-    <!-- 敏感信息过滤器 -->
-    <turboFilter class="ch.qos.logback.classic.turbo.MatchingFilter">
-        <Name>SensitiveInfoFilter</Name>
-        <Marker>SENSITIVE</Marker>
-        <OnMatch>DENY</OnMatch>
-        <OnMismatch>NEUTRAL</OnMismatch>
-    </turboFilter>
-    
-    <!-- 敏感信息正则过滤器 -->
+    <!-- 敏感信息脱敏转换器 -->
     <conversionRule conversionWord="sanitized" converterClass="com.fufu.terminal.config.SensitiveInfoSanitizer" />
     
     <!-- 控制台输出配置 -->
