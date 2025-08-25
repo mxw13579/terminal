@@ -29,11 +29,12 @@
   </main>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
+import type { ConnectionConfig } from '@/types';
 
 interface Props {
   connectionInfo: ConnectionConfig
