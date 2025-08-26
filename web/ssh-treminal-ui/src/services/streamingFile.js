@@ -444,34 +444,42 @@ export class StreamingFileService {
      * @returns {string}
      */
     getApiUrl(path) {
-        // 生产环境测试：使用Nginx代理
-        const USE_NGINX_PROXY = false; // 设置为 true 使用Nginx代理测试
-        
-        if (USE_NGINX_PROXY) {
-            console.log(`使用Nginx代理: http://localhost:3000${path}`);
-            return `http://localhost:3000${path}`;
+        // 检查是否有明确的环境变量设置
+        if (import.meta.env.VITE_BACKEND_URL) {
+            console.log(`使用环境变量配置的后端: ${import.meta.env.VITE_BACKEND_URL}${path}`);
+            return `${import.meta.env.VITE_BACKEND_URL}${path}`;
         }
-        
-        // 开发环境选项：如果Vite代理导致文件损坏，可以直接连接后端
-        const BYPASS_VITE_PROXY = true; // 设置为 false 使用Vite代理，true 直接连接后端
         
         const currentPort = window.location.port;
-        const isDevelopment = import.meta.env.DEV || 
-                            currentPort === '5173' || 
-                            currentPort.startsWith('517') ||
-                            !this.backendBaseUrl;
+        const currentHost = window.location.hostname;
         
-        if (isDevelopment && BYPASS_VITE_PROXY) {
-            console.log(`开发环境 - 直接连接后端: http://localhost:8100${path}`);
-            return `http://localhost:8100${path}`;
-        } else if (isDevelopment) {
-            console.log(`开发环境 - 使用Vite代理: ${path}`);
-            return path;
+        // 更准确的开发环境检测
+        const isViteDev = import.meta.env.DEV || 
+                         currentPort === '5173' || 
+                         currentPort === '5174' ||
+                         currentPort.startsWith('517') ||
+                         currentPort.startsWith('300') ||
+                         currentPort.startsWith('400') ||
+                         currentPort.startsWith('500');
+        
+        const isDevelopment = isViteDev && currentHost === 'localhost';
+        
+        if (isDevelopment) {
+            // 开发环境选项：如果Vite代理导致文件损坏，可以直接连接后端
+            const BYPASS_VITE_PROXY = true; // 设置为 false 使用Vite代理，true 直接连接后端
+            
+            if (BYPASS_VITE_PROXY) {
+                console.log(`开发环境 - 直接连接后端: http://localhost:8100${path}`);
+                return `http://localhost:8100${path}`;
+            } else {
+                console.log(`开发环境 - 使用Vite代理: ${path}`);
+                return path;
+            }
         }
         
-        const fullUrl = this.backendBaseUrl + path;
-        console.log(`生产环境 - 使用完整URL: ${fullUrl}`);
-        return fullUrl;
+        // 生产环境：始终使用相对路径，让反向代理或同域部署处理
+        console.log(`生产环境 - 使用相对路径: ${path}，当前域: ${window.location.origin}`);
+        return path;
     }
 
     /**
