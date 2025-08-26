@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -47,6 +47,25 @@ const props = withDefaults(defineProps<Props>(), {
   monitorVisible: false
 })
 
+// 调试props接收
+console.log('🔍 SshConsole props:', props);
+console.log('🔍 connectionInfo prop:', props.connectionInfo);
+
+// 安全的连接信息显示
+const connectionDisplay = computed(() => {
+  if (!props.connectionInfo) {
+    console.warn('⚠️ connectionInfo is null or undefined');
+    return 'Unknown@Unknown:22';
+  }
+
+  const { user, host, port } = props.connectionInfo;
+  const displayPort = port || 22;
+  const result = `${user || 'Unknown'}@${host || 'Unknown'}:${displayPort}`;
+
+  console.log('🔍 connectionDisplay computed:', result, 'from:', { user, host, port });
+  return result;
+});
+
 const emit = defineEmits(['disconnect', 'toggle-sftp',  'toggle-monitor', 'terminal-data', 'terminal-resize', 'terminal-ready', 'terminal-unmount']);
 
 const terminalRef = ref(null);
@@ -57,17 +76,25 @@ let resizeObserver;
 
 onMounted(async () => {
   await nextTick();
-  
+
+  // 调试连接信息
+  console.log('🔍 SshConsole mounted, connectionInfo:', props.connectionInfo);
+  console.log('🔍 connectionInfo fields:', {
+    user: props.connectionInfo?.user,
+    host: props.connectionInfo?.host,
+    port: props.connectionInfo?.port
+  });
+
   // Wait for DOM to be fully rendered and styled
   setTimeout(async () => {
     initializeTerminal();
     setupResizeObserver();
-    
+
     // Emit terminal ready event
     if (term) {
       emit('terminal-ready', term);
     }
-    
+
     // Wait a bit more for CSS transitions to complete, then fit
     await nextTick();
     setTimeout(() => safeFit(), 100);
@@ -91,17 +118,17 @@ const initializeTerminal = () => {
     console.warn('Terminal ref not available for initialization');
     return false;
   }
-  
+
   try {
     term = new Terminal({
-      cursorBlink: true, 
-      fontSize: 14, 
+      cursorBlink: true,
+      fontSize: 14,
       fontFamily: '"Fira Code", Consolas, "Courier New", monospace',
-      theme: { 
-        background: 'rgba(0, 0, 0, 0)', 
-        foreground: '#d4d4d4', 
-        cursor: '#d4d4d4', 
-        selectionBackground: '#264f78' 
+      theme: {
+        background: 'rgba(0, 0, 0, 0)',
+        foreground: '#d4d4d4',
+        cursor: '#d4d4d4',
+        selectionBackground: '#264f78'
       },
       allowTransparency: true,
       // Add scroll buffer
@@ -109,7 +136,7 @@ const initializeTerminal = () => {
       // Enable selection
       rightClickSelectsWord: true
     });
-    
+
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(terminalRef.value);
@@ -125,7 +152,7 @@ const initializeTerminal = () => {
     term.onData(data => {
       emit('terminal-data', data);
     });
-    
+
     console.log('Terminal initialized successfully');
     return true;
   } catch (error) {
@@ -148,14 +175,14 @@ const safeFit = () => {
       console.warn('Terminal not ready for fitting');
       return;
     }
-    
+
     // Check if element has dimensions
     const container = terminalContainerRef.value;
     if (!container) {
       console.warn('Terminal container ref not available');
       return;
     }
-    
+
     const rect = container.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) {
       console.warn('Terminal container has no dimensions:', { width: rect.width, height: rect.height });
@@ -163,12 +190,12 @@ const safeFit = () => {
       setTimeout(() => safeFit(), 100);
       return;
     }
-    
+
     // Perform fit
     fitAddon.fit();
     const { cols, rows } = term;
     emit('terminal-resize', { cols, rows });
-    
+
     console.log('Terminal fitted:', { cols, rows, width: rect.width, height: rect.height });
   } catch (error) {
     console.error('Error during terminal fit:', error);

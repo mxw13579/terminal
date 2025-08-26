@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import useConnectionManager from '@/composables/useConnectionManager.js'
 import { useTerminal } from '@/composables/useTerminal.js'
 import NavigationHeader from '@/components/NavigationHeader.vue'
@@ -84,6 +84,7 @@ function showModal(message, title = '提示') {
 // 如果已经有连接，直接使用；否则显示连接表单
 const handleConnect = async (connectionInfo) => {
   try {
+    console.log('🔍 Terminal.vue handleConnect received:', connectionInfo);
     await connect(connectionInfo)
   } catch (error) {
     showModal(`连接失败: ${error.message}`, '连接错误')
@@ -120,7 +121,16 @@ onMounted(() => {
   if (connectionState.isConnected) {
     console.log('已存在连接，直接进入终端界面')
   }
+  
+  // 调试连接状态
+  console.log('🔍 Terminal mounted, connectionState:', connectionState);
+  console.log('🔍 connectionState.connectionInfo:', connectionState.connectionInfo);
 })
+
+// 监控连接状态变化
+watch(() => connectionState.connectionInfo, (newInfo, oldInfo) => {
+  console.log('🔍 connectionInfo changed from:', oldInfo, 'to:', newInfo);
+}, { deep: true })
 
 // 组件卸载时清理资源
 onBeforeUnmount(() => {

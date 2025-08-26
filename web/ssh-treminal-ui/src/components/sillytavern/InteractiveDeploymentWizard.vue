@@ -17,7 +17,7 @@
           <h4 class="mode-name">完全信任模式</h4>
           <p class="mode-description">
             自动执行所有必要操作，无需逐步确认<br/>
-            <small>推荐：熟悉Linux的用户</small>
+            <small>推荐：小白用户</small>
           </p>
           <div class="mode-features">
             <span class="feature-tag">✓ 自动安装Docker</span>
@@ -36,7 +36,7 @@
           <h4 class="mode-name">分步确认模式</h4>
           <p class="mode-description">
             每个关键步骤都需要用户确认<br/>
-            <small>推荐：首次使用或谨慎操作</small>
+            <small>推荐：熟悉Linux的用户</small>
           </p>
           <div class="mode-features">
             <span class="feature-tag">✓ 逐步确认</span>
@@ -212,7 +212,8 @@
             </div>
           </div>
 
-          <div class="form-group">
+          <!-- 隐藏访问端口输入框，但保持功能 -->
+          <div class="form-group" style="display: none;">
             <label class="form-label">访问端口</label>
             <input
               type="number"
@@ -456,54 +457,90 @@
             <!-- 访问信息 -->
             <div v-if="deploymentSuccess && accessInfo" class="access-info">
               <h5 class="access-title">访问信息</h5>
+              
+              <!-- NAT环境提示 -->
+              <div class="nat-environment-notice">
+                <div class="notice-icon">⚠️</div>
+                <div class="notice-content">
+                  <p><strong>请注意：</strong>以下为NAT内网环境地址，实际外网访问需要在IDC处配置NAT映射。</p>
+                  <p>实际访问地址以NAT外网访问映射为准。</p>
+                </div>
+              </div>
+
               <div class="access-details">
                 <div class="access-item">
-                  <span class="access-label">访问地址：</span>
-                  <span class="access-value">
+                  <span class="access-label">内网地址：</span>
+                  <div class="access-value-container">
                     <a :href="accessInfo.url" target="_blank" class="access-link">
                       {{ accessInfo.url }}
                     </a>
                     <button
-                      @click="copyToClipboard(accessInfo.url)"
-                      class="btn btn-ghost btn-xs"
-                      title="复制地址"
+                      @click="copyToClipboard(accessInfo.url, '地址')"
+                      class="copy-btn"
+                      title="复制内网地址"
                     >
-                      📋
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
                     </button>
-                  </span>
+                  </div>
                 </div>
+                
                 <div v-if="accessInfo.username" class="access-item">
                   <span class="access-label">用户名：</span>
-                  <span class="access-value">
-                    <code>{{ accessInfo.username }}</code>
+                  <div class="access-value-container">
+                    <code class="access-code" @click="copyToClipboard(accessInfo.username, '用户名')" title="点击复制用户名">
+                      {{ accessInfo.username }}
+                    </code>
                     <button
-                      @click="copyToClipboard(accessInfo.username)"
-                      class="btn btn-ghost btn-xs"
+                      @click="copyToClipboard(accessInfo.username, '用户名')"
+                      class="copy-btn"
                       title="复制用户名"
                     >
-                      📋
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
                     </button>
-                  </span>
+                  </div>
                 </div>
+                
                 <div v-if="accessInfo.password" class="access-item">
                   <span class="access-label">密码：</span>
-                  <span class="access-value">
-                    <code>{{ showPassword ? accessInfo.password : '••••••••' }}</code>
+                  <div class="access-value-container">
+                    <code 
+                      class="access-code password-field" 
+                      @click="copyToClipboard(accessInfo.password, '密码')"
+                      title="点击复制密码"
+                    >
+                      {{ showPassword ? accessInfo.password : '••••••••' }}
+                    </code>
                     <button
                       @click="togglePasswordVisibility"
-                      class="btn btn-ghost btn-xs"
+                      class="toggle-btn"
                       :title="showPassword ? '隐藏密码' : '显示密码'"
                     >
-                      {{ showPassword ? '👁️‍🗨️' : '👁️' }}
+                      <svg v-if="showPassword" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                      <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </svg>
                     </button>
                     <button
-                      @click="copyToClipboard(accessInfo.password)"
-                      class="btn btn-ghost btn-xs"
+                      @click="copyToClipboard(accessInfo.password, '密码')"
+                      class="copy-btn"
                       title="复制密码"
                     >
-                      📋
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
                     </button>
-                  </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1059,13 +1096,44 @@ export default {
       return timestamp.toLocaleTimeString()
     },
 
-    copyToClipboard(text) {
+    copyToClipboard(text, itemName = '内容') {
       navigator.clipboard.writeText(text).then(() => {
-        // 这里可以添加复制成功的提示
-        alert('已复制到剪贴板')
+        // 创建临时提示元素
+        this.showCopySuccess(itemName)
       }).catch(err => {
         console.error('复制失败:', err)
+        this.showCopyError(itemName)
       })
+    },
+
+    showCopySuccess(itemName) {
+      // 创建成功提示
+      const toast = document.createElement('div')
+      toast.className = 'copy-toast copy-success'
+      toast.textContent = `${itemName}已复制到剪贴板`
+      document.body.appendChild(toast)
+      
+      // 显示动画
+      setTimeout(() => toast.classList.add('show'), 10)
+      
+      // 3秒后移除
+      setTimeout(() => {
+        toast.classList.remove('show')
+        setTimeout(() => document.body.removeChild(toast), 300)
+      }, 3000)
+    },
+
+    showCopyError(itemName) {
+      const toast = document.createElement('div')
+      toast.className = 'copy-toast copy-error'
+      toast.textContent = `${itemName}复制失败，请手动复制`
+      document.body.appendChild(toast)
+      
+      setTimeout(() => toast.classList.add('show'), 10)
+      setTimeout(() => {
+        toast.classList.remove('show')
+        setTimeout(() => document.body.removeChild(toast), 300)
+      }, 3000)
     },
 
     togglePasswordVisibility() {
@@ -1972,44 +2040,186 @@ export default {
   margin: 0 0 20px 0;
 }
 
+/* NAT环境提示样式 */
+.nat-environment-notice {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  border: 2px solid #f0ad4e;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(240, 173, 78, 0.15);
+}
+
+.nat-environment-notice .notice-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.nat-environment-notice .notice-content {
+  flex: 1;
+}
+
+.nat-environment-notice .notice-content p {
+  margin: 0 0 8px 0;
+  color: #856404;
+  line-height: 1.5;
+}
+
+.nat-environment-notice .notice-content p:last-child {
+  margin-bottom: 0;
+}
+
+.nat-environment-notice .notice-content strong {
+  font-weight: 600;
+  color: #6c4b04;
+}
+
 .access-info {
   text-align: left;
   background: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 20px;
+  border: 2px solid #e9ecef;
 }
 
 .access-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
-  margin: 0 0 12px 0;
+  margin: 0 0 16px 0;
+  color: #2c3e50;
+}
+
+.access-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .access-item {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  min-height: 48px;
 }
 
 .access-label {
-  min-width: 80px;
-  font-weight: 500;
+  min-width: 100px;
+  font-weight: 600;
   color: #495057;
+  flex-shrink: 0;
 }
 
-.access-value {
+.access-value-container {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
 }
 
 .access-link {
   color: #007bff;
   text-decoration: none;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f8f9ff;
+  border: 1px solid #d0d7ff;
+  transition: all 0.2s ease;
 }
 
 .access-link:hover {
-  text-decoration: underline;
+  background: #e6edff;
+  border-color: #a0b3ff;
+  text-decoration: none;
+}
+
+.access-code {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  color: #495057;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: all;
+}
+
+.access-code:hover {
+  background: #e9ecef;
+  border-color: #ced4da;
+}
+
+.access-code.password-field {
+  letter-spacing: 2px;
+  min-width: 120px;
+}
+
+.copy-btn, .toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #6c757d;
+  flex-shrink: 0;
+}
+
+.copy-btn:hover, .toggle-btn:hover {
+  background: #f8f9fa;
+  border-color: #adb5bd;
+  color: #495057;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.copy-btn:active, .toggle-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* 复制提示样式 */
+.copy-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  z-index: 10000;
+  transform: translateX(400px);
+  opacity: 0;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.copy-toast.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.copy-toast.copy-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.copy-toast.copy-error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
 }
 
 .result-actions {

@@ -243,21 +243,93 @@
               </div>
               <div class="section-content">
                 <div v-if="containerStatus && containerStatus.running" class="access-details">
+                  <!-- NAT环境提示 -->
+                  <div class="nat-environment-notice">
+                    <div class="notice-icon">⚠️</div>
+                    <div class="notice-content">
+                      <p><strong>请注意：</strong>以下为NAT内网环境地址，实际外网访问需要在IDC处配置NAT映射。</p>
+                      <p>实际访问地址以NAT外网访问映射为准。</p>
+                    </div>
+                  </div>
+
                   <div class="access-item">
-                    <span class="access-label">登录地址</span>
-                    <span class="access-value">{{ containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost' }}:{{ containerStatus.port || '8000' }}</span>
+                    <span class="access-label">内网地址</span>
+                    <div class="access-value-container">
+                      <span class="access-value clickable" @click="copyToClipboard(`http://${containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost'}:${containerStatus.port || '8000'}`, '内网地址')" title="点击复制地址">
+                        {{ containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost' }}:{{ containerStatus.port || '8000' }}
+                      </span>
+                      <button
+                        @click="copyToClipboard(`http://${containerStatus.hostAddress || connectionState.connectionInfo?.host || 'localhost'}:${containerStatus.port || '8000'}`, '内网地址')"
+                        class="copy-btn"
+                        title="复制内网地址"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div class="access-item">
                     <span class="access-label">加速访问地址</span>
-                    <span class="access-value">{{ containerStatus.acceleratedUrl || '暂无' }}</span>
+                    <div class="access-value-container">
+                      <span 
+                        v-if="containerStatus.acceleratedUrl && containerStatus.acceleratedUrl !== '暂无'" 
+                        class="access-value clickable" 
+                        @click="copyToClipboard(containerStatus.acceleratedUrl, '加速地址')" 
+                        title="点击复制加速地址"
+                      >
+                        {{ containerStatus.acceleratedUrl }}
+                      </span>
+                      <span v-else class="access-value disabled">暂无</span>
+                      <button
+                        v-if="containerStatus.acceleratedUrl && containerStatus.acceleratedUrl !== '暂无'"
+                        @click="copyToClipboard(containerStatus.acceleratedUrl, '加速地址')"
+                        class="copy-btn"
+                        title="复制加速地址"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div class="access-item">
                     <span class="access-label">账号</span>
-                    <span class="access-value">{{ containerStatus.username || 'admin' }}</span>
+                    <div class="access-value-container">
+                      <span class="access-value clickable" @click="copyToClipboard(containerStatus.username || 'admin', '账号')" title="点击复制账号">
+                        {{ containerStatus.username || 'admin' }}
+                      </span>
+                      <button
+                        @click="copyToClipboard(containerStatus.username || 'admin', '账号')"
+                        class="copy-btn"
+                        title="复制账号"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div class="access-item">
                     <span class="access-label">密码</span>
-                    <span class="access-value">{{ containerStatus.password || 'password' }}</span>
+                    <div class="access-value-container">
+                      <span class="access-value clickable" @click="copyToClipboard(containerStatus.password || 'password', '密码')" title="点击复制密码">
+                        {{ containerStatus.password || 'password' }}
+                      </span>
+                      <button
+                        @click="copyToClipboard(containerStatus.password || 'password', '密码')"
+                        class="copy-btn"
+                        title="复制密码"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <button @click="openService" class="btn btn-primary btn-sm access-button">
                     <i class="fas fa-external-link-alt"></i>
@@ -374,6 +446,14 @@
       </div>
     </main>
 
+    <!-- Toast 通知 -->
+    <div v-if="toastVisible" :class="['toast-notification', `toast-${toastType}`]">
+      <div class="toast-content">
+        <i class="fas" :class="toastType === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
+        <span>{{ toastMessage }}</span>
+      </div>
+    </div>
+
     <!-- 连接模态框 -->
     <ConnectionManager v-if="showConnectionModal" @close="showConnectionModal = false" />
   </div>
@@ -431,6 +511,11 @@ const isServerInfoExpanded = ref(false)
 const showConnectionModal = ref(false)
 const activeTab = ref('deployment')
 const currentActionType = ref('')
+
+// Toast 通知状态
+const toastVisible = ref(false)
+const toastMessage = ref('')
+const toastType = ref('success')
 
 // 标签页配置
 const tabs = computed(() => [
@@ -827,6 +912,37 @@ const handleStepConfirmed = (confirmationData) => {
 const handleGetVersions = () => {
   console.log('组件请求获取版本信息')
   getAvailableVersions()
+}
+
+// 复制到剪贴板功能
+const copyToClipboard = async (text, label) => {
+  try {
+    await navigator.clipboard.writeText(text || '')
+    showCopySuccess(label)
+  } catch (err) {
+    console.error('复制失败:', err)
+    showCopyError()
+  }
+}
+
+// 显示复制成功提示
+const showCopySuccess = (label) => {
+  toastMessage.value = `${label || '内容'}已复制到剪贴板`
+  toastType.value = 'success'
+  toastVisible.value = true
+  setTimeout(() => {
+    toastVisible.value = false
+  }, 2000)
+}
+
+// 显示复制失败提示
+const showCopyError = () => {
+  toastMessage.value = '复制失败，请手动选择复制'
+  toastType.value = 'error'
+  toastVisible.value = true
+  setTimeout(() => {
+    toastVisible.value = false
+  }, 3000)
 }
 
 // 生命周期
@@ -1608,5 +1724,81 @@ onUnmounted(() => {
   .section-content {
     padding: 20px;
   }
+}
+
+/* Toast 通知样式 */
+.toast-notification {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 9999;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  animation: toastSlideIn 0.3s ease-out;
+  min-width: 280px;
+  max-width: 400px;
+}
+
+.toast-success {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.9));
+  color: white;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.toast-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(220, 38, 38, 0.9));
+  color: white;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.toast-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.toast-content i {
+  font-size: 16px;
+  opacity: 0.9;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Copy button styles for access info */
+.copy-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.copy-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.copy-btn svg {
+  width: 14px;
+  height: 14px;
 }
 </style>

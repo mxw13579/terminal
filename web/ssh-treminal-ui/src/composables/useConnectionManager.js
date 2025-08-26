@@ -153,7 +153,13 @@ export function useConnectionManager() {
         console.log('Available header keys:', Object.keys(frame.headers || {}))
         
         connectionState.isConnected = true
-        connectionState.connectionInfo = connectionInfo
+        // 确保connectionInfo完整保存，创建一个新的对象避免引用问题
+        connectionState.connectionInfo = {
+          host: connectionInfo.host,
+          port: connectionInfo.port || 22,
+          user: connectionInfo.user,
+          // 不保存密码到状态中，出于安全考虑
+        }
         
         // 关键修复：正确获取STOMP session ID
         // 真实的session ID在后端被设置为user-name
@@ -400,9 +406,17 @@ export function useConnectionManager() {
   })
 
   const connectionDisplay = computed(() => {
-    if (!connectionState.connectionInfo) return 'Not connected'
-    const { user, host, port } = connectionState.connectionInfo
-    return `${user}@${host}:${port || 22}`
+    if (!connectionState.connectionInfo) {
+      return 'Not connected';
+    }
+    
+    const { user, host, port } = connectionState.connectionInfo;
+    
+    if (!user || !host) {
+      return `${user || 'Unknown'}@${host || 'Unknown'}:${port || 22}`;
+    }
+    
+    return `${user}@${host}:${port || 22}`;
   })
 
   return {
