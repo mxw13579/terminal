@@ -205,11 +205,16 @@ class ProgressStateManager {
             loaded: progressData.transferredBytes || 0,
             total: progressData.totalBytes || uploadState.fileSize,
             percentage: Math.round(progressData.percentage || 0),
-            speed: progressData.speed || 0
+            speed: progressData.speed || 0,
+            speedFormatted: progressData.speedFormatted || null // ✅ 添加格式化速度字段
         };
         uploadState.status = progressData.status === 'completed' ? 'completed' : 'uploading';
 
-        console.log(`🎯 STOMP进度更新 (${uploadState.uploadId}):`, uploadState.progress);
+        console.log(`🎯 STOMP进度更新 (${uploadState.uploadId}):`, {
+            ...uploadState.progress,
+            filename: progressData.filename,
+            rawStompData: progressData
+        });
         uploadState.callbacks.onProgress(uploadState.progress);
 
         // 检查是否完成
@@ -938,23 +943,64 @@ export class StreamingFileService {
     }
 
     /**
-     * 计算传输速度
+     * 计算传输速度（优化版本）
      */
     calculateSpeed(uploadState, currentLoaded) {
         const currentTime = Date.now();
+        
+        // 初始化状态
+        if (!uploadState.lastProgressTime || uploadState.lastProgressTime === 0) {
+            uploadState.lastProgressTime = currentTime;
+            uploadState.lastProgressLoaded = 0;
+            uploadState.speedHistory = []; // 速度历史记录，用于平滑
+            return 0;
+        }
+        
         const timeDiff = currentTime - uploadState.lastProgressTime;
         const bytesDiff = currentLoaded - uploadState.lastProgressLoaded;
         
-        let speed = 0;
-        if (timeDiff > 0) {
-            speed = (bytesDiff / timeDiff) * 1000; // bytes/sec
+        let currentSpeed = 0;
+        
+        // 只有在时间间隔足够大时才计算速度，避免除以很小的数
+        if (timeDiff >= 100 && bytesDiff > 0) { // 至少100ms间隔
+            currentSpeed = (bytesDiff / timeDiff) * 1000; // bytes/sec
+            
+            // 限制最大速度，过滤异常值（如网络突发）
+            const maxReasonableSpeed = 1024 * 1024 * 1024; // 1GB/s 最大合理速度
+            if (currentSpeed > maxReasonableSpeed) {
+                console.warn('检测到异常高速度，可能是计算错误:', currentSpeed);
+                currentSpeed = Math.min(currentSpeed, maxReasonableSpeed);
+            }
+            
+            // 初始化速度历史记录
+            if (!uploadState.speedHistory) {
+                uploadState.speedHistory = [];
+            }
+            
+            // 保持最近10个速度样本用于平滑
+            uploadState.speedHistory.push(currentSpeed);
+            if (uploadState.speedHistory.length > 10) {
+                uploadState.speedHistory.shift(); // 移除最老的记录
+            }
+            
+            // 计算平滑速度（去掉最高和最低值，取平均）
+            if (uploadState.speedHistory.length >= 3) {
+                const sortedSpeeds = [...uploadState.speedHistory].sort((a, b) => a - b);
+                const trimmedSpeeds = sortedSpeeds.slice(1, -1); // 去掉最高和最低
+                currentSpeed = trimmedSpeeds.reduce((sum, speed) => sum + speed, 0) / trimmedSpeeds.length;
+            }
+            
+            // 更新状态
+            uploadState.lastProgressTime = currentTime;
+            uploadState.lastProgressLoaded = currentLoaded;
+        } else {
+            // 时间间隔太短，使用历史平均速度
+            if (uploadState.speedHistory && uploadState.speedHistory.length > 0) {
+                currentSpeed = uploadState.speedHistory.reduce((sum, speed) => sum + speed, 0) / uploadState.speedHistory.length;
+            }
         }
         
-        // 更新状态
-        uploadState.lastProgressTime = currentTime;
-        uploadState.lastProgressLoaded = currentLoaded;
-        
-        return speed;
+        return Math.max(0, currentSpeed); // 确保速度非负
     }
 
     /**

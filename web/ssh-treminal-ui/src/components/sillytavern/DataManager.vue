@@ -185,6 +185,29 @@
 
             <!-- 当前步骤进度条 -->
             <div v-if="currentStep >= 0 && importSteps[currentStep]?.status === 'active'" class="current-step-progress" style="margin-top: 15px;">
+              
+              <!-- 如果是第一步（文件上传），显示详细信息 -->
+              <div v-if="currentStep === 0 && uploadDetails.uploadedSize > 0" class="upload-details-section" style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <!-- 文件大小进度 -->
+                <div class="detail-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                  <span class="detail-label" style="color: #6c757d; font-size: 14px;">文件大小:</span>
+                  <span class="detail-value" style="color: #495057; font-weight: 500;">
+                    {{ formatFileSize(uploadDetails.uploadedSize) }} / {{ formatFileSize(uploadDetails.totalSize) }}
+                  </span>
+                </div>
+                
+                <!-- 时间信息 -->
+                <div class="time-info-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                  <div style="flex: 1;">
+                    <span class="detail-label" style="color: #6c757d; font-size: 14px;">已用时间:</span>
+                    <span class="detail-value" style="color: #495057; font-weight: 500; margin-left: 8px;">
+                      {{ formatTime(uploadDetails.elapsedTime) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 进度条 -->
               <div class="progress-bar-container" style="background: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden;">
                 <div
                   class="progress-bar"
@@ -339,6 +362,15 @@ export default {
     const uploadProgress = ref(0)
     const uploadError = ref('')
 
+    // 详细上传信息
+    const uploadDetails = ref({
+      startTime: null,
+      uploadedSize: 0,
+      totalSize: 0,
+      currentSpeed: '', // 现在是字符串，直接存储格式化后的速度
+      elapsedTime: 0
+    })
+
     const exportProgress = ref(0)
     const exportStatus = ref('')
     const exportResult = ref(null)
@@ -395,6 +427,7 @@ export default {
     let importSubscription = null
     let exportProgressSubscription = null
     let importProgressSubscription = null
+    let uploadProgressSubscription = null
 
     const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
 
@@ -405,6 +438,17 @@ export default {
       const sizes = ['字节', 'KB', 'MB', 'GB']
       const i = Math.floor(Math.log(bytes) / Math.log(k))
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    }
+
+    const formatTime = (seconds) => {
+      if (!seconds || seconds <= 0) return '0秒'
+      const hours = Math.floor(seconds / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      const secs = Math.floor(seconds % 60)
+      
+      if (hours > 0) return `${hours}时${minutes}分${secs}秒`
+      if (minutes > 0) return `${minutes}分${secs}秒`
+      return `${secs}秒`
     }
 
     const formatDate = (dateString) => {
@@ -447,6 +491,16 @@ export default {
       selectedFile.value = null
       uploadProgress.value = 0
       uploadError.value = ''
+      
+      // 重置上传详细信息
+      uploadDetails.value = {
+        startTime: null,
+        uploadedSize: 0,
+        totalSize: 0,
+        currentSpeed: '',
+        elapsedTime: 0
+      }
+      
       if (fileInput.value) {
         fileInput.value.value = ''
       }
@@ -490,6 +544,15 @@ export default {
       importStatus.value = '🔄 初始化导入流程...'
       successMessage.value = ''
       errorMessage.value = ''
+
+      // 重置上传详细信息
+      uploadDetails.value = {
+        startTime: null,
+        uploadedSize: 0,
+        totalSize: selectedFile.value.size,
+        currentSpeed: '',
+        elapsedTime: 0
+      }
 
       // 重置步骤状态
       resetSteps()
@@ -573,27 +636,58 @@ export default {
           console.log('- 文件类型:', file.type)
           console.log('- 最后修改时间:', new Date(file.lastModified).toISOString())
 
+          // 初始化上传详细信息
+          uploadDetails.value = {
+            startTime: Date.now(),
+            uploadedSize: 0,
+            totalSize: file.size,
+            elapsedTime: 0
+          }
+
           const uploadId = await streamingFileService.streamUploadFile(
             file,
             remotePath,
-            // onProgress callback
+            // onProgress callback - 直接使用后端数据
             (progressData) => {
-              uploadProgress.value = progressData.percentage || 0
-              updateStepStatus(0, 'active', progressData.percentage || 0) // 更新第一步进度
-              importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}%`
+              const now = Date.now()
+              const elapsedTime = (now - uploadDetails.value.startTime) / 1000
+              
+              // 直接使用后端提供的准确数据
+              const uploadedSize = progressData.loaded || 0
+              const totalSize = progressData.total || file.size
+              const percentage = progressData.percentage || 0
 
-              if (progressData.speed > 0) {
-                const speedText = streamingFileService.formatSpeed(progressData.speed)
-                importStatus.value += ` (${speedText})`
+              // 更新详细信息 - 简化版本（无速度）
+              uploadDetails.value = {
+                ...uploadDetails.value,
+                uploadedSize,
+                totalSize,
+                elapsedTime
               }
 
-              console.log(`⬆️ 上传进度: ${Math.round(progressData.percentage || 0)}%`)
+              uploadProgress.value = percentage
+              updateStepStatus(0, 'active', percentage)
+
+              // 构建状态消息 - 去除速度显示
+              const sizeInfo = `${formatFileSize(uploadedSize)} / ${formatFileSize(totalSize)}`
+              const timeInfo = `已用: ${formatTime(elapsedTime)}`
+              
+              importStatus.value = `📤 正在上传文件... ${Math.round(percentage)}%\n${sizeInfo} | ${timeInfo}`
+
+              console.log(`📊 使用HTTP进度数据:`, {
+                uploadedMB: (uploadedSize / 1024 / 1024).toFixed(2) + ' MB',
+                totalMB: (totalSize / 1024 / 1024).toFixed(2) + ' MB',
+                percentage: percentage + '%',
+                elapsedTime: formatTime(elapsedTime),
+                rawData: progressData
+              })
             },
             // onComplete callback
             (completionData) => {
               console.log('文件上传完成:', completionData)
               uploadProgress.value = 100
-              importStatus.value = '文件上传完成，开始导入...'
+              const totalTime = formatTime((Date.now() - uploadDetails.value.startTime) / 1000)
+              importStatus.value = `✅ 文件上传完成！用时: ${totalTime}`
             },
             // onError callback
             (error) => {
@@ -716,53 +810,43 @@ export default {
       try {
         console.log('收到导入进度消息:', message.body)
         const progress = JSON.parse(message.body)
-
-        // 更新状态信息
+        
+        // 简单更新状态信息（上传进度由STOMP队列直接处理）
         if (progress.message) {
-          importStatus.value = progress.message
+          // 如果不是上传阶段，更新状态
+          if (!progress.message.includes('上传')) {
+            importStatus.value = progress.message
+          }
         }
 
-        // 根据消息内容更新对应步骤状态
+        // 根据消息内容更新步骤状态（跳过上传步骤，因为由STOMP处理）
         if (progress.message) {
           const msg = progress.message.toLowerCase()
-
+          
           if (msg.includes('验证') || msg.includes('verify')) {
-            // 步骤2：验证文件
             updateStepStatus(1, 'active', 50)
             importProgress.value = 20
           } else if (msg.includes('备份') || msg.includes('backup')) {
-            // 完成验证，开始备份
             updateStepStatus(1, 'completed', 100)
             updateStepStatus(2, 'active', 30)
             importProgress.value = 40
           } else if (msg.includes('解压') || msg.includes('extract')) {
-            // 完成备份，开始解压
             updateStepStatus(2, 'completed', 100)
             updateStepStatus(3, 'active', 20)
             importProgress.value = 60
           } else if (msg.includes('导入') || msg.includes('import') || msg.includes('拷贝') || msg.includes('copy')) {
-            // 完成解压，开始导入数据
             updateStepStatus(3, 'completed', 100)
             updateStepStatus(4, 'active', 40)
             importProgress.value = 80
           } else if (msg.includes('重启') || msg.includes('restart')) {
-            // 完成导入，开始重启容器
             updateStepStatus(4, 'completed', 100)
             updateStepStatus(5, 'active', 60)
             importProgress.value = 90
           } else if (msg.includes('完成') || msg.includes('complete')) {
-            // 全部完成
             updateStepStatus(5, 'completed', 100)
             importProgress.value = 100
           }
         }
-
-        console.log('导入进度更新:', {
-          status: importStatus.value,
-          progress: importProgress.value,
-          currentStep: currentStep.value + 1,
-          totalSteps: totalSteps.value
-        })
 
       } catch (error) {
         console.error('处理导入进度消息时出错:', error)
@@ -778,14 +862,37 @@ export default {
         window.streamingProgressCallback = (progressData) => {
           console.log('DataManager收到流式上传进度:', progressData)
           if (importing.value && uploadProgress.value < 100) {
-            uploadProgress.value = progressData.percentage || 0
-            updateStepStatus(0, 'active', progressData.percentage || 0) // 更新第一步进度
-            if (progressData.speed > 0) {
-              const speedText = streamingFileService.formatSpeed(progressData.speed)
-              importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}% (${speedText})`
-            } else {
-              importStatus.value = `📤 正在上传文件... ${Math.round(progressData.percentage || 0)}%`
+            const now = Date.now()
+            const elapsedTime = uploadDetails.value.startTime ? (now - uploadDetails.value.startTime) / 1000 : 0
+            
+            // 直接使用后端STOMP消息中的准确数据
+            const uploadedSize = progressData.transferredBytes || progressData.loaded || 0
+            const totalSize = progressData.totalBytes || progressData.total || uploadDetails.value.totalSize || 0
+            const percentage = progressData.percentage || 0
+
+            // 更新详细信息 - 去除速度字段
+            uploadDetails.value = {
+              ...uploadDetails.value,
+              uploadedSize,
+              totalSize,
+              elapsedTime
             }
+
+            uploadProgress.value = percentage
+            updateStepStatus(0, 'active', percentage)
+
+            // 构建状态消息 - 去除速度显示
+            const sizeInfo = `${formatFileSize(uploadedSize)} / ${formatFileSize(totalSize)}`
+            const timeInfo = `已用: ${formatTime(elapsedTime)}`
+            
+            importStatus.value = `📤 正在上传文件... ${Math.round(percentage)}%\n${sizeInfo} | ${timeInfo}`
+            
+            console.log('📊 使用后端STOMP数据:', {
+              uploadedMB: (uploadedSize / 1024 / 1024).toFixed(2) + ' MB',
+              totalMB: (totalSize / 1024 / 1024).toFixed(2) + ' MB', 
+              percentage: percentage + '%',
+              elapsedTime: formatTime(elapsedTime)
+            })
           }
         }
       }
@@ -822,12 +929,56 @@ export default {
             `/queue/sillytavern/import-progress-user${realSessionId}`,
             handleImportProgress
           )
+          
+          // 订阅上传进度消息 - 直接使用现有的上传进度队列
+          uploadProgressSubscription = stompClient.value.subscribe(
+            `/queue/upload/progress`,
+            (message) => {
+              try {
+                const progressData = JSON.parse(message.body)
+                if (importing.value && uploadProgress.value < 100) {
+                  console.log('📨 收到STOMP上传进度数据:', progressData)
+                  
+                  // 直接使用STOMP消息中的准确数据
+                  const now = Date.now()
+                  const elapsedTime = uploadDetails.value.startTime ? (now - uploadDetails.value.startTime) / 1000 : 0
+                  
+                  const uploadedSize = progressData.transferredBytes || 0
+                  const totalSize = progressData.totalBytes || uploadDetails.value.totalSize
+                  const percentage = progressData.percentage || 0
+                  
+                  uploadDetails.value = {
+                    ...uploadDetails.value,
+                    uploadedSize,
+                    totalSize,
+                    elapsedTime
+                  }
+                  
+                  uploadProgress.value = percentage
+                  updateStepStatus(0, 'active', percentage)
+                  
+                  const sizeInfo = `${formatFileSize(uploadedSize)} / ${formatFileSize(totalSize)}`
+                  const timeInfo = `已用: ${formatTime(elapsedTime)}`
+                  importStatus.value = `📤 正在上传文件... ${Math.round(percentage)}%\n${sizeInfo} | ${timeInfo}`
+                  
+                  console.log('✅ 使用STOMP进度数据更新:', {
+                    uploadedMB: (uploadedSize / 1024 / 1024).toFixed(2) + ' MB',
+                    totalMB: (totalSize / 1024 / 1024).toFixed(2) + ' MB',
+                    percentage: percentage + '%'
+                  })
+                }
+              } catch (error) {
+                console.error('处理上传进度STOMP消息出错:', error)
+              }
+            }
+          )
 
           console.log('✅ STOMP订阅设置完成，订阅队列:', {
             export: `/queue/sillytavern/export-user${realSessionId}`,
             import: `/queue/sillytavern/import-user${realSessionId}`,
             exportProgress: `/queue/sillytavern/export-progress-user${realSessionId}`,
-            importProgress: `/queue/sillytavern/import-progress-user${realSessionId}`
+            importProgress: `/queue/sillytavern/import-progress-user${realSessionId}`,
+            uploadProgress: `/queue/upload/progress`
           })
         } catch (error) {
           console.error('设置STOMP订阅时出错:', error);
@@ -850,6 +1001,7 @@ export default {
       if (importSubscription) importSubscription.unsubscribe()
       if (exportProgressSubscription) exportProgressSubscription.unsubscribe()
       if (importProgressSubscription) importProgressSubscription.unsubscribe()
+      if (uploadProgressSubscription) uploadProgressSubscription.unsubscribe()
 
       // 清理全局回调
       if (window.streamingProgressCallback) {
@@ -900,6 +1052,7 @@ export default {
       selectedFile,
       uploadProgress,
       uploadError,
+      uploadDetails,
       exportProgress,
       exportStatus,
       exportResult,
@@ -910,6 +1063,7 @@ export default {
       fileInput,
       getDownloadUrl,
       formatFileSize,
+      formatTime,
       formatDate,
       handleFileSelect,
       clearSelection,

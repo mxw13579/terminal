@@ -398,7 +398,7 @@ public class TrueStreamingFileService {
             UploadProgressDto progressDto = new UploadProgressDto(
                     uploadId, progress.getFilename(), progress.getStatus(),
                     transferred, total, progress.getRemotePath(),
-                    (percentage != null) ? Math.round(percentage * 100.0) / 100.0 : null,
+                    (percentage != null) ? Math.round(percentage * 100.0) / 100.0 : null, // percentage已经是百分比值，只需要四舍五入到两位小数
                     speed, formatSpeed(speed), progress.getErrorMessage()
             );
 

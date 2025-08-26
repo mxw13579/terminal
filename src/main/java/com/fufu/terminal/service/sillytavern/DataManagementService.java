@@ -1,6 +1,7 @@
 package com.fufu.terminal.service.sillytavern;
 
 import com.fufu.terminal.dto.sillytavern.DataExportDto;
+import com.fufu.terminal.dto.sillytavern.ImportProgressDto;
 import com.fufu.terminal.model.CommandResult;
 import com.fufu.terminal.model.SshConnection;
 import com.fufu.terminal.service.SshCommandService;
@@ -245,7 +246,7 @@ public class DataManagementService {
                 throw new RuntimeException("数据导入失败: " + e.getMessage(), e);
             } finally {
                 log.info("临时禁用文件清理，保留文件: {} 和 {}", remoteUploadedPath, extractTempPath);
-                // cleanupImportTempFiles(connection, remoteUploadedPath, null, extractTempPath, null);
+                 cleanupImportTempFiles(connection, remoteUploadedPath, null, extractTempPath, null);
             }
         });
     }
@@ -267,6 +268,164 @@ public class DataManagementService {
 
         return localFilePath;
     }
+
+    /**
+     * 增强版数据导入 - 提供详细的进度信息
+     * 
+     * @param connection SSH连接对象
+     * @param containerName 目标Docker容器的名称
+     * @param uploadedFileName 已上传到远程服务器的文件名
+     * @param progressCallback 用于报告详细进度的回调函数
+     * @return 一个 {@link CompletableFuture}，其结果为布尔值，表示导入是否成功
+     */
+    public CompletableFuture<Boolean> importDataWithProgress(SshConnection connection, String containerName,
+                                                           String uploadedFileName, Consumer<ImportProgressDto> progressCallback) {
+        return CompletableFuture.supplyAsync(() -> {
+            String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMATTER);
+            String remoteUploadedPath = "/tmp/" + uploadedFileName;
+            String extractTempPath = String.format("/tmp/sillytavern_extract_%s", timestamp);
+            
+            LocalDateTime startTime = LocalDateTime.now();
+            long startTimeMs = System.currentTimeMillis();
+            
+            try {
+                // 阶段1: 验证上传文件 (0-10%)
+                progressCallback.accept(new ImportProgressDto("validate", "正在验证上传文件...", 5));
+                
+                long fileSize = 0;
+                try {
+                    String fileSizeInfo = executeCommand(connection, String.format("stat -c '%%s' '%s'", remoteUploadedPath));
+                    fileSize = Long.parseLong(fileSizeInfo.trim());
+                    
+                    if (fileSize < 1000) {
+                        throw new RuntimeException(String.format("上传的文件大小异常: %d bytes，文件可能损坏或上传不完整", fileSize));
+                    }
+                    
+                    progressCallback.accept(new ImportProgressDto("validate", "文件验证通过", 10, 10, 
+                        fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, uploadedFileName));
+                } catch (Exception e) {
+                    log.warn("获取文件信息失败: {}", e.getMessage());
+                    progressCallback.accept(ImportProgressDto.createError("validate", "文件验证失败: " + e.getMessage()));
+                    throw e;
+                }
+
+                // 验证文件格式
+                if (!isValidRemoteArchive(connection, remoteUploadedPath)) {
+                    progressCallback.accept(ImportProgressDto.createError("validate", "数据归档文件格式无效或包含不安全内容"));
+                    throw new RuntimeException("数据归档文件格式无效或包含不安全内容");
+                }
+
+                // 阶段2: 获取docker-compose路径 (10-20%)
+                progressCallback.accept(new ImportProgressDto("setup", "正在获取docker-compose路径...", 15, 15, 
+                    fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, null));
+                String dockerComposePath = findDockerComposePath(connection, containerName);
+                String hostDataPath = dockerComposePath + "/data";
+
+                // 阶段3: 创建备份 (20-30%)
+                progressCallback.accept(new ImportProgressDto("backup", "正在创建数据备份...", 25, 25, 
+                    fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, null));
+                String backupPath = createDataBackup(connection, hostDataPath, timestamp);
+
+                try {
+                    // 阶段4: 解压文件 (30-60%)
+                    progressCallback.accept(new ImportProgressDto("extract", "正在创建临时目录...", 30, 30, 
+                        fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, null));
+                    executeCommand(connection, String.format("mkdir -p '%s'", extractTempPath));
+
+                    // 模拟解压进度
+                    progressCallback.accept(new ImportProgressDto("extract", "正在解压归档文件...", 35, 35, 
+                        fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, uploadedFileName));
+
+                    // 检测文件类型并解压
+                    if (uploadedFileName.toLowerCase().endsWith(".zip")) {
+                        try {
+                            executeCommand(connection, String.format("cd '%s' && unzip -o '%s'", extractTempPath, remoteUploadedPath));
+                        } catch (Exception e) {
+                            if (e.getMessage().contains("unzip: command not found")) {
+                                executeCommand(connection, String.format(
+                                        "cd '%s' && python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('.')\"",
+                                        extractTempPath, remoteUploadedPath));
+                            } else {
+                                throw e;
+                            }
+                        }
+                    } else {
+                        executeCommand(connection, String.format("cd '%s' && tar -xzf '%s'", extractTempPath, remoteUploadedPath));
+                    }
+
+                    progressCallback.accept(new ImportProgressDto("extract", "解压完成，正在验证数据结构...", 50, 50, 
+                        fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, null));
+
+                    // 验证解压结果
+                    String extractedDataPath = extractTempPath + "/data";
+                    String checkExtracted = executeCommand(connection, String.format("ls -A '%s'", extractedDataPath));
+                    if (checkExtracted.trim().isEmpty()) {
+                        throw new RuntimeException("解压失败：未找到data目录或data目录为空");
+                    }
+
+                    // 阶段5: 导入数据 (60-90%)
+                    progressCallback.accept(new ImportProgressDto("import", "正在清理旧数据...", 60, 60, 
+                        fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, null));
+                    executeCommand(connection, String.format("rm -rf '%s'/*", hostDataPath));
+
+                    progressCallback.accept(new ImportProgressDto("import", "正在导入新数据...", 70, 70, 
+                        fileSize, fileSize, null, null, System.currentTimeMillis() - startTimeMs, null));
+                    
+                    // 估算拷贝速度
+                    long copyStartTime = System.currentTimeMillis();
+                    executeCommand(connection, String.format("cp -r '%s'/* '%s'/", extractedDataPath, hostDataPath));
+                    long copyDuration = System.currentTimeMillis() - copyStartTime;
+                    long copySpeed = copyDuration > 0 ? (fileSize * 1000) / copyDuration : 0;
+                    String copySpeedFormatted = formatSpeed(copySpeed);
+
+                    progressCallback.accept(new ImportProgressDto("import", "正在设置权限...", 80, 80, 
+                        fileSize, fileSize, copySpeed, copySpeedFormatted, System.currentTimeMillis() - startTimeMs, null));
+                    executeCommand(connection, String.format("chown -R 1000:1000 '%s'", hostDataPath));
+
+                    // 阶段6: 重启容器 (90-100%)
+                    progressCallback.accept(new ImportProgressDto("restart", "正在重启SillyTavern容器...", 90, 90, 
+                        fileSize, fileSize, copySpeed, copySpeedFormatted, System.currentTimeMillis() - startTimeMs, null));
+                    restartSillyTavernContainer(connection, dockerComposePath);
+
+                    // 完成
+                    long totalElapsed = System.currentTimeMillis() - startTimeMs;
+                    progressCallback.accept(new ImportProgressDto("completed", "数据导入完成", 100, 100, 
+                        fileSize, fileSize, fileSize * 1000 / Math.max(totalElapsed, 1), 
+                        formatSpeed(fileSize * 1000 / Math.max(totalElapsed, 1)), totalElapsed, null));
+
+                    return true;
+
+                } catch (Exception e) {
+                    progressCallback.accept(ImportProgressDto.createError("import", "导入失败，正在回滚: " + e.getMessage()));
+                    performDataRollback(connection, backupPath, hostDataPath);
+                    throw e;
+                }
+
+            } catch (Exception e) {
+                log.error("数据导入失败: {}", containerName, e);
+                progressCallback.accept(ImportProgressDto.createError("error", "数据导入失败: " + e.getMessage()));
+                throw new RuntimeException("数据导入失败: " + e.getMessage(), e);
+            } finally {
+                cleanupImportTempFiles(connection, remoteUploadedPath, null, extractTempPath, null);
+            }
+        });
+    }
+
+    /**
+     * 格式化传输速度
+     */
+    private String formatSpeed(long bytesPerSecond) {
+        if (bytesPerSecond < 1024) {
+            return bytesPerSecond + " B/s";
+        } else if (bytesPerSecond < 1024 * 1024) {
+            return String.format("%.1f KB/s", bytesPerSecond / 1024.0);
+        } else if (bytesPerSecond < 1024 * 1024 * 1024) {
+            return String.format("%.1f MB/s", bytesPerSecond / (1024.0 * 1024.0));
+        } else {
+            return String.format("%.1f GB/s", bytesPerSecond / (1024.0 * 1024.0 * 1024.0));
+        }
+    }
+
     /**
      * 获取容器内数据目录大小（字节）。
      *
