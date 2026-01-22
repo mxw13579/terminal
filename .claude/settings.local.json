@@ -66,7 +66,12 @@
       "Bash(\"C:/Program Files/Java/jdk-17.0.12/bin/javac.exe\" -encoding UTF-8 -cp \"target/classes\" \"src/main/java/com/fufu/terminal/constants/SillyTavernConstants.java\")",
       "Bash(sed:*)",
       "Bash(\"C:/Program Files/Java/jdk-17.0.12/bin/javac.exe\" -encoding UTF-8 -cp \"target/classes\" \"src/main/java/com/fufu/terminal/config/StompTracingInterceptor.java\")",
-      "Bash(\"C:/Program Files/Java/jdk-17.0.12/bin/javac.exe\" -encoding UTF-8 -cp \"target/classes\" \"src/main/java/com/fufu/terminal/config/SensitiveInfoSanitizer.java\")"
+      "Bash(\"C:/Program Files/Java/jdk-17.0.12/bin/javac.exe\" -encoding UTF-8 -cp \"target/classes\" \"src/main/java/com/fufu/terminal/config/SensitiveInfoSanitizer.java\")",
+      "Bash(\"C:\\Program Files\\nodejs\\node.exe\" node_modules/.bin/vite build)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(\"C:\\Program Files\\nodejs\\node.exe\" node_modules/.bin/vue-tsc --noEmit)",
+      "Bash(\"C:/Program Files/Java/jdk-17.0.12/bin/javac.exe\" -encoding UTF-8 -cp \"target/classes\" \"src/main/java/com/fufu/terminal/dto/sillytavern/ImportProgressDto.java\")"
     ],
     "deny": [],
     "additionalDirectories": [
